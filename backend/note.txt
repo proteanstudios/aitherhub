@@ -1,6 +1,0 @@
-cd backend
-python -m venv .venv
-.venv\Scripts\activate
-deactivate
-
-D:\video-analytics\backend\.venv\Scripts\python.exe
