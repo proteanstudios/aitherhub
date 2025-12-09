@@ -1,0 +1,19 @@
+{
+  "folders": [
+    {
+      "name": "backend",
+      "path": "backend"
+    },
+    {
+      "name": "worker",
+      "path": "worker"
+    },
+    {
+      "name": "frontend",
+      "path": "frontend"
+    }
+  ],
+  "settings": {
+    "git.ignoreLimitWarning": true
+  }
+}
