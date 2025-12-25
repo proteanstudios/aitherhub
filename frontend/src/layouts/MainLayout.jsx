@@ -1,0 +1,31 @@
+import Sidebar from "../components/Sidebar";
+import MainContent from '../components/MainContent';
+import { useState } from "react";
+import Dashboard from "../pages/Dashboard";
+
+export default function MainLayout() {
+  const [openSidebar, setOpenSidebar] = useState(false);
+  const [user, setUser] = useState(() => {
+    try {
+      const s = localStorage.getItem("user");
+      return s ? JSON.parse(s) : { isLoggedIn: false };
+    } catch (e) {
+      return { isLoggedIn: false };
+    }
+  });
+  return (
+    <div className="min-h-screen bg-gray-100 flex justify-center">
+      <div className="w-full max-w-[1280px] flex">
+        <aside className="hidden md:block w-1/5 bg-white text-black">
+          <Sidebar isOpen={openSidebar} onClose={() => setOpenSidebar(false)} user={user} />
+        </aside>
+        <div className="md:hidden">
+          <Sidebar isOpen={openSidebar} onClose={() => setOpenSidebar(false)} user={user} />
+        </div>
+        <main className="w-full md:w-4/5 bg-gradient-to-b from-[#4500FF] to-[#9B00FF] text-white">
+          <MainContent onOpenSidebar={() => setOpenSidebar(true)} user={user} setUser={setUser} />
+        </main>
+      </div>
+    </div>
+  );
+}
