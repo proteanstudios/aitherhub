@@ -1,5 +1,6 @@
 # app/models/orm/__init__.py
 from .user import User
+from .credential import Credential
 from .video import Video
 from .upload import Upload
 from .processing_job import ProcessingJob

@@ -1,8 +1,39 @@
 import React, { useState } from "react";
+import { toast } from 'react-toastify';
+import AuthService from '../../base/services/userService';
 
-export default function Login() {
+export default function Login({ onSuccess, onSwitchToRegister }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+
+    try {
+      // Login and get JWT tokens (tokens are automatically stored by AuthService)
+      await AuthService.login(email, password);
+      
+      // Get user info from JWT token
+      const userInfo = await AuthService.getCurrentUser();
+
+      // Store minimal user info in localStorage for quick display
+      // Full user info can be retrieved from JWT token via /me endpoint
+      const userData = {
+        isLoggedIn: true,
+        email: userInfo?.email || email,
+      };
+      localStorage.setItem("user", JSON.stringify(userData));
+
+      toast.success("Login successful");
+      if (onSuccess) onSuccess();
+    } catch (err) {
+      const detail = err?.response?.data?.detail || err?.message || 'Login failed';
+      toast.error(detail);
+    }
+  };
 
   return (
     <div className="flex flex-col items-center justify-center space-y-6">
@@ -47,13 +78,24 @@ export default function Login() {
             <div className="text-[9px] text-center text-gray-600">
                 初めてご利用ですか?{" "}
                 <span className="">
-                  <a href="http://" target="_blank" rel="noopener noreferrer" style={{ color: "#000", textDecoration: "underline" }}> 新規登録はこちら </a>
+                  <a 
+                    href="#" 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (onSwitchToRegister) onSwitchToRegister();
+                    }}
+                    style={{ color: "#000", textDecoration: "underline", cursor: "pointer" }}
+                  > 
+                    新規登録はこちら 
+                  </a>
                 </span>
             </div>
           </div>
         </div>
 
-        <button style={{ fontSize: "20px" }}
+        <button 
+          onClick={handleLogin}
+          style={{ fontSize: "20px" }}
           className="mb-[50px] bg-90 w-[250px] h-[50px] rounded-[55px] font-cabin font-semibold leading-[16px] text-white opacity-100 flex items-center justify-center bg-gradient-to-b from-[#4500FF] to-[#9B00FF]">
           ログイン
         </button>

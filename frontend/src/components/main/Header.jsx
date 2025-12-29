@@ -1,15 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import MenuIcon from "../../assets/icons/menu.png";
+import MyAccount from "../../assets/icons/user-profile-icon-df.png";
+import PasswordIcon from "../../assets/icons/password-icon.svg";
+import Signout from "../../assets/icons/signout-icon-df.png";
 import LoginModal from "../modals/LoginModal";
 import RegisterModal from "../modals/RegisterModal";
 import ForgotPasswordModal from "../modals/ForgotPasswordModal";
+import AuthService from "../../base/services/userService";
 
 export default function Header({ onOpenSidebar, user: propUser, setUser: setPropUser }) {
   const [openLogin, setOpenLogin] = useState(false);
   const [openRegister, setOpenRegister] = useState(false);
   const [localUser, setLocalUser] = useState(null);
+  const [openDropdown, setOpenDropdown] = useState(false);
+  const dropdownRef = useRef(null);
 
-  // If parent doesn't provide user, load from localStorage into local state
   useEffect(() => {
     if (propUser) return;
     const storedUser = localStorage.getItem("user");
@@ -17,6 +22,17 @@ export default function Header({ onOpenSidebar, user: propUser, setUser: setProp
       setLocalUser(JSON.parse(storedUser));
     }
   }, [propUser]);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setOpenDropdown(false);
+      }
+    };
+  
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const user = propUser ?? localUser;
   const setUser = setPropUser ?? setLocalUser;
@@ -40,14 +56,52 @@ export default function Header({ onOpenSidebar, user: propUser, setUser: setProp
         {/* RIGHT SIDE */}
         <div className={`flex items-center gap-[10px] justify-center w-[200px] h-[35px] rounded-[50px] ${user?.isLoggedIn && "bg-white" }`} >
           {user?.isLoggedIn ? (
-            <span
-              className="font-cabin text-[14px] text-black cursor-pointer"
-              onClick={() => setOpenForgotPassword(true)}
-            >
-              {user.email}
-            </span>
+            <div className="relative" ref={dropdownRef}>
+              <span
+                className="font-cabin text-[14px] text-black cursor-pointer select-none"
+                onClick={() => setOpenDropdown(!openDropdown)}
+              >
+                {user.email}
+              </span>
+
+              {openDropdown && (
+                <div className="absolute right-[-18px] top-[40px] w-[196px] bg-white border rounded-md shadow-md z-50" >
+                  <ul className="flex flex-col text-[16px] text-black">
+                    <li
+                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                    >
+                      <img src={MyAccount} alt="My Account" className="w-[16px] h-[16px]" />
+                      マイアカウント
+                    </li>
+
+                    <li
+                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                      onClick={() => {
+                        setOpenDropdown(false);
+                        setOpenForgotPassword(true);
+                      }}
+                    >
+                      <img src={PasswordIcon} alt="Password" className="w-[16px] h-[16px]" />
+                      パスワード変更
+                    </li>
+
+                    <li
+                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2 text-red-500"
+                      onClick={() => {
+                        setOpenDropdown(false);
+                        AuthService.logout();
+                        setUser({ isLoggedIn: false });
+                        window.location.reload();
+                      }}
+                    >
+                      <img src={Signout} alt="Signout" className="w-[16px] h-[16px]" />
+                      ログアウト
+                    </li>
+                  </ul>
+                </div>
+              )}
+            </div>
           ) : (
-            // ❌ Chưa login → hiện button
             <>
               <button
                 onClick={() => setOpenLogin(true)}
@@ -71,9 +125,12 @@ export default function Header({ onOpenSidebar, user: propUser, setUser: setProp
         open={openLogin}
         onClose={() => {
           setOpenLogin(false);
-          // cập nhật lại user sau login
           const storedUser = localStorage.getItem("user");
           if (storedUser) setUser(JSON.parse(storedUser));
+        }}
+        onSwitchToRegister={() => {
+          setOpenLogin(false);
+          setOpenRegister(true);
         }}
       />
 
@@ -81,9 +138,12 @@ export default function Header({ onOpenSidebar, user: propUser, setUser: setProp
         open={openRegister}
         onClose={() => {
           setOpenRegister(false);
-          // cập nhật lại user sau register
           const storedUser = localStorage.getItem("user");
           if (storedUser) setUser(JSON.parse(storedUser));
+        }}
+        onSwitchToLogin={() => {
+          setOpenRegister(false);
+          setOpenLogin(true);
         }}
       />
 

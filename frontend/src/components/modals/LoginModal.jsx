@@ -1,7 +1,7 @@
 import Login from "../../pages/authPages/Login";
 import CloseIcon from "../../assets/icons/close.png";
 
-export default function LoginModal({ open, onClose }) {
+export default function LoginModal({ open, onClose, onSwitchToRegister }) {
   if (!open) return null;
 
   return (
@@ -20,7 +20,7 @@ export default function LoginModal({ open, onClose }) {
         </button>
 
         <div className="p-6 w-full mt-[69px] bg-white rounded-[10px]">
-          <Login />
+          <Login onSuccess={onClose} onSwitchToRegister={onSwitchToRegister} />
         </div>
       </div>
     </div>
