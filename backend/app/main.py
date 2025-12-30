@@ -41,7 +41,7 @@ class AppCreator:
         # API v1 routes
         self.app.include_router(
             v1_routers,
-            prefix=configs.API_V1_STR,  # 🔴 cực kỳ quan trọng
+            prefix=configs.API_V1_STR,
         )
 
 
