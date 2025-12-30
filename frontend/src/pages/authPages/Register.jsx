@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { toast } from 'react-toastify';
+import AuthService from '../../base/services/userService';
 
 export default function Register({ onSuccess }) {
     const [email, setEmail] = useState("");
@@ -6,35 +8,44 @@ export default function Register({ onSuccess }) {
     const [confirmPassword, setConfirmPassword] = useState("");
     const [checkbox, setCheckbox] = useState(false);
     
-    const handleRegister = () => {
+    const handleRegister = async () => {
         if (!email || !password || !confirmPassword) {
-            alert("Vui lòng nhập đầy đủ thông tin");
+            toast.error("Please fill in all required fields");
             return;
         }
 
         if (password !== confirmPassword) {
-            alert("Mật khẩu không khớp");
+            toast.error("Passwords do not match");
             return;
         }
 
         if (!checkbox) {
-            alert("Vui lòng đồng ý điều khoản");
+            toast.error("Please agree to the terms and conditions");
             return;
         }
 
-        // FE mock: lưu user
-        localStorage.setItem(
-            "user",
-            JSON.stringify({
-            email,
-            password,
-            isLoggedIn: true,
-            })
-        );
+        try {
+            // Register and get JWT tokens (tokens are automatically stored by AuthService)
+            await AuthService.register(email, password);
+            
+            // Get user info from JWT token
+            const userInfo = await AuthService.getCurrentUser();
+            
+            // Store minimal user info in localStorage for quick display
+            // Full user info can be retrieved from JWT token via /me endpoint
+            const userData = {
+                isLoggedIn: true,
+                email: userInfo?.email || email,
+            };
+            localStorage.setItem("user", JSON.stringify(userData));
 
-        // Đóng modal đăng ký
-        if (onSuccess) onSuccess();
-        };
+            toast.success("Registration successful");
+            if (onSuccess) onSuccess();
+        } catch (err) {
+            const detail = err?.response?.data?.detail || err?.message || 'Registration failed';
+            toast.error(detail);
+        }
+    };
 
     return (
         <div className="flex flex-col items-center justify-center space-y-6">

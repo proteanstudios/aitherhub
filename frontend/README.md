@@ -14,3 +14,20 @@ The React Compiler is not enabled on this template because of its impact on dev 
 ## Expanding the ESLint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+
+---
+
+## Environment configuration
+
+This project supports environment-specific values using Vite's `.env` files. Use:
+
+- `.env.development` for local development (automatically loaded when `vite` runs in development mode)
+- `.env.production` for production builds
+
+Key variables:
+
+- `VITE_API_BASE_URL` — backend API base URL
+- `VITE_API_TIMEOUT` — request timeout in ms
+- `VITE_API_RETRY_ATTEMPTS` — number of retry attempts for requests (if implemented)
+
+Example environment files are provided in the repo: `.env.development` and `.env.production`.

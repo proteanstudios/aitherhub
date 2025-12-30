@@ -7,7 +7,7 @@ from app.models.orm.base import Base, UUIDMixin, TimestampMixin
 class Video(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "videos"
 
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"))
 
     original_filename: Mapped[str | None]
     blob_url: Mapped[str] = mapped_column(Text, nullable=False)

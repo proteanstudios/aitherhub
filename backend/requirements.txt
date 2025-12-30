@@ -1,6 +1,7 @@
 # ---- Core web ----
 fastapi==0.110.0
 uvicorn[standard]==0.29.0
+dependency-injector==4.41.0
 
 # ---- Upload / form ----
 python-multipart==0.0.9
@@ -12,6 +13,7 @@ azure-identity==1.16.0
 
 # ---- Data & config ----
 pydantic==2.6.3
+pydantic[email]==2.6.3
 pydantic-settings==2.2.1
 python-dotenv==1.0.1
 
@@ -25,4 +27,12 @@ tenacity==8.2.3
 
 sqlalchemy>=2.0
 asyncpg>=0.29.0
+psycopg2-binary>=2.9.0
 alembic>=1.12.0
+
+# ---- Password hashing ----
+bcrypt==3.2.2
+passlib[bcrypt]==1.7.4
+
+# ---- JWT ----
+python-jose[cryptography]==3.4.0

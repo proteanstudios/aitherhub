@@ -1,0 +1,8 @@
+export const URL_CONSTANTS = {
+  REGISTER: "/api/v1/auth/register",
+  LOGIN: "/api/v1/auth/login",
+  ME: "/api/v1/auth/me",
+  CHANGE_PASSWORD: "/api/v1/auth/change-password",
+  FORGOT_PASSWORD: "/api/v1/auth/forgot",
+  RESET_PASSWORD: "/api/v1/auth/reset",
+};

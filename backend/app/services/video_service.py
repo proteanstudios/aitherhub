@@ -1,4 +1,4 @@
-from app.repositories.video_repo import create_job
+from app.repository.video_repo import create_job
 from app.services.queue_service import enqueue_job
 
 async def handle_upload(db, blob_url):

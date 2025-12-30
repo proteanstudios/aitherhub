@@ -1,13 +1,51 @@
-from fastapi import FastAPI, UploadFile
-from app.services.storage_service import upload_to_blob
-from app.services.queue_service import enqueue_job
+from fastapi import FastAPI
+from starlette.middleware.cors import CORSMiddleware
 
-app = FastAPI()
+from app.api.v1.routes import routers as v1_routers
+from app.core.config import configs
+from app.core.container import Container
+from app.utils.class_object import singleton
 
-@app.post("/videos/upload")
-async def upload_video(file: UploadFile):
-    blob_url = await upload_to_blob(file)
-    
-    job_id = await enqueue_job(blob_url)
-    
-    return {"job_id": job_id, "blob_url": blob_url}
+
+@singleton
+class AppCreator:
+    def __init__(self):
+        # Init FastAPI
+        self.app = FastAPI(
+            title=configs.PROJECT_NAME,
+            version="0.0.1",
+            openapi_url=f"{configs.API_V1_STR}/openapi.json",
+        )
+
+        # Init DI container & DB
+        self.container = Container()
+        self.container.wire(modules=[__name__])
+        self.db = self.container.db()
+        # self.db.create_database()
+
+        # CORS
+        if configs.BACKEND_CORS_ORIGINS:
+            self.app.add_middleware(
+                CORSMiddleware,
+                allow_origins=[str(origin) for origin in configs.BACKEND_CORS_ORIGINS],
+                allow_credentials=True,
+                allow_methods=["*"],
+                allow_headers=["*"],
+            )
+
+        # Health check
+        @self.app.get("/")
+        async def root():
+            return {"status": "service is working"}
+
+        # API v1 routes
+        self.app.include_router(
+            v1_routers,
+            prefix=configs.API_V1_STR,
+        )
+
+
+app_creator = AppCreator()
+app = app_creator.app
+db = app_creator.db
+container = app_creator.container

@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
 import logo from "../assets/logo/logo.png";
 import write from "../assets/icons/write.png";
 import searchIcon from "../assets/icons/search.png";
@@ -6,147 +7,198 @@ import searchMobile from "../assets/icons/searchmobile.png";
 import textSearch from "../assets/icons/text.png";
 import searchSp from "../assets/icons/searchSp.png";
 import library from "../assets/icons/Library.png";
-// import ChangePasswordModal from "./modals/ChangePasswordModal";
-import ForgotPasswordModal from "./modals/ForgotPasswordModal";
 
+import MyAccount from "../assets/icons/user-profile-icon-df.png";
+import PasswordIcon from "../assets/icons/password-icon.svg";
+import Signout from "../assets/icons/signout-icon-df.png";
+
+import ForgotPasswordModal from "./modals/ForgotPasswordModal";
+import AuthService from "../base/services/userService";
 
 export default function Sidebar({ isOpen, onClose, user }) {
   const sidebarRef = useRef(null);
+  const dropdownRef = useRef(null);
 
-  // ✅ state cho SP input
+  const [openDropdown, setOpenDropdown] = useState(false);
+  const [openForgotPassword, setOpenForgotPassword] = useState(false);
+
+  // ===== SP search =====
   const [searchValue, setSearchValue] = useState("");
   const [isFocus, setIsFocus] = useState(false);
-  // `user` may be passed as a prop from MainLayout; fall back to localStorage if not
-  const effectiveUser = user ?? (() => {
-    try {
-      const s = localStorage.getItem("user");
-      return s ? JSON.parse(s) : { isLoggedIn: false };
-    } catch (e) {
-      return { isLoggedIn: false };
-    }
-  })();
-  // const [openChangePassword, setOpenChangePassword] = useState(false);
-  const [openForgotPassword, setOpenForgotPassword] = useState(false);
   const showPlaceholder = !isFocus && searchValue === "";
+
+  // ===== user fallback =====
+  const effectiveUser =
+    user ??
+    (() => {
+      try {
+        const s = localStorage.getItem("user");
+        return s ? JSON.parse(s) : { isLoggedIn: false };
+      } catch {
+        return { isLoggedIn: false };
+      }
+    })();
+
+  // ===== dropdown click outside =====
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setOpenDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const toggleDropdown = () => {
+    setOpenDropdown((prev) => !prev);
+  };
 
   return (
     <>
-      {/* OVERLAY – chỉ mobile */}
+      {/* OVERLAY – mobile */}
       <div
         onClick={onClose}
-        className={`
-          fixed inset-0 bg-black/40 z-40
-          md:hidden
-          transition-opacity
-          ${isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}
-        `}
+        className={`fixed inset-0 bg-black/40 z-40 md:hidden transition-opacity
+        ${isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
       />
 
       {/* SIDEBAR */}
       <aside
         ref={sidebarRef}
-        className={`
-          fixed md:static top-0 left-0 z-50
-          w-[350px] md:w-[260px]
-          h-screen
-          bg-white p-4
-          overflow-y-auto scrollbar-custom
-          transition-transform duration-300 ease-in-out
-          ${isOpen ? "translate-x-0" : "-translate-x-full"}
-          md:translate-x-0
-        `}
+        className={`fixed md:static top-0 left-0 z-50
+        w-[350px] md:w-[260px] h-screen bg-white p-4
+        overflow-y-auto scrollbar-custom
+        transition-transform duration-300 ease-in-out
+        ${isOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`}
       >
-        {/* ===== PC ONLY ===== */}
-        <div className="hidden md:block mt-[0px] space-y-3">
+        {/* ================= PC ================= */}
+        <div className="hidden md:block space-y-3">
           <img src={logo} alt="logo" className="w-10 h-10" />
-          <div className="flex items-center md:mt-[50px] md:ml-[10px] gap-2 cursor-pointer hover:text-gray-400">
+
+          <div className="flex items-center mt-[50px] ml-[10px] gap-2 cursor-pointer hover:text-gray-400">
             <img src={write} className="w-6 h-6" />
-            <span className="font-semibold leading-[35px]">新しい解析</span>
+            <span className="font-semibold">新しい解析</span>
           </div>
-          <div className="flex items-center md:ml-[10px] gap-2 cursor-pointer hover:text-gray-400">
+
+          <div className="flex items-center ml-[10px] gap-2 cursor-pointer hover:text-gray-400">
             <img src={searchIcon} className="w-4 h-4" />
-            <span className="font-semibold leading-[35px]">チャットを検索</span>
+            <span className="font-semibold">チャットを検索</span>
           </div>
         </div>
 
-        {/* ===== SP ONLY ===== */}
+        {/* ================= SP ================= */}
         <div className="md:hidden mt-[6px]">
           <div className="flex justify-between items-center mb-[20px]">
             <div className="relative w-[270px]">
               <div className="p-[1px] rounded-[5px] bg-gradient-to-b from-[#4500FF] to-[#9B00FF]">
                 <input
-                  type="text"
                   value={searchValue}
                   onChange={(e) => setSearchValue(e.target.value)}
                   onFocus={() => setIsFocus(true)}
                   onBlur={() => setIsFocus(false)}
-                  className="w-full h-[40px] rounded-[5px] bg-white pl-[12px] pr-3 outline-none relative z-10"
+                  className="w-full h-[40px] rounded-[5px] bg-white pl-[12px] pr-3 outline-none"
                 />
               </div>
 
               {showPlaceholder && (
-                <div className="pointer-events-none absolute inset-0 flex items-center gap-[6px] px-[12px] text-gray-400 z-20">
-                  <img src={searchSp} alt="searchSp" className="w-[16px] h-[16px]" />
-                  <img src={textSearch} alt="textSearch" className="h-[14px]" />
+                <div className="pointer-events-none absolute inset-0 flex items-center gap-2 px-3 text-gray-400">
+                  <img src={searchSp} className="w-4 h-4" />
+                  <img src={textSearch} className="h-[14px]" />
                 </div>
               )}
             </div>
 
-            <img src={searchMobile} alt="searchMobile" className="w-[32px] h-[24.24px]" />
+            <img src={searchMobile} className="w-[32px]" />
           </div>
-            <div className="bg-gradient-to-b from-[#4500FF] to-[#9B00FF]">
-              {/* INNER – nền trắng */}
-              <div className="bg-white">
-                <div className="flex items-center mb-[20px] mt-[2px]">
-                  <img src={logo} alt="logo" className="w-10 h-10 ml-[7px]" />
-                  <span className="ml-2 font-cabin font-semibold text-[24px] bg-gradient-to-b from-[#4500FF] to-[#9B00FF] bg-clip-text text-transparent">
-                    Liveboost AI
-                  </span>
-                </div>
 
-                <div className="flex items-center">
-                  <img src={library} alt="library" className="w-[29px] h-[22.53px] ml-[7px]" />
-                  <span
-                    className=" ml-[17px] font-cabin font-semibold text-[24px] bg-gradient-to-b from-[#4500FF] to-[#9B00FF] bg-clip-text text-transparent">
-                    ライブラリ
-                  </span>
-                </div>
+          <div className="bg-gradient-to-b from-[#4500FF] to-[#9B00FF]">
+            <div className="bg-white">
+              <div className="flex items-center mb-5 mt-1">
+                <img src={logo} className="w-10 h-10 ml-2" />
+                <span className="ml-2 font-semibold text-[24px] bg-gradient-to-b from-[#4500FF] to-[#9B00FF] bg-clip-text text-transparent">
+                  Liveboost AI
+                </span>
+              </div>
+
+              <div className="flex items-center">
+                <img src={library} className="w-[29px] h-[22px] ml-2" />
+                <span className="ml-4 font-semibold text-[24px] bg-gradient-to-b from-[#4500FF] to-[#9B00FF] bg-clip-text text-transparent">
+                  ライブラリ
+                </span>
               </div>
             </div>
-        </div>
-        {/* ===== COMMON ===== */}
-        <div className="mt-[20px] space-y-3 text-left">
-          <div className="md:ml-[10px]">
-            <span className="block w-[104px] h-[35px] font-cabin font-semibold text-[16px] leading-[35px] text-[#9E9E9E]">
-              解析履歴
-            </span>
           </div>
+        </div>
+
+        {/* ================= COMMON ================= */}
+        <div className="mt-6 space-y-3">
+          <span className="block ml-2 text-[#9E9E9E] font-semibold">解析履歴</span>
 
           {effectiveUser?.isLoggedIn && (
-            <div className="space-y-1 h-full reactive">
-              <div className="cursor-pointer hover:text-gray-400">
-                <span className="block font-cabin font-semibold text-[16px] leading-[45px] text-black">
-                  動画abcの分析結果
-                </span>
-              </div>
+            <>
+              <span className="block font-semibold hover:text-gray-400 cursor-pointer">
+                動画abcの分析結果
+              </span>
+
+              {/* ===== Email pill (SP) ===== */}
               <div
-                onClick={() => {
-                  // close sidebar (mobile) and open Forgot Password modal
-                  onClose?.();
-                  setOpenForgotPassword(true);
-                }}
-                className="absolute bottom-[25px] ml-[7px] w-[223px] h-[45px] md:hidden rounded-[50px] border border-[#B5B5B5] opacity-100 flex items-center justify-center shadow-[0_2px_4px_rgba(0,0,0,0.3)]"
+                onClick={toggleDropdown}
+                className="absolute bottom-[25px] ml-[7px] w-[223px] h-[45px]
+                md:hidden rounded-[50px] border border-[#B5B5B5]
+                flex items-center justify-center shadow cursor-pointer"
               >
-                <span className="font-cabin font-bold text-[18px] leading-[28px] text-center align-middle text-black">
-                  {effectiveUser?.email}
+                <span className="font-bold text-[18px]">
+                  {effectiveUser.email}
                 </span>
               </div>
-            </div>
+            </>
           )}
         </div>
+
+        {/* ================= DROPDOWN ================= */}
+        {openDropdown && (
+          <ul
+            ref={dropdownRef}
+            className="absolute bottom-[80px] left-[30px] w-[210px]
+            bg-white rounded-[10px] border shadow-lg z-50"
+          >
+            <li className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer">
+              <img src={MyAccount} className="w-4 h-4" />
+              マイアカウント
+            </li>
+
+            <li
+              onClick={() => {
+                setOpenDropdown(false);
+                setOpenForgotPassword(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer"
+            >
+              <img src={PasswordIcon} className="w-4 h-4" />
+              パスワード変更
+            </li>
+
+            <li 
+              onClick={() => {
+                setOpenDropdown(false);
+                AuthService.logout();
+                window.location.reload();
+              }}
+              className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer"
+            >
+              <img src={Signout} className="w-4 h-4" />
+              サインアウト
+            </li>
+          </ul>
+        )}
       </aside>
-        {/* Forgot password modal (opened from mobile email button) */}
-        <ForgotPasswordModal open={openForgotPassword} onClose={() => setOpenForgotPassword(false)} />
+
+      {/* ===== MODAL ===== */}
+      <ForgotPasswordModal
+        open={openForgotPassword}
+        onClose={() => setOpenForgotPassword(false)}
+      />
     </>
   );
 }
