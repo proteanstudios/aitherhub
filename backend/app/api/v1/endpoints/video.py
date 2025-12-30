@@ -1,20 +1,24 @@
-from fastapi import APIRouter, UploadFile
+from fastapi import APIRouter, HTTPException
 
-from app.services.storage_service import upload_to_blob
-from app.services.queue_service import enqueue_job
+from app.schema.video_schema import GenerateUploadURLRequest, GenerateUploadURLResponse
+from app.services.video_service import VideoService
 
 router = APIRouter(
+    prefix="/videos",
     tags=["videos"],
 )
 
+# Initialize service (could be injected via DI container)
+video_service = VideoService()
 
-@router.post("/upload")
-async def upload_video(file: UploadFile):
-    blob_url = await upload_to_blob(file)
-    job_id = await enqueue_job(blob_url)
 
-    return {
-        "job_id": job_id,
-        "blob_url": blob_url,
-    }
-
+@router.post("/generate-upload-url", response_model=GenerateUploadURLResponse)
+async def generate_upload_url(payload: GenerateUploadURLRequest):
+    try:
+        result = await video_service.generate_upload_url(
+            video_id=payload.video_id,
+            filename=payload.filename,
+        )
+        return GenerateUploadURLResponse(**result)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to generate upload URL: {exc}")

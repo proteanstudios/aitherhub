@@ -20,6 +20,8 @@ services:
     ports:
       - "10000:10000"  # Blob service
       - "10001:10001"  # Queue service
+    environment:
+      AZURITE_ENABLE_LOOSE_MODE: "true"
     volumes:
       - azurite_data:/data
     command: "azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --loose --location /data"
@@ -32,8 +34,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-liveboost}
       AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-devstoreaccount1}
       AZURE_QUEUE_NAME: ${AZURE_QUEUE_NAME:-video-jobs}
-      # Cho Azurite local
-      AZURE_STORAGE_CONNECTION_STRING: DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;QueueEndpoint=http://azurite:10001/devstoreaccount1;
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING}
+      AZURITE_EXTERNAL_BLOB_ENDPOINT: ${AZURITE_EXTERNAL_BLOB_ENDPOINT:-http://localhost:10000/devstoreaccount1}
     ports:
       - "8000:8000"
     depends_on:
@@ -43,26 +45,8 @@ services:
         condition: service_started
     volumes:
       - ./backend/app:/app/app
-      - ./backend/migrations:/app/migrations
-      - ./backend/alembic.ini:/app/alembic.ini
-
-  # worker:
-  #   build:
-  #     context: ./worker
-  #     dockerfile: Dockerfile
-  #   environment:
-  #     DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-liveboost}
-  #     AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-devstoreaccount1}
-  #     AZURE_QUEUE_NAME: ${AZURE_QUEUE_NAME:-video-jobs}
-  #     AZURE_STORAGE_CONNECTION_STRING: DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;QueueEndpoint=http://azurite:10001/devstoreaccount1;
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     azurite:
-  #       condition: service_started
-  #   command: ["python", "-m", "controller.main"]
-  #   volumes:
-  #     - ./worker:/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   postgres_data:

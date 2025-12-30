@@ -3,3 +3,14 @@ __pycache__/
 *.pyc
 *.pyo
 note.txt
+
+# Environment files (keep secrets out of git)
+.env
+.env.*
+!/.env.example
+
+# Node
+frontend/node_modules/
+
+# Python
+*.log
