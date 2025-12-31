@@ -1,4 +1,3 @@
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
@@ -6,8 +5,6 @@ from app.api.v1.routes import routers as v1_routers
 from app.core.config import configs
 from app.core.container import Container
 from app.utils.class_object import singleton
-
-load_dotenv()
 
 @singleton
 class AppCreator:
