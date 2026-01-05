@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Build ONLY backend folder
+
       - name: Create venv and install dependencies (backend only)
         working-directory: backend
         run: |
@@ -46,6 +46,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: python-app
+       
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
@@ -53,4 +54,4 @@ jobs:
           app-name: 'fast-api-kyogoku'
           slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_CADC6849BE114E58AD1CB2C9281CB379 }}
-          package: backend
+          package: python-app/backend
