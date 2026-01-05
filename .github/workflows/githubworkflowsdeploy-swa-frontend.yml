@@ -18,7 +18,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 24
 
       - name: Install deps
         working-directory: frontend
@@ -36,3 +36,4 @@ jobs:
           action: upload
           app_location: "frontend"
           output_location: "dist"
+
