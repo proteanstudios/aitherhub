@@ -17,14 +17,14 @@ def env(key, default=None):
     return os.getenv(key) or config(key, default=default)
 
 # OUT_DIR = "frames/1_HairDryer"
-# VIDEO_PATH = "uploadedvideo/1_HairDryer.mp4"
+VIDEO_PATH = "uploadedvideo/1_HairDryer.mp4"
 
 # OUT_DIR = "frames/2_Socks"
 # VIDEO_PATH = "uploadedvideo/2_Socks.mp4"
 
 # VIDEO_PATH = "uploadedvideo/3_BeautyCream_Puff.mp4"
 # VIDEO_PATH = "uploadedvideo/4_UV_Stick_StemCell_Serum.mp4"
-VIDEO_PATH = "uploadedvideo/RPReplay_Final1763567211.mp4"
+# VIDEO_PATH = "uploadedvideo/RPReplay_Final1763567211.mp4"
 
 OUT_DIR = None   # sẽ set sau STEP 0
 
@@ -36,7 +36,7 @@ SLEEP_BETWEEN_REQUESTS = 25
 
 AUDIO_OUT_ROOT = "audio"
 AUDIO_TEXT_ROOT = "audio_text"
-FFMPEG_BIN = env("FFMPEG_PATH", "ffmpeg")
+FFMPEG_BIN = env("FFMPEG_PATH", "/opt/homebrew/bin/ffmpeg")  # Mac path
 CHUNK_SECONDS = 300
 
 WHISPER_ENDPOINT = env("WHISPER_ENDPOINT")

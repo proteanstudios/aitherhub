@@ -17,8 +17,8 @@ class Configs(BaseSettings):
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "fca-api"
     ENV_DATABASE_MAPPER: Dict[str, str] = {
-        "prod": "fca",
-        "stage": "stage-fca",
+        "prod": "liveboost",
+        "stage": "liveboost",
         "dev": "dev-fca",
         "test": "test-fca",
     }

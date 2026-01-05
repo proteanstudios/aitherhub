@@ -29,7 +29,7 @@ from report_pipeline import (
     save_reports,
 )
 
-VIDEO_PATH = "uploadedvideo/RPReplay_Final1763567211.mp4"
+VIDEO_PATH = "uploadedvideo/1_HairDryer.mp4"
 FRAMES_ROOT = "frames"
 
 
