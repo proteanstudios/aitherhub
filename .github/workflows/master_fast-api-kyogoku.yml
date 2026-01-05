@@ -54,4 +54,5 @@ jobs:
           app-name: 'fast-api-kyogoku'
           slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_CADC6849BE114E58AD1CB2C9281CB379 }}
-          package: python-app/backend
+          package: backend
+
