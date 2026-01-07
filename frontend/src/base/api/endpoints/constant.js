@@ -6,4 +6,5 @@ export const URL_CONSTANTS = {
   FORGOT_PASSWORD: "/api/v1/auth/forgot",
   RESET_PASSWORD: "/api/v1/auth/reset",
   GENERATE_UPLOAD_URL: "/api/v1/videos/generate-upload-url",
+  UPLOAD_COMPLETE: "/api/v1/videos/upload-complete",
 };

@@ -16,14 +16,19 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
       // Login and get JWT tokens (tokens are automatically stored by AuthService)
       await AuthService.login(email, password);
       
-      // Get user info from JWT token
+      // Get user info from /auth/me
       const userInfo = await AuthService.getCurrentUser();
 
-      // Store minimal user info in localStorage for quick display
-      // Full user info can be retrieved from JWT token via /me endpoint
+      // userInfo shape: { success: true, data: { id, email, ... } }
+      const me = userInfo?.data || {};
+
+      // Store user info in localStorage so FE can read id/email immediately
       const userData = {
         isLoggedIn: true,
-        email: userInfo?.email || email,
+        id: me.id,
+        email: me.email || email,
+        name: me.name,
+        role: me.role,
       };
       localStorage.setItem("user", JSON.stringify(userData));
 

@@ -9,11 +9,13 @@ class UploadService extends BaseApiService {
 
   /**
    * Generate SAS upload URL from backend
+   * @param {string} email - User email
    * @param {string} filename - File name to upload
    * @returns {Promise<{video_id, upload_url, blob_url, expires_at}>}
    */
-  async generateUploadUrl(filename) {
+  async generateUploadUrl(email, filename) {
     return await this.post(URL_CONSTANTS.GENERATE_UPLOAD_URL, {
+      email,
       filename,
     });
   }
@@ -39,15 +41,34 @@ class UploadService extends BaseApiService {
   }
 
   /**
-   * Complete upload workflow: generate URL + upload to Azure
+   * Notify backend that upload is complete
+   * @param {string} email - User email
+   * @param {string} video_id - Video ID
+   * @param {string} filename - File name
+   * @returns {Promise<{video_id, status, message}>}
+   */
+  async uploadComplete(email, video_id, filename) {
+    return await this.post(URL_CONSTANTS.UPLOAD_COMPLETE, {
+      email,
+      video_id,
+      filename,
+    });
+  }
+
+  /**
+   * Complete upload workflow: generate URL + upload to Azure + notify backend
    * @param {File} file - File to upload
+   * @param {string} email - User email
    * @param {Function} onProgress - Callback for progress updates
    * @returns {Promise<string>} - video_id
    */
-  async uploadFile(file, onProgress) {
-    const { video_id, upload_url } = await this.generateUploadUrl(file.name);
+  async uploadFile(file, email, onProgress) {
+    const { video_id, upload_url } = await this.generateUploadUrl(email, file.name);
 
     await this.uploadToAzure(file, upload_url, onProgress);
+
+    // Notify backend that upload is complete
+    await this.uploadComplete(email, video_id, file.name);
 
     return video_id;
   }

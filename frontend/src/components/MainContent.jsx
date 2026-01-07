@@ -1,17 +1,40 @@
 import { Header, Body, Footer } from "./main";
 import uploadIcon from "../assets/upload.png";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import UploadService from "../base/services/uploadService";
 import { toast } from "react-toastify";
+import LoginModal from "./modals/LoginModal";
 
 export default function MainContent({ children, onOpenSidebar, user, setUser }) {
+  const isLoggedIn = Boolean(
+    user && (
+      user.token ||
+      user.accessToken ||
+      user.id ||
+      user.email ||
+      user.username ||
+      user.isAuthenticated ||
+      user.isLoggedIn
+    )
+  );
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("");
+  const [showLoginModal, setShowLoginModal] = useState(false);
+
+  useEffect(() => {
+    console.log("[MainContent] user", user);
+    console.log("[MainContent] isLoggedIn", isLoggedIn);
+  }, [user, isLoggedIn]);
 
   const handleFileSelect = (e) => {
+    if (!isLoggedIn) {
+      setShowLoginModal(true);
+      return;
+    }
+
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -27,6 +50,11 @@ export default function MainContent({ children, onOpenSidebar, user, setUser }) 
   };
 
   const handleUpload = async () => {
+    if (!isLoggedIn) {
+      setShowLoginModal(true);
+      return;
+    }
+
     if (!selectedFile) {
       toast.error("Please select a file first");
       return;
@@ -37,7 +65,7 @@ export default function MainContent({ children, onOpenSidebar, user, setUser }) 
     setProgress(0);
 
     try {
-      const video_id = await UploadService.uploadFile(selectedFile, (percentage) => {
+      const video_id = await UploadService.uploadFile(selectedFile, user.email, (percentage) => {
         setProgress(percentage);
       });
 
@@ -71,6 +99,11 @@ export default function MainContent({ children, onOpenSidebar, user, setUser }) 
     e.preventDefault();
     e.stopPropagation();
     
+    if (!isLoggedIn) {
+      setShowLoginModal(true);
+      return;
+    }
+
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       const file = files[0];
@@ -87,6 +120,12 @@ export default function MainContent({ children, onOpenSidebar, user, setUser }) 
   return (
     <div className="flex flex-col h-screen">
       <Header onOpenSidebar={onOpenSidebar} user={user} setUser={setUser} />
+
+      <LoginModal 
+        open={showLoginModal} 
+        onClose={() => setShowLoginModal(false)}
+        onSwitchToRegister={() => setShowLoginModal(false)}
+      />
 
       <Body>
         {children ?? (
@@ -152,11 +191,30 @@ export default function MainContent({ children, onOpenSidebar, user, setUser }) 
                       <h5 className="hidden md:inline text-[20px] leading-[35px] font-semibold font-cabin text-center h-[35px]">
                         動画ファイルをドラッグ＆ドロップ
                       </h5>
-                      <label className="w-[143px] h-[41px] flex items-center justify-center bg-white text-[#7D01FF] border border-[#7D01FF] rounded-[30px] leading-[28px] cursor-pointer font-semibold">
+                      <label
+                        className="w-[143px] h-[41px] flex items-center justify-center bg-white text-[#7D01FF] border border-[#7D01FF] rounded-[30px] leading-[28px] cursor-pointer font-semibold"
+                        onMouseDown={(e) => {
+                          if (!isLoggedIn) {
+                            e.preventDefault();
+                            setShowLoginModal(true);
+                          }
+                        }}
+                      >
                         ファイルを選択
                         <input
                           type="file"
                           accept="video/*"
+                          disabled={!isLoggedIn}
+                          onMouseDown={(e) => {
+                            if (!isLoggedIn) {
+                              e.preventDefault();
+                            }
+                          }}
+                          onClick={(e) => {
+                            if (!isLoggedIn) {
+                              e.preventDefault();
+                            }
+                          }}
                           onChange={handleFileSelect}
                           className="hidden"
                         />

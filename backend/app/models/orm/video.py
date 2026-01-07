@@ -10,10 +10,5 @@ class Video(Base, UUIDMixin, TimestampMixin):
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"))
 
     original_filename: Mapped[str | None]
-    blob_url: Mapped[str] = mapped_column(Text, nullable=False)
-    file_size: Mapped[int | None]
-    duration_seconds: Mapped[int | None]
-    fps: Mapped[int | None]
-    resolution: Mapped[str | None]
 
     status: Mapped[str]
