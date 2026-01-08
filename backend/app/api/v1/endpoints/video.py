@@ -57,8 +57,8 @@ async def upload_complete(
 ):
     """Handle upload completion - save video info to database"""
     try:
-        # Verify email matches current user
-        if current_user.email != payload.email:
+        # Verify email matches current user (current_user is a dict)
+        if current_user["email"] != payload.email:
             raise HTTPException(status_code=403, detail="Email does not match current user")
         
         # Initialize video service with repository
@@ -66,7 +66,7 @@ async def upload_complete(
         service = VideoService(video_repository=video_repo)
         
         result = await service.handle_upload_complete(
-            user_id=current_user.id,
+            user_id=current_user["id"],
             video_id=payload.video_id,
             original_filename=payload.filename,
         )

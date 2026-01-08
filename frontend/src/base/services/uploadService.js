@@ -1,6 +1,7 @@
 import BaseApiService from '../api/BaseApiService';
 import { URL_CONSTANTS } from '../api/endpoints/constant';
 import { BlockBlobClient } from "@azure/storage-blob";
+import TokenManager from '../utils/tokenManager';
 
 class UploadService extends BaseApiService {
   constructor() {
@@ -48,6 +49,16 @@ class UploadService extends BaseApiService {
    * @returns {Promise<{video_id, status, message}>}
    */
   async uploadComplete(email, video_id, filename) {
+    // Verify token is valid before making authenticated request
+    const token = TokenManager.getToken();
+    if (!token) {
+      throw new Error('Authentication token not found. Please log in again.');
+    }
+    
+    if (TokenManager.isTokenExpired(token)) {
+      throw new Error('Your session has expired. Please log in again.');
+    }
+
     return await this.post(URL_CONSTANTS.UPLOAD_COMPLETE, {
       email,
       video_id,
