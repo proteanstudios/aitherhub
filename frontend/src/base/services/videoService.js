@@ -18,9 +18,7 @@ class VideoService extends BaseApiService {
       }
       return [];
     } catch (error) {
-      console.error("Error fetching videos:", error);
       if (error.response?.status === 404 || error.response?.status === 501) {
-        console.warn("Video API endpoint not implemented yet, using mock data");
         return [
           {
             "id": "1",
@@ -48,9 +46,7 @@ class VideoService extends BaseApiService {
       }
       return response;
     } catch (error) {
-      console.error("Error fetching video:", error);
       if (error.response?.status === 404 || error.response?.status === 501) {
-        console.warn("Video detail API endpoint not implemented yet, using mock data");
         const mockVideoDetails = {
           "1": {
             "id": "1",
