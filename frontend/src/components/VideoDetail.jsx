@@ -30,15 +30,7 @@ export default function VideoDetail({ video }) {
           description: data.description || video.description || {},
         });
       } catch (err) {
-        console.error("Error fetching video details:", err);
         setError("動画の詳細を取得できませんでした");
-        setVideoData({
-          id: video.id,
-          title: video.original_filename || `Video ${video.id}`,
-          status: video.status || "processing",
-          uploadedAt: video.created_at || new Date().toISOString(),
-          description: video.description || {},
-        });
       } finally {
         setLoading(false);
       }
