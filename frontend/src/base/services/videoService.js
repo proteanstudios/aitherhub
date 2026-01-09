@@ -8,10 +8,7 @@ class VideoService extends BaseApiService {
 
   async getVideosByUser(userId) {
     try {
-      // TODO: Replace with actual API endpoint when backend is ready
-      // Expected endpoint: GET /api/v1/videos/user/{userId} or GET /api/v1/videos?user_id={userId}
       const response = await this.get(`/api/v1/videos/user/${userId}`);
-      // Handle different response formats
       if (Array.isArray(response)) {
         return response;
       } else if (response?.data && Array.isArray(response.data)) {
@@ -22,8 +19,6 @@ class VideoService extends BaseApiService {
       return [];
     } catch (error) {
       console.error("Error fetching videos:", error);
-      // Return mock data for development when API is not ready
-      // Remove this fallback when backend endpoint is implemented
       if (error.response?.status === 404 || error.response?.status === 501) {
         console.warn("Video API endpoint not implemented yet, using mock data");
         return [
@@ -48,18 +43,14 @@ class VideoService extends BaseApiService {
   async getVideoById(videoId) {
     try {
       const response = await this.get(`/api/v1/videos/${videoId}`);
-      // Handle different response formats
       if (response?.data) {
         return response.data;
       }
       return response;
     } catch (error) {
       console.error("Error fetching video:", error);
-      // Return mock data for development when API is not ready
-      // Remove this fallback when backend endpoint is implemented
       if (error.response?.status === 404 || error.response?.status === 501) {
         console.warn("Video detail API endpoint not implemented yet, using mock data");
-        // Mock data chi tiết với description đầy đủ
         const mockVideoDetails = {
           "1": {
             "id": "1",
