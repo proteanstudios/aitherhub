@@ -7,4 +7,6 @@ export const URL_CONSTANTS = {
   RESET_PASSWORD: "/api/v1/auth/reset",
   GENERATE_UPLOAD_URL: "/api/v1/videos/generate-upload-url",
   UPLOAD_COMPLETE: "/api/v1/videos/upload-complete",
+  GET_USER_VIDEOS: "/api/v1/videos/user",
+  GET_VIDEO: "/api/v1/videos",
 };

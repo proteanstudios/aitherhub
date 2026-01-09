@@ -232,7 +232,9 @@ export default function MainContent({ children, onOpenSidebar, user, setUser }) 
         )}
       </Body>
 
-      <Footer />
+      <div className={children ? "md:hidden" : ""}>
+        <Footer />
+      </div>
     </div>
   );
 }
