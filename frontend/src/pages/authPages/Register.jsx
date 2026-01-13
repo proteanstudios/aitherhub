@@ -93,7 +93,7 @@ export default function Register({ onSuccess }) {
                 />
             </div>
 
-            <div className="flex flex-col items-start w-full space-y-3 md:w-[340px]">
+            <div className="flex flex-col items-start w-full space-y-3 md:w-[350px]">
                 <div className="text-sm text-center text-gray-600">
                     <span className="text-[#4500FF] underline cursor-pointer">
                         利用規約
