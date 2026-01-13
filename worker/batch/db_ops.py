@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 import uuid
 from sqlalchemy import text
+import json
 
 # Load environment variables
 load_dotenv()
@@ -229,7 +230,7 @@ async def upsert_phase_group(group_id: int, centroid: list[float], size: int):
     async with AsyncSessionLocal() as session:
         await session.execute(sql, {
             "id": group_id,
-            "centroid": centroid,
+            "centroid": json.dumps(centroid),
             "size": size,
         })
         await session.commit()

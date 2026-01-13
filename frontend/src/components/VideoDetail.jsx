@@ -20,15 +20,16 @@ export default function VideoDetail({ video }) {
       try {
         const response = await VideoService.getVideoById(video.id);
         
-        const data = response?.data || response || {};
+        const data = response || response || {};
         
         setVideoData({
           id: data.id || video.id,
           title: data.original_filename || video.original_filename || `Video ${video.id}`,
           status: data.status || video.status || "processing",
           uploadedAt: data.created_at || video.created_at || new Date().toISOString(),
-          description: data.description || video.description || {},
+          reports_1: data.reports_1 || video.description || {},
         });
+        
       } catch (err) {
         setError("動画の詳細を取得できませんでした");
       } finally {
@@ -92,12 +93,36 @@ export default function VideoDetail({ video }) {
           </div>
 
           <div className="mt-4 font-semibold">
-            <div className="text-[18px] leading-[35px] tracking-[0]">
-              {videoData?.description?.title1 || video.description?.title1}
-            </div>
-            <div className="text-[18px] leading-[35px] tracking-[0]">
-              {videoData?.description?.content1 || video.description?.content1}
-            </div>
+            {videoData?.reports_1 && videoData.reports_1.length > 0 ? (
+              <div className="flex flex-col gap-3">
+                {videoData.reports_1.map((it) => (
+                  <div
+                    key={it.phase_index}
+                    className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-4 items-start p-3 bg-white/5 rounded-md"
+                  >
+                    <div className="text-sm text-gray-400 font-mono whitespace-nowrap">
+                      {it.time_start != null || it.time_end != null ? (
+                        <>
+                          {it.time_start != null ? it.time_start : ""}
+                          {" : "}
+                          {it.time_end != null ? it.time_end : ""}
+                        </>
+                      ) : (
+                        <span className="text-gray-500">-</span>
+                      )}
+                    </div>
+
+                    <div className="text-sm text-left text-gray-100 whitespace-pre-wrap">
+                      {it.insight || "(No insight)"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-[18px] leading-[35px] tracking-[0] text-gray-500">
+                解析結果はまだありません
+              </div>
+            )}
           </div>
         </div>
 

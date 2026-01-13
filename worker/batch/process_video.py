@@ -60,7 +60,7 @@ from video_status import VideoStatus
 # Artifact layout (PERSISTENT)
 # =========================
 
-ART_ROOT = "Z:/work"
+ART_ROOT = os.path.expanduser("~/kyogokuvideos/work")
 
 def video_root(video_id: str):
     return os.path.join(ART_ROOT, video_id)
@@ -267,8 +267,12 @@ def main():
             )
         else:
             print("[SKIP] STEP 2")
-            print("[SKIP] STEP 2 (metrics already persisted in DB)")
-            phase_stats = None
+            print("[SKIP] STEP 2 – but recompute phase_stats")
+            phase_stats = extract_phase_stats(
+                keyframes=keyframes,
+                total_frames=total_frames,
+                frame_dir=frame_dir,
+            )
 
         # =========================
         # STEP 3 – AUDIO → TEXT
@@ -299,16 +303,19 @@ def main():
                 rep_frames=rep_frames,
             )
 
-            print("[CLEANUP] Remove frames")
-            shutil.rmtree(frames_dir(video_id), ignore_errors=True)
+            # print("[CLEANUP] Remove frames")
+            # shutil.rmtree(frames_dir(video_id), ignore_errors=True)
         else:
             # print("[SKIP] STEP 4")
             # keyframe_captions = caption_keyframes(
             #     frame_dir=frame_dir,
             #     rep_frames=rep_frames,
             # )
-            print("[SKIP] STEP 4 (captions already used in STEP 5)")
-            keyframe_captions = None
+            print("[SKIP] STEP 4 – but reload captions")
+            keyframe_captions = caption_keyframes(
+                frame_dir=frame_dir,
+                rep_frames=rep_frames,
+            )
 
         # =========================
         # STEP 5 – BUILD PHASE UNITS (DB CHECKPOINT)
@@ -328,6 +335,10 @@ def main():
             )
 
             print("[CLEANUP] Remove step1 cache + audio artifacts")
+
+            print("[CLEANUP] Remove frames")
+            shutil.rmtree(frames_dir(video_id), ignore_errors=True)
+
             shutil.rmtree(cache_dir(video_id), ignore_errors=True)
             shutil.rmtree(audio_text_dir(video_id), ignore_errors=True)
             shutil.rmtree(audio_dir(video_id), ignore_errors=True)
