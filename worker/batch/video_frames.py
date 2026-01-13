@@ -17,7 +17,8 @@ def extract_frames(
     STEP 0 – Extract frames from video
     """
     video_name = os.path.splitext(os.path.basename(video_path))[0]
-    out_dir = os.path.join(frames_root, video_name)
+    # out_dir = os.path.join(frames_root, video_name)
+    out_dir = os.path.join(frames_root, "frames")
     os.makedirs(out_dir, exist_ok=True)
 
     cap = cv2.VideoCapture(video_path)
@@ -224,6 +225,40 @@ def apply_max_phase(indices, total_frames, max_len=150):
 
     return sorted(list(set(result)))
 
+def pick_representative_frames(model, phases, total_frames, frame_dir):
+    files = sorted(os.listdir(frame_dir))
+    reps = []
+
+    extended = [0] + phases + [total_frames - 1]
+
+    for i in range(1, len(extended)):
+        start = extended[i - 1]
+        end = extended[i]
+
+        best_frame = start
+        best_score = 0
+
+        for f in range(start, end):
+            img_path = os.path.join(frame_dir, files[f])
+            img = cv2.imread(img_path)
+
+            result = model(img)[0]
+
+            score = 0
+            for box in result.boxes:
+                conf = float(box.conf)
+                x1, y1, x2, y2 = box.xyxy[0]
+                area = (x2 - x1) * (y2 - y1)
+                score += conf * area
+
+            if score > best_score:
+                best_score = score
+                best_frame = f
+
+        reps.append(best_frame)
+
+    return reps
+
 
 # ---------- MAIN STEP 1 ENTRY ----------
 
@@ -239,7 +274,10 @@ def detect_phases(frame_dir: str, model):
     filtered = filter_min_phase(merged, total_frames, min_len=25)
     filtered = apply_max_phase(filtered, total_frames, max_len=150)
 
-    keyframes = filtered.copy()
-    rep_frames = filtered.copy()
+    # keyframes = filtered.copy()
+    # rep_frames = filtered.copy()
 
+    # return keyframes, rep_frames, total_frames
+    keyframes = filtered.copy()
+    rep_frames = pick_representative_frames(model, keyframes, total_frames, frame_dir)
     return keyframes, rep_frames, total_frames

@@ -32,13 +32,38 @@ SLEEP_BETWEEN_REQUESTS = 25
 # STEP 3.1 – EXTRACT AUDIO
 # =========================
 
-def extract_audio_chunks(video_path: str) -> str:
+# def extract_audio_chunks(video_path: str) -> str:
+#     """
+#     Split video audio into chunks using ffmpeg.
+#     Logic giữ nguyên demo_extract_frames.py
+#     """
+#     video_name = os.path.splitext(os.path.basename(video_path))[0]
+#     out_dir = os.path.join(AUDIO_OUT_ROOT, video_name)
+#     os.makedirs(out_dir, exist_ok=True)
+
+#     chunk_pattern = os.path.join(out_dir, "chunk_%03d.wav")
+
+#     subprocess.run(
+#         [
+#             FFMPEG_BIN, "-y",
+#             "-i", video_path,
+#             "-f", "segment",
+#             "-segment_time", str(CHUNK_SECONDS),
+#             "-ar", "16000",
+#             "-ac", "1",
+#             chunk_pattern
+#         ],
+#         stdout=subprocess.DEVNULL,
+#         stderr=subprocess.DEVNULL
+#     )
+
+#     return out_dir
+
+def extract_audio_chunks(video_path: str, out_dir: str) -> str:
     """
-    Split video audio into chunks using ffmpeg.
-    Logic giữ nguyên demo_extract_frames.py
+    Extract audio chunks into out_dir.
+    out_dir should be: Z:\\work\\<video_id>\\audio
     """
-    video_name = os.path.splitext(os.path.basename(video_path))[0]
-    out_dir = os.path.join(AUDIO_OUT_ROOT, video_name)
     os.makedirs(out_dir, exist_ok=True)
 
     chunk_pattern = os.path.join(out_dir, "chunk_%03d.wav")
@@ -60,18 +85,19 @@ def extract_audio_chunks(video_path: str) -> str:
     return out_dir
 
 
+
 # =========================
 # STEP 3.2 – TRANSCRIBE
 # =========================
 
-def transcribe_audio_chunks(audio_dir: str):
-    """
-    Transcribe audio chunks using Azure Whisper.
-    Logic = 100% code cũ.
-    """
-    video_name = os.path.basename(audio_dir)
-    text_dir = os.path.join(AUDIO_TEXT_ROOT, video_name)
+# def transcribe_audio_chunks(audio_dir: str):
+
+def transcribe_audio_chunks(audio_dir: str, text_dir: str):
     os.makedirs(text_dir, exist_ok=True)
+
+    # video_name = os.path.basename(audio_dir)
+    # text_dir = os.path.join(AUDIO_TEXT_ROOT, video_name)
+    # os.makedirs(text_dir, exist_ok=True)
 
     files = sorted([
         f for f in os.listdir(audio_dir)

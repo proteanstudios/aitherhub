@@ -19,6 +19,9 @@ note.txt
 **/ffmpeg
 **/report
 
+**/process_video.py
+
+
 # Environment files (keep secrets out of git)
 .env
 .env.*
