@@ -25,7 +25,7 @@ WHISPER_ENDPOINT = env("WHISPER_ENDPOINT")
 AZURE_KEY = env("AZURE_OPENAI_KEY")
 
 MAX_RETRY = 10
-SLEEP_BETWEEN_REQUESTS = 25
+SLEEP_BETWEEN_REQUESTS = 2
 
 
 # =========================
@@ -116,19 +116,44 @@ def transcribe_audio_chunks(audio_dir: str, text_dir: str):
             with open(wav_path, "rb") as audio_file:
                 audio_data = audio_file.read()
 
-            response = requests.post(
-                WHISPER_ENDPOINT,
-                headers={"api-key": AZURE_KEY},
-                files={
-                    "file": (f, audio_data, "audio/wav"),
-                    "response_format": (None, "verbose_json"),
-                    "timestamp_granularities[]": (None, "word"),
-                    "timestamp_granularities[]": (None, "segment"),
-                    "temperature": (None, "0"),
-                    "task": (None, "transcribe"),
-                    "language": (None, "ja"),
-                }
-            )
+            # response = requests.post(
+            #     WHISPER_ENDPOINT,
+            #     headers={"api-key": AZURE_KEY},
+            #     files={
+            #         "file": (f, audio_data, "audio/wav"),
+            #         "response_format": (None, "verbose_json"),
+            #         "timestamp_granularities[]": (None, "word"),
+            #         "timestamp_granularities[]": (None, "segment"),
+            #         "temperature": (None, "0"),
+            #         "task": (None, "transcribe"),
+            #         "language": (None, "ja"),
+            #     }
+            # )
+
+            print(f"[WHISPER] Sending {f}, attempt {attempt}/{MAX_RETRY}")
+            t0 = time.time()
+
+            try:
+                response = requests.post(
+                    WHISPER_ENDPOINT,
+                    headers={"api-key": AZURE_KEY},
+                    files={
+                        "file": (f, audio_data, "audio/wav"),
+                        "response_format": (None, "verbose_json"),
+                        "timestamp_granularities[]": (None, "word"),
+                        "timestamp_granularities[]": (None, "segment"),
+                        "temperature": (None, "0"),
+                        "task": (None, "transcribe"),
+                        "language": (None, "ja"),
+                    },
+                    timeout=120,   # <<< QUAN TRỌNG: chống treo vô hạn
+                )
+                print(f"[WHISPER] Done {f} in {time.time() - t0:.1f}s status={response.status_code}")
+
+            except Exception as e:
+                print(f"[WHISPER][ERROR] {f} failed after {time.time() - t0:.1f}s: {e}")
+                time.sleep(5)
+                continue
 
             # SUCCESS
             if response.status_code == 200:

@@ -51,7 +51,8 @@ from db_ops import (
     insert_video_insight_sync,
     update_video_status_sync,
     get_video_status_sync,
-    load_video_phases_sync
+    load_video_phases_sync,
+    update_video_phase_description_sync
 )
 
 from video_status import VideoStatus
@@ -60,7 +61,7 @@ from video_status import VideoStatus
 # Artifact layout (PERSISTENT)
 # =========================
 
-ART_ROOT = "Z:/work"
+ART_ROOT = "output"
 
 def video_root(video_id: str):
     return os.path.join(ART_ROOT, video_id)
@@ -202,11 +203,28 @@ def main():
     try:
         video_path, video_id = _resolve_inputs(args)
 
-        _ensure_dir(video_root(video_id))
+        # _ensure_dir(video_root(video_id))
+
+        # current_status = get_video_status_sync(video_id)
+        # start_step = status_to_step_index(current_status)
+        # print(f"[RESUME] current_status={current_status}, start_step={start_step}")
 
         current_status = get_video_status_sync(video_id)
-        start_step = status_to_step_index(current_status)
-        print(f"[RESUME] current_status={current_status}, start_step={start_step}")
+        raw_start_step = status_to_step_index(current_status)
+
+        # Chỉ cho resume nếu >= STEP 7
+        if raw_start_step >= 7:
+            start_step = raw_start_step
+            print(f"[RESUME] resume from step {start_step} (status={current_status})")
+        else:
+            start_step = 0
+            print(f"[RESUME] force restart from STEP 0 (status={current_status})")
+
+            if os.path.exists(ART_ROOT):
+                print("[CLEAN] Remove old artifact folder")
+                # shutil.rmtree(video_root(video_id), ignore_errors=True)
+                shutil.rmtree(ART_ROOT, ignore_errors=True)
+                os.makedirs(ART_ROOT, exist_ok=True)
 
         # =========================
         # STEP 0 – EXTRACT FRAMES
@@ -239,7 +257,7 @@ def main():
                 total_frames = cache["total_frames"]
             else:
                 print("=== STEP 1 – PHASE DETECTION (YOLO) ===")
-                model = YOLO("yolov8s.pt", verbose=False)
+                model = YOLO("yolov8n.pt", verbose=False)
                 keyframes, rep_frames, total_frames = detect_phases(
                     frame_dir=frame_dir,
                     model=model,
@@ -266,9 +284,12 @@ def main():
                 frame_dir=frame_dir,
             )
         else:
-            print("[SKIP] STEP 2")
-            print("[SKIP] STEP 2 (metrics already persisted in DB)")
-            phase_stats = None
+            print("[SKIP] STEP 2 – but recompute phase_stats")
+            phase_stats = extract_phase_stats(
+                keyframes=keyframes,
+                total_frames=total_frames,
+                frame_dir=frame_dir,
+            )
 
         # =========================
         # STEP 3 – AUDIO → TEXT
@@ -299,16 +320,16 @@ def main():
                 rep_frames=rep_frames,
             )
 
-            print("[CLEANUP] Remove frames")
-            shutil.rmtree(frames_dir(video_id), ignore_errors=True)
+            # print("[CLEANUP] Remove frames")
+            # shutil.rmtree(frames_dir(video_id), ignore_errors=True)
         else:
-            # print("[SKIP] STEP 4")
-            # keyframe_captions = caption_keyframes(
-            #     frame_dir=frame_dir,
-            #     rep_frames=rep_frames,
-            # )
-            print("[SKIP] STEP 4 (captions already used in STEP 5)")
-            keyframe_captions = None
+            print("[SKIP] STEP 4")
+            keyframe_captions = caption_keyframes(
+                frame_dir=frame_dir,
+                rep_frames=rep_frames,
+            )
+            # print("[SKIP] STEP 4 (captions already used in STEP 5)")
+            # keyframe_captions = None
 
         # =========================
         # STEP 5 – BUILD PHASE UNITS (DB CHECKPOINT)
@@ -328,9 +349,12 @@ def main():
             )
 
             print("[CLEANUP] Remove step1 cache + audio artifacts")
-            shutil.rmtree(cache_dir(video_id), ignore_errors=True)
-            shutil.rmtree(audio_text_dir(video_id), ignore_errors=True)
-            shutil.rmtree(audio_dir(video_id), ignore_errors=True)
+
+            print("[CLEANUP] Remove frames")
+            # shutil.rmtree(frames_dir(video_id), ignore_errors=True)
+            # shutil.rmtree(cache_dir(video_id), ignore_errors=True)
+            # shutil.rmtree(audio_text_dir(video_id), ignore_errors=True)
+            # shutil.rmtree(audio_dir(video_id), ignore_errors=True)
         else:
             print("[SKIP] STEP 5")
             # raise RuntimeError("Resume from STEP >=5 should load phase_units from DB (not implemented yet).")
@@ -339,10 +363,26 @@ def main():
         # =========================
         # STEP 6 – PHASE DESCRIPTION
         # =========================
+        # if start_step <= 6:
+        #     update_video_status_sync(video_id, VideoStatus.STEP_6_BUILD_PHASE_DESCRIPTION)
+        #     print("=== STEP 6 – PHASE DESCRIPTION ===")
+        #     phase_units = build_phase_descriptions(phase_units)
+
+
+
         if start_step <= 6:
             update_video_status_sync(video_id, VideoStatus.STEP_6_BUILD_PHASE_DESCRIPTION)
             print("=== STEP 6 – PHASE DESCRIPTION ===")
             phase_units = build_phase_descriptions(phase_units)
+
+            print("[DB] Persist phase_description to video_phases")
+            for p in phase_units:
+                if p.get("phase_description"):
+                    update_video_phase_description_sync(
+                        video_id=video_id,
+                        phase_index=p["phase_index"],
+                        phase_description=p["phase_description"],
+            )
         else:
             print("[SKIP] STEP 6")
 

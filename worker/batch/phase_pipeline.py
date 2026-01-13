@@ -77,6 +77,51 @@ def encode_image(path):
         return base64.b64encode(f.read()).decode("utf-8")
 
 
+# def gpt_read_header(image_path):
+#     """
+#     STEP 2 – GPT Vision header reader
+
+#     Read ONLY viewer_count and like_count from
+#     TikTok livestream UI, strictly by screen position.
+#     """
+#     img_b64 = encode_image(image_path)
+
+#     prompt = """
+# Phân tích ảnh livestream TikTok và trích xuất CHỈ 2 giá trị sau, dựa 100% vào VỊ TRÍ:
+
+# viewer_count:
+# - Số ở GÓC TRÊN BÊN PHẢI
+# - Nằm cạnh cụm avatar tròn
+# - Không nhầm với số gift / rank
+
+# like_count:
+# - Nằm trong profile card ở GÓC TRÊN BÊN TRÁI
+# - Ngay dưới tên chủ phòng
+# - Có thể có K / M
+
+# Nếu không thấy đúng vị trí → trả null.
+
+# Chỉ trả JSON:
+# {"viewer_count": number | null, "like_count": number | null}
+# """.strip()
+
+#     resp = client.responses.create(
+#         model=GPT5_MODEL,
+#         input=[{
+#             "role": "user",
+#             "content": [
+#                 {"type": "input_text", "text": prompt},
+#                 {
+#                     "type": "input_image",
+#                     "image_url": f"data:image/jpeg;base64,{img_b64}"
+#                 }
+#             ]
+#         }],
+#         max_output_tokens=1024
+#     )
+
+#     return safe_json_load(resp.output_text)
+
 def gpt_read_header(image_path):
     """
     STEP 2 – GPT Vision header reader
@@ -84,6 +129,9 @@ def gpt_read_header(image_path):
     Read ONLY viewer_count and like_count from
     TikTok livestream UI, strictly by screen position.
     """
+    print(f"[VISION] START {image_path}")
+    t0 = time.time()
+
     img_b64 = encode_image(image_path)
 
     prompt = """
@@ -119,6 +167,9 @@ Chỉ trả JSON:
         }],
         max_output_tokens=1024
     )
+
+    dt = time.time() - t0
+    print(f"[VISION] END {image_path} in {dt:.1f}s")
 
     return safe_json_load(resp.output_text)
 
@@ -206,7 +257,8 @@ def extract_phase_stats(
         })
 
         # Throttle GPT Vision calls (same as code cũ)
-        time.sleep(random.uniform(0.5, 1.2))
+        # time.sleep(random.uniform(0.5, 1.2))
+        time.sleep(0.05)
 
     return results
 
@@ -499,7 +551,8 @@ SPEECH TEXT:
         phase["phase_description"] = phase_desc
 
         # sleep nhẹ giống code gốc
-        time.sleep(random.uniform(0.8, 1.5))
+        # time.sleep(random.uniform(0.8, 1.5))
+        time.sleep(0.1)
 
     return phase_units
 

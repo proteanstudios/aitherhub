@@ -149,6 +149,6 @@ def caption_keyframes(
         })
 
         # sleep giống code gốc
-        time.sleep(3)
+        time.sleep(0.3)
 
     return results

@@ -2,11 +2,58 @@
 import os
 import cv2
 import numpy as np
+import subprocess
+from decouple import config
 
+
+def env(key, default=None):
+    return os.getenv(key) or config(key, default=default)
+
+FFMPEG_BIN = env("FFMPEG_PATH", "ffmpeg")
 
 # ======================================================
 # STEP 0 – EXTRACT FRAMES
 # ======================================================
+
+
+
+# def extract_frames(
+#     video_path: str,
+#     fps: int = 1,
+#     frames_root: str = "frames",
+# ) -> str:
+#     """
+#     STEP 0 – Extract frames from video
+#     """
+#     video_name = os.path.splitext(os.path.basename(video_path))[0]
+#     # out_dir = os.path.join(frames_root, video_name)
+#     out_dir = os.path.join(frames_root, "frames")
+#     os.makedirs(out_dir, exist_ok=True)
+
+#     cap = cv2.VideoCapture(video_path)
+#     _video_fps = cap.get(cv2.CAP_PROP_FPS) 
+
+#     sec = 0
+#     idx = 0
+
+#     while cap.isOpened():
+#         cap.set(cv2.CAP_PROP_POS_MSEC, sec * 1000)
+#         ret, frame = cap.read()
+#         if not ret:
+#             break
+
+#         out_path = os.path.join(
+#             out_dir,
+#             f"frame_{idx:04d}_{sec}s.jpg"
+#         )
+#         cv2.imwrite(out_path, frame)
+
+#         sec += fps
+#         idx += 1
+
+#     cap.release()
+#     print(f"[OK][STEP 0] Frames extracted → {out_dir}")
+#     return out_dir
 
 def extract_frames(
     video_path: str,
@@ -14,36 +61,30 @@ def extract_frames(
     frames_root: str = "frames",
 ) -> str:
     """
-    STEP 0 – Extract frames from video
+    STEP 0 – Extract frames from video (FFmpeg, fastest CPU)
+
+    - Decode video 1 lần
+    - Không seek
+    - Không loop Python
+    - Output frame_%08d.jpg (safe for very long video)
+    - Pipeline phía sau chỉ cần sorted(os.listdir)
     """
-    video_name = os.path.splitext(os.path.basename(video_path))[0]
-    # out_dir = os.path.join(frames_root, video_name)
     out_dir = os.path.join(frames_root, "frames")
     os.makedirs(out_dir, exist_ok=True)
 
-    cap = cv2.VideoCapture(video_path)
-    _video_fps = cap.get(cv2.CAP_PROP_FPS) 
+    subprocess.run(
+        [
+            FFMPEG_BIN, "-y",
+            "-i", video_path,
+            "-vf", f"fps={fps}",
+            "-vsync", "0",
+            os.path.join(out_dir, "frame_%08d.jpg"),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
-    sec = 0
-    idx = 0
-
-    while cap.isOpened():
-        cap.set(cv2.CAP_PROP_POS_MSEC, sec * 1000)
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        out_path = os.path.join(
-            out_dir,
-            f"frame_{idx:04d}_{sec}s.jpg"
-        )
-        cv2.imwrite(out_path, frame)
-
-        sec += fps
-        idx += 1
-
-    cap.release()
-    print(f"[OK][STEP 0] Frames extracted → {out_dir}")
+    print(f"[OK][STEP 0][FFMPEG] Frames extracted → {out_dir}")
     return out_dir
 
 

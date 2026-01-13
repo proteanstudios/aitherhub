@@ -3,7 +3,7 @@ Database operations for batch worker.
 Provides synchronous wrappers around async SQLAlchemy operations.
 """
 import asyncio
-import os
+import os, json
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
@@ -213,6 +213,35 @@ def insert_video_phase_sync(*args, **kwargs):
     return loop.run_until_complete(insert_video_phase(*args, **kwargs))
 
 
+# ---------- STEP 6: update phase_description ----------
+
+async def update_video_phase_description(
+    video_id: str,
+    phase_index: int,
+    phase_description: str,
+):
+    sql = text("""
+        UPDATE video_phases
+        SET phase_description = :phase_description,
+            updated_at = now()
+        WHERE video_id = :video_id
+          AND phase_index = :phase_index
+    """)
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(sql, {
+            "video_id": video_id,
+            "phase_index": phase_index,
+            "phase_description": phase_description,
+        })
+        await session.commit()
+
+
+def update_video_phase_description_sync(*args, **kwargs):
+    loop = get_event_loop()
+    return loop.run_until_complete(update_video_phase_description(*args, **kwargs))
+
+
 # ---------- STEP 7: upsert phase_groups + update video_phases ----------
 
 async def upsert_phase_group(group_id: int, centroid: list[float], size: int):
@@ -229,7 +258,7 @@ async def upsert_phase_group(group_id: int, centroid: list[float], size: int):
     async with AsyncSessionLocal() as session:
         await session.execute(sql, {
             "id": group_id,
-            "centroid": centroid,
+            "centroid": json.dumps(centroid),
             "size": size,
         })
         await session.commit()
