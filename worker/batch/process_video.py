@@ -61,7 +61,11 @@ from video_status import VideoStatus
 # Artifact layout (PERSISTENT)
 # =========================
 
+<<<<<<< HEAD
 ART_ROOT = "output"
+=======
+ART_ROOT = os.path.expanduser("~/kyogokuvideos/work")
+>>>>>>> a1c54ec3ab730c2c6ab4a7d30186dd5a5b3ec375
 
 def video_root(video_id: str):
     return os.path.join(ART_ROOT, video_id)
@@ -284,6 +288,10 @@ def main():
                 frame_dir=frame_dir,
             )
         else:
+<<<<<<< HEAD
+=======
+            print("[SKIP] STEP 2")
+>>>>>>> a1c54ec3ab730c2c6ab4a7d30186dd5a5b3ec375
             print("[SKIP] STEP 2 – but recompute phase_stats")
             phase_stats = extract_phase_stats(
                 keyframes=keyframes,
@@ -323,13 +331,25 @@ def main():
             # print("[CLEANUP] Remove frames")
             # shutil.rmtree(frames_dir(video_id), ignore_errors=True)
         else:
+<<<<<<< HEAD
             print("[SKIP] STEP 4")
+=======
+            # print("[SKIP] STEP 4")
+            # keyframe_captions = caption_keyframes(
+            #     frame_dir=frame_dir,
+            #     rep_frames=rep_frames,
+            # )
+            print("[SKIP] STEP 4 – but reload captions")
+>>>>>>> a1c54ec3ab730c2c6ab4a7d30186dd5a5b3ec375
             keyframe_captions = caption_keyframes(
                 frame_dir=frame_dir,
                 rep_frames=rep_frames,
             )
+<<<<<<< HEAD
             # print("[SKIP] STEP 4 (captions already used in STEP 5)")
             # keyframe_captions = None
+=======
+>>>>>>> a1c54ec3ab730c2c6ab4a7d30186dd5a5b3ec375
 
         # =========================
         # STEP 5 – BUILD PHASE UNITS (DB CHECKPOINT)
@@ -351,10 +371,18 @@ def main():
             print("[CLEANUP] Remove step1 cache + audio artifacts")
 
             print("[CLEANUP] Remove frames")
+<<<<<<< HEAD
             # shutil.rmtree(frames_dir(video_id), ignore_errors=True)
             # shutil.rmtree(cache_dir(video_id), ignore_errors=True)
             # shutil.rmtree(audio_text_dir(video_id), ignore_errors=True)
             # shutil.rmtree(audio_dir(video_id), ignore_errors=True)
+=======
+            shutil.rmtree(frames_dir(video_id), ignore_errors=True)
+
+            shutil.rmtree(cache_dir(video_id), ignore_errors=True)
+            shutil.rmtree(audio_text_dir(video_id), ignore_errors=True)
+            shutil.rmtree(audio_dir(video_id), ignore_errors=True)
+>>>>>>> a1c54ec3ab730c2c6ab4a7d30186dd5a5b3ec375
         else:
             print("[SKIP] STEP 5")
             # raise RuntimeError("Resume from STEP >=5 should load phase_units from DB (not implemented yet).")

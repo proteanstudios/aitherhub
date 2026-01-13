@@ -58,7 +58,7 @@ export default function Header({ onOpenSidebar, user: propUser, setUser: setProp
           {user?.isLoggedIn ? (
             <div className="relative" ref={dropdownRef}>
               <span
-                className="font-cabin text-[14px] text-black cursor-pointer select-none"
+                className="font-cabin text-[14px] text-black cursor-pointer select-none max-w-[160px] truncate inline-block align-middle"
                 onClick={() => setOpenDropdown(!openDropdown)}
               >
                 {user.email}

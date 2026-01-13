@@ -1,5 +1,5 @@
 import Login from "../../pages/authPages/Login";
-import CloseIcon from "../../assets/icons/close.png";
+import CloseSvg from "../../assets/icons/close.svg";
 
 export default function LoginModal({ open, onClose, onSwitchToRegister }) {
   if (!open) return null;
@@ -16,7 +16,7 @@ export default function LoginModal({ open, onClose, onSwitchToRegister }) {
           onClick={onClose}
           className="bg-90 absolute right-0 top-0 w-[56px] h-[56px] rounded-full overflow-hidden flex items-center justify-center"
         >
-          <img src={CloseIcon} alt="Close" className="w-full h-full object-cover scale-125" />
+          <img src={CloseSvg} alt="Close" className="w-full h-full object-cover scale-70" />
         </button>
 
         <div className="p-6 w-full mt-[69px] bg-white rounded-[10px]">

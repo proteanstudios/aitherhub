@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 import uuid
 from sqlalchemy import text
+import json
 
 # Load environment variables
 load_dotenv()
