@@ -133,7 +133,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect }) {
       >
         {/* ================= PC ================= */}
         <div className="hidden md:block space-y-3">
-          <img src={logo} alt="logo" className="w-10 h-10" />
+        <img src={logo} className="w-10 h-10 ml-2 md:w-[75px] md:h-[75px] lg:w-[100px] lg:h-[100px]" />
 
           <div className="flex items-center mt-[50px] ml-[10px] gap-2 cursor-pointer hover:text-gray-400">
             <img src={write} className="w-6 h-6" />
@@ -174,7 +174,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect }) {
           <div className="bg-gradient-to-b from-[#4500FF] to-[#9B00FF]">
             <div className="bg-white">
               <div className="flex items-center mb-5 mt-1">
-              <img src={logo} className="w-10 h-10 ml-2 md:w-[75px] md:h-[75px] lg:w-[100px] lg:h-[100px]" />
+              <img src={logo} className="w-10 h-10 ml-2" />
                 <span className="ml-2 font-semibold text-[24px] bg-gradient-to-b from-[#4500FF] to-[#9B00FF] bg-clip-text text-transparent">
                   Liveboost AI
                 </span>
