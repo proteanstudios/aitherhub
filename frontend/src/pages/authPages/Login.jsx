@@ -46,7 +46,7 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
           ログイン
         </h2>
 
-        <div className="flex flex-col top-[126px] items-start space-y-1 w-[340px] h-[250px] md:w-[400px]">
+        <div className="flex flex-col max-w-full top-[126px] items-start space-y-1 w-[340px] h-[250px] md:w-[400px]">
             <div className="flex flex-col items-start w-full mb-[20px]">
               <label className="font-cabin font-bold text-[14px] text-black mb-[7px]">
                   メールアドレス
@@ -101,7 +101,7 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
         <button 
           onClick={handleLogin}
           style={{ fontSize: "20px" }}
-          className="mb-[50px] bg-90 w-[250px] h-[50px] rounded-[55px] font-cabin font-semibold leading-[16px] text-white opacity-100 flex items-center justify-center bg-gradient-to-b from-[#4500FF] to-[#9B00FF]">
+          className="mb-[50px] bg-90 w-[250px] h-[50px] max-w-full rounded-[55px] font-cabin font-semibold leading-[16px] text-white opacity-100 flex items-center justify-center bg-gradient-to-b from-[#4500FF] to-[#9B00FF]">
           ログイン
         </button>
     </div>

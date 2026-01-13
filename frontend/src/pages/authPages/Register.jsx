@@ -104,13 +104,13 @@ export default function Register({ onSuccess }) {
                     をご確認ください。
                 </div>
 
-                <div className="text-sm md:ml-[10px] text-center text-gray-600">
+                <div className="text-sm text-center text-gray-600">
                     <label className="flex items-center justify-center gap-2 text-sm text-black">
                         <input
                             type="checkbox"
                             checked={checkbox}
                             onChange={(e) => setCheckbox(e.target.checked)}
-                            className="w-[20px] h-[20px]"
+                            className="w-[23px] h-[23px]"
                         />
                         同意します
                     </label>
@@ -120,7 +120,7 @@ export default function Register({ onSuccess }) {
 
             <div className="flex flex-col md:flex-row items-center gap-4 w-full mt-[5px] align-center md:justify-center md:gap-[30px] md:mt-0">
                 <button onClick={handleRegister}
-                className="w-[250px] h-[50px] rounded-[5px] font-cabin font-semibold text-[20px] leading-[16px] text-white flex items-center justify-center bg-gradient-to-b from-[#4500FF] to-[#9B00FF]">
+                className="w-[250px] h-[50px] rounded-[5px] font-cabin font-semibold text-[20px]! leading-[16px] text-white flex items-center justify-center bg-gradient-to-b from-[#4500FF] to-[#9B00FF]">
                     登録する
                 </button>
                 <button
