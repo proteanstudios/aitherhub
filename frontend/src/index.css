@@ -47,7 +47,6 @@ button {
   font-size: 14px;
   font-weight: 700;
   font-family: Cabin;
-  background-color: #1a1a1a;
   cursor: pointer;
   transition: border-color 0.25s;
 }
