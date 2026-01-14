@@ -133,15 +133,15 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect }) {
       >
         {/* ================= PC ================= */}
         <div className="hidden md:block space-y-3">
-        <img src={logo} className="w-10 h-10 ml-2 md:w-[75px] md:h-[75px] lg:w-[100px] lg:h-[100px]" />
+        <img src={logo} className="w-[37px] h-[35px]" />
 
-          <div className="flex items-center mt-[50px] ml-[10px] gap-2 cursor-pointer hover:text-gray-400">
-            <img src={write} className="w-6 h-6" />
+          <div className="flex items-center mt-[28px] ml-[5px] gap-2 cursor-pointer hover:text-gray-400">
+            <img src={write} className="w-[30px] h-[30px]" />
             <span className="font-semibold">新しい解析</span>
           </div>
 
           <div className="flex items-center ml-[10px] gap-2 cursor-pointer hover:text-gray-400">
-            <img src={searchIcon} className="w-4 h-4" />
+            <img src={searchIcon} className="w-[20px] h-[20px]" />
             <span className="font-semibold">チャットを検索</span>
           </div>
         </div>

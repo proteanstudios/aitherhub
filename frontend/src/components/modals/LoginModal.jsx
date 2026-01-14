@@ -18,7 +18,7 @@ export default function LoginModal({ open, onClose, onSwitchToRegister }) {
           >
             <button
               onClick={onClose}
-              className="bg-90 absolute right-0 top-[-70px] w-[56px] h-[56px] rounded-full overflow-hidden flex items-center justify-center z-10"
+              className="bg-90 absolute right-0 top-[-70px] w-[56px] h-[56px] rounded-full overflow-hidden flex items-center justify-center z-10 transition-transform duration-200 ease-out hover:scale-[1.15]"
             >
               <img src={CloseSvg} alt="Close" className="w-full h-full object-cover scale-70" />
             </button>

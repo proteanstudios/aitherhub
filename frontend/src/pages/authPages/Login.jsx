@@ -100,8 +100,8 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
 
         <button 
           onClick={handleLogin}
-          style={{ fontSize: "20px" }}
-          className="mb-[50px] bg-90 w-[250px] h-[50px] max-w-full rounded-[55px] font-cabin font-semibold leading-[16px] text-white opacity-100 flex items-center justify-center bg-gradient-to-b from-[#4500FF] to-[#9B00FF]">
+          style={{ fontSize: "20px", border: "3px solid" }}
+          className="mb-[50px] w-[250px] h-[50px] max-w-full box-border rounded-[55px] font-cabin font-semibold leading-[16px] text-white flex items-center justify-center border-2 border-transparent bg-gradient-to-b from-[#4500FF] to-[#9B00FF] transition-all duration-200 ease-out hover:bg-white hover:bg-none hover:border-[#4500FF] hover:text-[#4500FF]">
           ログイン
         </button>
     </div>

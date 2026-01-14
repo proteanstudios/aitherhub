@@ -112,9 +112,11 @@ export default function ForgotPassword({ onSuccess }) {
                 <button
                     onClick={handleForgotPassword}
                     disabled={isLoading}
-                    className="w-[250px] md:w-[230px] h-[50px] rounded-[5px] font-cabin font-semibold text-[20px] leading-[16px] text-white flex items-center justify-center bg-gradient-to-b from-[#4500FF] to-[#9B00FF] disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-[250px] md:w-[230px] h-[50px] rounded-[5px] text-[20px] leading-[16px] text-white flex items-center justify-center bg-gradient-to-b from-[#4500FF] to-[#9B00FF] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    {isLoading ? "処理中..." : "登録する"}
+                    <span className="font-cabin font-semibold text-[20px] text-white">
+                    {isLoading ? "処理中..." : "変更する"}
+                    </span>
                 </button>
 
                 <button
