@@ -52,8 +52,7 @@ from db_ops import (
     update_video_status_sync,
     get_video_status_sync,
     load_video_phases_sync,
-    update_video_phase_description_sync,
-    update_phase_group_sync
+    update_video_phase_description_sync
 )
 
 from video_status import VideoStatus
@@ -204,28 +203,11 @@ def main():
     try:
         video_path, video_id = _resolve_inputs(args)
 
-        # _ensure_dir(video_root(video_id))
-
-        # current_status = get_video_status_sync(video_id)
-        # start_step = status_to_step_index(current_status)
-        # print(f"[RESUME] current_status={current_status}, start_step={start_step}")
+        _ensure_dir(video_root(video_id))
 
         current_status = get_video_status_sync(video_id)
-        raw_start_step = status_to_step_index(current_status)
-
-        # Chỉ cho resume nếu >= STEP 7
-        if raw_start_step >= 7:
-            start_step = raw_start_step
-            print(f"[RESUME] resume from step {start_step} (status={current_status})")
-        else:
-            start_step = 0
-            print(f"[RESUME] force restart from STEP 0 (status={current_status})")
-
-            if os.path.exists(ART_ROOT):
-                print("[CLEAN] Remove old artifact folder")
-                # shutil.rmtree(video_root(video_id), ignore_errors=True)
-                shutil.rmtree(ART_ROOT, ignore_errors=True)
-                os.makedirs(ART_ROOT, exist_ok=True)
+        start_step = status_to_step_index(current_status)
+        print(f"[RESUME] current_status={current_status}, start_step={start_step}")
 
         # =========================
         # STEP 0 – EXTRACT FRAMES
@@ -395,31 +377,16 @@ def main():
             print("=== STEP 7 – GLOBAL PHASE GROUPING ===")
             phase_units = embed_phase_descriptions(phase_units)
 
-            # groups = load_global_groups()
-            # phase_units, groups = assign_phases_to_groups(phase_units, groups)
-            # save_global_groups(groups)
-
-            # groups = load_global_groups(ART_ROOT, video_id)
-            # phase_units, groups = assign_phases_to_groups(phase_units, groups)
-            # save_global_groups(groups, ART_ROOT, video_id)
-
-            from grouping_pipeline import load_global_groups_from_db
-            groups = load_global_groups_from_db()
+            groups = load_global_groups()
             phase_units, groups = assign_phases_to_groups(phase_units, groups)
-
-            # for g in groups:
-            #     upsert_phase_group_sync(
-            #         group_id=g["group_id"],
-            #         centroid=g["centroid"].tolist(),
-            #         size=g["size"],
-            #     )
+            save_global_groups(groups)
 
             for g in groups:
-                update_phase_group_sync(
+                upsert_phase_group_sync(
                     group_id=g["group_id"],
                     centroid=g["centroid"].tolist(),
                     size=g["size"],
-            )
+                )
 
             for p in phase_units:
                 if p.get("group_id"):
@@ -437,24 +404,13 @@ def main():
         if start_step <= 8:
             update_video_status_sync(video_id, VideoStatus.STEP_8_UPDATE_BEST_PHASE)
             print("=== STEP 8 – GROUP BEST PHASES ===")
-
-            # best_data = load_group_best_phases()
-            # best_data = update_group_best_phases(
-            #     phase_units=phase_units,
-            #     best_data=best_data,
-            #     video_id=video_id,
-            # )
-            # save_group_best_phases(best_data)
-
-            best_data = load_group_best_phases(ART_ROOT, video_id)
-
+            best_data = load_group_best_phases()
             best_data = update_group_best_phases(
                 phase_units=phase_units,
                 best_data=best_data,
                 video_id=video_id,
             )
-
-            save_group_best_phases(best_data, ART_ROOT, video_id)
+            save_group_best_phases(best_data)
 
             for gid, g in best_data["groups"].items():
                 if not g["phases"]:

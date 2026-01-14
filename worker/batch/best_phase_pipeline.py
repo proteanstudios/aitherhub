@@ -2,8 +2,13 @@ import os
 import json
 
 
-GROUP_ROOT = "group"
-BEST_PHASE_FILE = os.path.join(GROUP_ROOT, "group_best_phases.json")
+def get_group_root(art_root: str, video_id: str):
+    return os.path.join(art_root, video_id, "group")
+
+def get_best_phase_file(art_root: str, video_id: str):
+    return os.path.join(get_group_root(art_root, video_id), "group_best_phases.json")
+
+
 TOP_K = 1
 
 
@@ -97,24 +102,29 @@ def compute_attention_score(m):
 # LOAD / SAVE
 # =========================
 
-def load_group_best_phases():
-    if not os.path.exists(BEST_PHASE_FILE):
+def load_group_best_phases(art_root: str, video_id: str):
+    path = get_best_phase_file(art_root, video_id)
+
+    if not os.path.exists(path):
         return {
             "version": "v1_attention",
             "groups": {}
         }
 
-    with open(BEST_PHASE_FILE, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def save_group_best_phases(best_data):
-    os.makedirs(GROUP_ROOT, exist_ok=True)
+def save_group_best_phases(best_data, art_root: str, video_id: str):
+    root = get_group_root(art_root, video_id)
+    path = get_best_phase_file(art_root, video_id)
 
-    with open(BEST_PHASE_FILE, "w", encoding="utf-8") as f:
+    os.makedirs(root, exist_ok=True)
+
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(best_data, f, ensure_ascii=False, indent=2)
 
-    print(f"[OK] Best phases saved → {BEST_PHASE_FILE}")
+    print(f"[OK] Best phases saved → {path}")
 
 
 # =========================
@@ -132,8 +142,11 @@ def update_group_best_phases(phase_units, best_data, video_id):
         metrics = extract_attention_metrics(p)
         score = compute_attention_score(metrics)
 
+        # Prefer DB-generated phase_id if available, otherwise keep legacy string
+        phase_id_val = p.get("phase_id") or f"{video_id}_phase_{p['phase_index']}"
+
         phase_entry = {
-            "phase_id": f"{video_id}_phase_{p['phase_index']}",
+            "phase_id": phase_id_val,
             "video_id": video_id,
             "phase_index": p["phase_index"],
             "score": score,

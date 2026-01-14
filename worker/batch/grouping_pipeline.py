@@ -2,9 +2,12 @@
 import os
 import json
 import numpy as np
+from db_ops import get_all_phase_groups_sync
+from db_ops import create_phase_group_sync, update_phase_group_sync
 
 from openai import AzureOpenAI
 from decouple import config
+
 
 
 # ======================================================
@@ -21,8 +24,14 @@ AZURE_OPENAI_API_VERSION = env("GPT5_API_VERSION")
 
 EMBED_MODEL = "text-embedding-3-large"
 
-GROUP_ROOT = "group"
-GROUP_FILE = "groups.json"
+# GROUP_ROOT = "group"
+# GROUP_FILE = "groups.json"
+
+def get_group_root(art_root: str, video_id: str):
+    return os.path.join(art_root, video_id, "group")
+
+def get_group_file(art_root: str, video_id: str):
+    return os.path.join(get_group_root(art_root, video_id), "groups.json")
 
 COSINE_THRESHOLD = 0.82
 
@@ -78,14 +87,27 @@ def embed_phase_descriptions(phase_units):
 # ======================================================
 # STEP 7.2 – LOAD GLOBAL GROUPS
 # ======================================================
+def load_global_groups_from_db():
+    rows = get_all_phase_groups_sync()
 
-def load_global_groups():
-    os.makedirs(GROUP_ROOT, exist_ok=True)
-    path = os.path.join(GROUP_ROOT, GROUP_FILE)
+    groups = []
+    for r in rows:
+        groups.append({
+            "group_id": r["group_id"],
+            "centroid": np.array(r["centroid"], dtype=np.float32),
+            "size": r["size"],
+        })
+    return groups
+
+
+def load_global_groups(art_root: str, video_id: str):
+    root = get_group_root(art_root, video_id)
+    path = get_group_file(art_root, video_id)
+
+    os.makedirs(root, exist_ok=True)
 
     if not os.path.exists(path):
         return []
-
     with open(path, "r", encoding="utf-8") as f:
         raw = json.load(f)
 
@@ -100,9 +122,11 @@ def load_global_groups():
     return groups
 
 
-def save_global_groups(groups):
-    os.makedirs(GROUP_ROOT, exist_ok=True)
-    path = os.path.join(GROUP_ROOT, GROUP_FILE)
+def save_global_groups(groups, art_root: str, video_id: str):
+    root = get_group_root(art_root, video_id)
+    path = get_group_file(art_root, video_id)
+
+    os.makedirs(root, exist_ok=True)
 
     data = []
     for g in groups:
@@ -120,10 +144,49 @@ def save_global_groups(groups):
 # STEP 7.3 – ASSIGN PHASES TO GROUPS
 # ======================================================
 
+# def assign_phases_to_groups(phase_units, groups):
+#     """
+#     Incremental cosine-based grouping.
+#     """
+#     for p in phase_units:
+#         v = np.array(p["embedding"], dtype=np.float32)
+
+#         best_group = None
+#         best_score = -1.0
+
+#         for g in groups:
+#             score = cosine(v, g["centroid"])
+#             if score > best_score:
+#                 best_score = score
+#                 best_group = g
+
+#         # JOIN EXISTING GROUP
+#         if best_group and best_score >= COSINE_THRESHOLD:
+#             n = best_group["size"]
+#             new_centroid = (best_group["centroid"] * n + v) / (n + 1)
+#             best_group["centroid"] = l2_normalize(new_centroid)
+#             best_group["size"] += 1
+#             p["group_id"] = best_group["group_id"]
+
+#         # CREATE NEW GROUP
+#         else:
+#             new_id = len(groups) + 1
+#             groups.append({
+#                 "group_id": new_id,
+#                 "centroid": v,
+#                 "size": 1
+#             })
+#             p["group_id"] = new_id
+
+#     return phase_units, groups
+
 def assign_phases_to_groups(phase_units, groups):
     """
     Incremental cosine-based grouping.
     """
+    # compute next group id safely (avoid collision with DB ids)
+    # next_group_id = max([g["group_id"] for g in groups], default=0) + 1
+
     for p in phase_units:
         v = np.array(p["embedding"], dtype=np.float32)
 
@@ -146,7 +209,15 @@ def assign_phases_to_groups(phase_units, groups):
 
         # CREATE NEW GROUP
         else:
-            new_id = len(groups) + 1
+            # new_id = next_group_id
+
+            new_id = create_phase_group_sync(
+                centroid=v.tolist(),
+                size=1,
+            )
+
+            # next_group_id += 1
+
             groups.append({
                 "group_id": new_id,
                 "centroid": v,

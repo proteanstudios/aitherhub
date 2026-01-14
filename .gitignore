@@ -19,6 +19,8 @@ note.txt
 **/ffmpeg
 **/report
 
+worker/batch/benmark.py
+
 # Environment files (keep secrets out of git)
 .env
 .env.*
@@ -29,3 +31,7 @@ frontend/node_modules/
 
 # Python
 *.log
+
+backend/.env
+
+worker/batch/output/

@@ -5,6 +5,7 @@ import json
 import time
 import random
 
+from db_ops import insert_video_phase_sync
 from openai import AzureOpenAI
 from decouple import config
 
@@ -76,6 +77,51 @@ def encode_image(path):
         return base64.b64encode(f.read()).decode("utf-8")
 
 
+# def gpt_read_header(image_path):
+#     """
+#     STEP 2 – GPT Vision header reader
+
+#     Read ONLY viewer_count and like_count from
+#     TikTok livestream UI, strictly by screen position.
+#     """
+#     img_b64 = encode_image(image_path)
+
+#     prompt = """
+# Phân tích ảnh livestream TikTok và trích xuất CHỈ 2 giá trị sau, dựa 100% vào VỊ TRÍ:
+
+# viewer_count:
+# - Số ở GÓC TRÊN BÊN PHẢI
+# - Nằm cạnh cụm avatar tròn
+# - Không nhầm với số gift / rank
+
+# like_count:
+# - Nằm trong profile card ở GÓC TRÊN BÊN TRÁI
+# - Ngay dưới tên chủ phòng
+# - Có thể có K / M
+
+# Nếu không thấy đúng vị trí → trả null.
+
+# Chỉ trả JSON:
+# {"viewer_count": number | null, "like_count": number | null}
+# """.strip()
+
+#     resp = client.responses.create(
+#         model=GPT5_MODEL,
+#         input=[{
+#             "role": "user",
+#             "content": [
+#                 {"type": "input_text", "text": prompt},
+#                 {
+#                     "type": "input_image",
+#                     "image_url": f"data:image/jpeg;base64,{img_b64}"
+#                 }
+#             ]
+#         }],
+#         max_output_tokens=1024
+#     )
+
+#     return safe_json_load(resp.output_text)
+
 def gpt_read_header(image_path):
     """
     STEP 2 – GPT Vision header reader
@@ -83,6 +129,9 @@ def gpt_read_header(image_path):
     Read ONLY viewer_count and like_count from
     TikTok livestream UI, strictly by screen position.
     """
+    print(f"[VISION] START {image_path}")
+    t0 = time.time()
+
     img_b64 = encode_image(image_path)
 
     prompt = """
@@ -119,6 +168,9 @@ Chỉ trả JSON:
         max_output_tokens=1024
     )
 
+    dt = time.time() - t0
+    print(f"[VISION] END {image_path} in {dt:.1f}s")
+
     return safe_json_load(resp.output_text)
 
 
@@ -126,11 +178,37 @@ Chỉ trả JSON:
 # FALLBACK LOGIC FOR PHASE BOUNDARIES
 # ======================================================
 
+# def read_phase_start(files, frame_dir, frame_idx):
+#     """
+#     Try to read viewer_count at phase START.
+#     If GPT fails, scan forward up to MAX_FALLBACK frames.
+#     """
+#     for i in range(MAX_FALLBACK):
+#         idx = frame_idx + i
+#         if idx >= len(files):
+#             break
+
+#         path = os.path.join(frame_dir, files[idx])
+#         data = gpt_read_header(path)
+
+#         # if data and data.get("viewer_count") is not None:
+#         #     return data, idx
+
+#         if data and (
+#             data.get("viewer_count") is not None
+#             or data.get("like_count") is not None
+#         ):
+#             return data, idx
+
+#     return None, frame_idx
 def read_phase_start(files, frame_dir, frame_idx):
     """
-    Try to read viewer_count at phase START.
-    If GPT fails, scan forward up to MAX_FALLBACK frames.
+    Try to read viewer_count and like_count at phase START.
+    Fallback forward up to MAX_FALLBACK frames until we get both or reach limit.
     """
+    best = {"viewer_count": None, "like_count": None}
+    best_idx = frame_idx
+
     for i in range(MAX_FALLBACK):
         idx = frame_idx + i
         if idx >= len(files):
@@ -139,17 +217,51 @@ def read_phase_start(files, frame_dir, frame_idx):
         path = os.path.join(frame_dir, files[idx])
         data = gpt_read_header(path)
 
-        if data and data.get("viewer_count") is not None:
-            return data, idx
+        if isinstance(data, dict):
+            if best["viewer_count"] is None and data.get("viewer_count") is not None:
+                best["viewer_count"] = data.get("viewer_count")
+                best_idx = idx
+
+            if best["like_count"] is None and data.get("like_count") is not None:
+                best["like_count"] = data.get("like_count")
+                best_idx = idx
+
+        # If we already have both, stop early
+        if best["viewer_count"] is not None and best["like_count"] is not None:
+            break
+
+    if best["viewer_count"] is not None or best["like_count"] is not None:
+        return best, best_idx
 
     return None, frame_idx
 
 
+
+# def read_phase_end(files, frame_dir, frame_idx):
+#     """
+#     Try to read viewer_count at phase END.
+#     If GPT fails, scan backward up to MAX_FALLBACK frames.
+#     """
+#     for i in range(MAX_FALLBACK):
+#         idx = frame_idx - i
+#         if idx < 0:
+#             break
+
+#         path = os.path.join(frame_dir, files[idx])
+#         data = gpt_read_header(path)
+
+#         if data and data.get("viewer_count") is not None:
+#             return data, idx
+
+#     return None, frame_idx
 def read_phase_end(files, frame_dir, frame_idx):
     """
-    Try to read viewer_count at phase END.
-    If GPT fails, scan backward up to MAX_FALLBACK frames.
+    Try to read viewer_count and like_count at phase END.
+    Fallback backward up to MAX_FALLBACK frames until we get both or reach limit.
     """
+    best = {"viewer_count": None, "like_count": None}
+    best_idx = frame_idx
+
     for i in range(MAX_FALLBACK):
         idx = frame_idx - i
         if idx < 0:
@@ -158,8 +270,21 @@ def read_phase_end(files, frame_dir, frame_idx):
         path = os.path.join(frame_dir, files[idx])
         data = gpt_read_header(path)
 
-        if data and data.get("viewer_count") is not None:
-            return data, idx
+        if isinstance(data, dict):
+            if best["viewer_count"] is None and data.get("viewer_count") is not None:
+                best["viewer_count"] = data.get("viewer_count")
+                best_idx = idx
+
+            if best["like_count"] is None and data.get("like_count") is not None:
+                best["like_count"] = data.get("like_count")
+                best_idx = idx
+
+        # If we already have both, stop early
+        if best["viewer_count"] is not None and best["like_count"] is not None:
+            break
+
+    if best["viewer_count"] is not None or best["like_count"] is not None:
+        return best, best_idx
 
     return None, frame_idx
 
@@ -205,7 +330,8 @@ def extract_phase_stats(
         })
 
         # Throttle GPT Vision calls (same as code cũ)
-        time.sleep(random.uniform(0.5, 1.2))
+        # time.sleep(random.uniform(0.5, 1.2))
+        time.sleep(0.05)
 
     return results
 
@@ -273,7 +399,6 @@ def collect_speech_for_phase(segments, start_sec, end_sec):
 
     return " ".join(texts)
 
-
 def build_phase_units(
     keyframes,
     rep_frames,
@@ -282,6 +407,7 @@ def build_phase_units(
     total_frames,
     frame_dir,
     audio_text_dir,
+    video_id: str | None = None,
 ):
     """
     STEP 5 – Build phase units.
@@ -321,7 +447,7 @@ def build_phase_units(
         else:
             caption = ""
 
-        phase_units.append({
+        phase = {
             "phase_index": i + 1,
 
             "time_range": {
@@ -343,7 +469,54 @@ def build_phase_units(
                 "start_used_frame": ps["phase_start_used_frame"],
                 "end_used_frame": ps["phase_end_used_frame"]
             }
-        })
+        }
+
+        # Persist immediately so caller can have DB-generated phase_id
+        if video_id:
+            try:
+                start = ps.get("start") or {}
+                end = ps.get("end") or {}
+
+                view_start = start.get("viewer_count") if isinstance(start, dict) else None
+                view_end = end.get("viewer_count") if isinstance(end, dict) else None
+                like_start = start.get("like_count") if isinstance(start, dict) else None
+                like_end = end.get("like_count") if isinstance(end, dict) else None
+
+                delta_view = None
+                delta_like = None
+                try:
+                    if view_start is not None and view_end is not None:
+                        delta_view = int(view_end - view_start)
+                except Exception:
+                    delta_view = None
+
+                try:
+                    if like_start is not None and like_end is not None:
+                        delta_like = int(like_end - like_start)
+                except Exception:
+                    delta_like = None
+
+                time_start = float(start_sec) if start_sec is not None else None
+                time_end = float(end_sec) if end_sec is not None else None
+
+                new_id = insert_video_phase_sync(
+                    video_id=str(video_id),
+                    phase_index=phase["phase_index"],
+                    phase_description=None,
+                    time_start=time_start,
+                    time_end=time_end,
+                    view_start=view_start,
+                    view_end=view_end,
+                    like_start=like_start,
+                    like_end=like_end,
+                    delta_view=delta_view,
+                    delta_like=delta_like,
+                )
+                phase["phase_id"] = new_id
+            except Exception as e:
+                print(f"[DB][WARN] Could not insert phase now: {e}")
+
+        phase_units.append(phase)
 
     return phase_units
 
@@ -451,7 +624,8 @@ SPEECH TEXT:
         phase["phase_description"] = phase_desc
 
         # sleep nhẹ giống code gốc
-        time.sleep(random.uniform(0.8, 1.5))
+        # time.sleep(random.uniform(0.8, 1.5))
+        time.sleep(0.1)
 
     return phase_units
 

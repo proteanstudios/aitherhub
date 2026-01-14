@@ -21,6 +21,7 @@ python-dotenv==1.0.1
 python-decouple
 
 sqlalchemy>=2.0
+asyncpg>=0.29.0
 
 ultralytics
 paddlepaddle 

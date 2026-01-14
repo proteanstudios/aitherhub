@@ -108,11 +108,7 @@ class UploadCompleteResponse(BaseModel):
 
 class VideoResponse(ModelBaseInfo):
     """Video response schema"""
-    filename: str
-    blob_url: str
+    original_filename: Optional[str] = None
     status: str  # pending, processing, completed, failed
     duration: Optional[float] = None
     file_size: Optional[int] = None
-
-    class Config:
-        orm_mode = True

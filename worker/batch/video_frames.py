@@ -2,11 +2,58 @@
 import os
 import cv2
 import numpy as np
+import subprocess
+from decouple import config
 
+
+def env(key, default=None):
+    return os.getenv(key) or config(key, default=default)
+
+FFMPEG_BIN = env("FFMPEG_PATH", "ffmpeg")
 
 # ======================================================
 # STEP 0 – EXTRACT FRAMES
 # ======================================================
+
+
+
+# def extract_frames(
+#     video_path: str,
+#     fps: int = 1,
+#     frames_root: str = "frames",
+# ) -> str:
+#     """
+#     STEP 0 – Extract frames from video
+#     """
+#     video_name = os.path.splitext(os.path.basename(video_path))[0]
+#     # out_dir = os.path.join(frames_root, video_name)
+#     out_dir = os.path.join(frames_root, "frames")
+#     os.makedirs(out_dir, exist_ok=True)
+
+#     cap = cv2.VideoCapture(video_path)
+#     _video_fps = cap.get(cv2.CAP_PROP_FPS) 
+
+#     sec = 0
+#     idx = 0
+
+#     while cap.isOpened():
+#         cap.set(cv2.CAP_PROP_POS_MSEC, sec * 1000)
+#         ret, frame = cap.read()
+#         if not ret:
+#             break
+
+#         out_path = os.path.join(
+#             out_dir,
+#             f"frame_{idx:04d}_{sec}s.jpg"
+#         )
+#         cv2.imwrite(out_path, frame)
+
+#         sec += fps
+#         idx += 1
+
+#     cap.release()
+#     print(f"[OK][STEP 0] Frames extracted → {out_dir}")
+#     return out_dir
 
 def extract_frames(
     video_path: str,
@@ -14,35 +61,30 @@ def extract_frames(
     frames_root: str = "frames",
 ) -> str:
     """
-    STEP 0 – Extract frames from video
+    STEP 0 – Extract frames from video (FFmpeg, fastest CPU)
+
+    - Decode video 1 lần
+    - Không seek
+    - Không loop Python
+    - Output frame_%08d.jpg (safe for very long video)
+    - Pipeline phía sau chỉ cần sorted(os.listdir)
     """
-    video_name = os.path.splitext(os.path.basename(video_path))[0]
-    out_dir = os.path.join(frames_root, video_name)
+    out_dir = os.path.join(frames_root, "frames")
     os.makedirs(out_dir, exist_ok=True)
 
-    cap = cv2.VideoCapture(video_path)
-    _video_fps = cap.get(cv2.CAP_PROP_FPS) 
+    subprocess.run(
+        [
+            FFMPEG_BIN, "-y",
+            "-i", video_path,
+            "-vf", f"fps={fps}",
+            "-vsync", "0",
+            os.path.join(out_dir, "frame_%08d.jpg"),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
-    sec = 0
-    idx = 0
-
-    while cap.isOpened():
-        cap.set(cv2.CAP_PROP_POS_MSEC, sec * 1000)
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        out_path = os.path.join(
-            out_dir,
-            f"frame_{idx:04d}_{sec}s.jpg"
-        )
-        cv2.imwrite(out_path, frame)
-
-        sec += fps
-        idx += 1
-
-    cap.release()
-    print(f"[OK][STEP 0] Frames extracted → {out_dir}")
+    print(f"[OK][STEP 0][FFMPEG] Frames extracted → {out_dir}")
     return out_dir
 
 
@@ -195,16 +237,31 @@ def merge_close_boundaries(indices, min_gap=3):
     return merged
 
 
+# def filter_min_phase(indices, total_frames, min_len=25):
+#     result = []
+#     extended = [0] + indices + [total_frames - 1]
+#     phase_len = np.diff(extended)
+
+#     for i in range(1, len(extended) - 1):
+#         if phase_len[i] >= min_len:
+#             result.append(extended[i])
+
+#     return result
+
 def filter_min_phase(indices, total_frames, min_len=25):
     result = []
     extended = [0] + indices + [total_frames - 1]
     phase_len = np.diff(extended)
 
     for i in range(1, len(extended) - 1):
+        if extended[i] < min_len:
+            continue
+
         if phase_len[i] >= min_len:
             result.append(extended[i])
 
     return result
+
 
 
 def apply_max_phase(indices, total_frames, max_len=150):
@@ -224,6 +281,40 @@ def apply_max_phase(indices, total_frames, max_len=150):
 
     return sorted(list(set(result)))
 
+def pick_representative_frames(model, phases, total_frames, frame_dir):
+    files = sorted(os.listdir(frame_dir))
+    reps = []
+
+    extended = [0] + phases + [total_frames - 1]
+
+    for i in range(1, len(extended)):
+        start = extended[i - 1]
+        end = extended[i]
+
+        best_frame = start
+        best_score = 0
+
+        for f in range(start, end):
+            img_path = os.path.join(frame_dir, files[f])
+            img = cv2.imread(img_path)
+
+            result = model(img)[0]
+
+            score = 0
+            for box in result.boxes:
+                conf = float(box.conf)
+                x1, y1, x2, y2 = box.xyxy[0]
+                area = (x2 - x1) * (y2 - y1)
+                score += conf * area
+
+            if score > best_score:
+                best_score = score
+                best_frame = f
+
+        reps.append(best_frame)
+
+    return reps
+
 
 # ---------- MAIN STEP 1 ENTRY ----------
 
@@ -239,7 +330,10 @@ def detect_phases(frame_dir: str, model):
     filtered = filter_min_phase(merged, total_frames, min_len=25)
     filtered = apply_max_phase(filtered, total_frames, max_len=150)
 
-    keyframes = filtered.copy()
-    rep_frames = filtered.copy()
+    # keyframes = filtered.copy()
+    # rep_frames = filtered.copy()
 
+    # return keyframes, rep_frames, total_frames
+    keyframes = filtered.copy()
+    rep_frames = pick_representative_frames(model, keyframes, total_frames, frame_dir)
     return keyframes, rep_frames, total_frames

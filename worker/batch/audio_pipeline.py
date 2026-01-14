@@ -25,20 +25,45 @@ WHISPER_ENDPOINT = env("WHISPER_ENDPOINT")
 AZURE_KEY = env("AZURE_OPENAI_KEY")
 
 MAX_RETRY = 10
-SLEEP_BETWEEN_REQUESTS = 25
+SLEEP_BETWEEN_REQUESTS = 2
 
 
 # =========================
 # STEP 3.1 – EXTRACT AUDIO
 # =========================
 
-def extract_audio_chunks(video_path: str) -> str:
+# def extract_audio_chunks(video_path: str) -> str:
+#     """
+#     Split video audio into chunks using ffmpeg.
+#     Logic giữ nguyên demo_extract_frames.py
+#     """
+#     video_name = os.path.splitext(os.path.basename(video_path))[0]
+#     out_dir = os.path.join(AUDIO_OUT_ROOT, video_name)
+#     os.makedirs(out_dir, exist_ok=True)
+
+#     chunk_pattern = os.path.join(out_dir, "chunk_%03d.wav")
+
+#     subprocess.run(
+#         [
+#             FFMPEG_BIN, "-y",
+#             "-i", video_path,
+#             "-f", "segment",
+#             "-segment_time", str(CHUNK_SECONDS),
+#             "-ar", "16000",
+#             "-ac", "1",
+#             chunk_pattern
+#         ],
+#         stdout=subprocess.DEVNULL,
+#         stderr=subprocess.DEVNULL
+#     )
+
+#     return out_dir
+
+def extract_audio_chunks(video_path: str, out_dir: str) -> str:
     """
-    Split video audio into chunks using ffmpeg.
-    Logic giữ nguyên demo_extract_frames.py
+    Extract audio chunks into out_dir.
+    out_dir should be: Z:\\work\\<video_id>\\audio
     """
-    video_name = os.path.splitext(os.path.basename(video_path))[0]
-    out_dir = os.path.join(AUDIO_OUT_ROOT, video_name)
     os.makedirs(out_dir, exist_ok=True)
 
     chunk_pattern = os.path.join(out_dir, "chunk_%03d.wav")
@@ -60,18 +85,19 @@ def extract_audio_chunks(video_path: str) -> str:
     return out_dir
 
 
+
 # =========================
 # STEP 3.2 – TRANSCRIBE
 # =========================
 
-def transcribe_audio_chunks(audio_dir: str):
-    """
-    Transcribe audio chunks using Azure Whisper.
-    Logic = 100% code cũ.
-    """
-    video_name = os.path.basename(audio_dir)
-    text_dir = os.path.join(AUDIO_TEXT_ROOT, video_name)
+# def transcribe_audio_chunks(audio_dir: str):
+
+def transcribe_audio_chunks(audio_dir: str, text_dir: str):
     os.makedirs(text_dir, exist_ok=True)
+
+    # video_name = os.path.basename(audio_dir)
+    # text_dir = os.path.join(AUDIO_TEXT_ROOT, video_name)
+    # os.makedirs(text_dir, exist_ok=True)
 
     files = sorted([
         f for f in os.listdir(audio_dir)
@@ -90,19 +116,44 @@ def transcribe_audio_chunks(audio_dir: str):
             with open(wav_path, "rb") as audio_file:
                 audio_data = audio_file.read()
 
-            response = requests.post(
-                WHISPER_ENDPOINT,
-                headers={"api-key": AZURE_KEY},
-                files={
-                    "file": (f, audio_data, "audio/wav"),
-                    "response_format": (None, "verbose_json"),
-                    "timestamp_granularities[]": (None, "word"),
-                    "timestamp_granularities[]": (None, "segment"),
-                    "temperature": (None, "0"),
-                    "task": (None, "transcribe"),
-                    "language": (None, "ja"),
-                }
-            )
+            # response = requests.post(
+            #     WHISPER_ENDPOINT,
+            #     headers={"api-key": AZURE_KEY},
+            #     files={
+            #         "file": (f, audio_data, "audio/wav"),
+            #         "response_format": (None, "verbose_json"),
+            #         "timestamp_granularities[]": (None, "word"),
+            #         "timestamp_granularities[]": (None, "segment"),
+            #         "temperature": (None, "0"),
+            #         "task": (None, "transcribe"),
+            #         "language": (None, "ja"),
+            #     }
+            # )
+
+            print(f"[WHISPER] Sending {f}, attempt {attempt}/{MAX_RETRY}")
+            t0 = time.time()
+
+            try:
+                response = requests.post(
+                    WHISPER_ENDPOINT,
+                    headers={"api-key": AZURE_KEY},
+                    files={
+                        "file": (f, audio_data, "audio/wav"),
+                        "response_format": (None, "verbose_json"),
+                        "timestamp_granularities[]": (None, "word"),
+                        "timestamp_granularities[]": (None, "segment"),
+                        "temperature": (None, "0"),
+                        "task": (None, "transcribe"),
+                        "language": (None, "ja"),
+                    },
+                    timeout=120,   # <<< QUAN TRỌNG: chống treo vô hạn
+                )
+                print(f"[WHISPER] Done {f} in {time.time() - t0:.1f}s status={response.status_code}")
+
+            except Exception as e:
+                print(f"[WHISPER][ERROR] {f} failed after {time.time() - t0:.1f}s: {e}")
+                time.sleep(5)
+                continue
 
             # SUCCESS
             if response.status_code == 200:
