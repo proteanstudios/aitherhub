@@ -525,39 +525,69 @@ def build_phase_units(
 # STEP 6 – PHASE DESCRIPTION PROMPT
 # ======================================================
 
-SYSTEM_PROMPT_PHASE_DESC = """
-Bạn là một hệ thống phân tích livestream bán hàng.
+# SYSTEM_PROMPT_PHASE_DESC = """
+# Bạn là một hệ thống phân tích livestream bán hàng.
 
-Bạn sẽ nhận dữ liệu của MỘT phase, gồm HAI phần trong user input:
+# Bạn sẽ nhận dữ liệu của MỘT phase, gồm HAI phần trong user input:
+# 1) IMAGE CAPTION:
+#    - Là mô tả hình ảnh đại diện của phase
+#    - Chỉ phản ánh trạng thái trực quan (có/không có trình bày sản phẩm, mức độ cận cảnh, v.v.)
+
+# 2) SPEECH TEXT:
+#    - Là nội dung lời nói của người dẫn trong phase đó
+#    - Phản ánh hành vi, mục đích và vai trò của phase trong livestream
+
+# Nhiệm vụ của bạn:
+# Tạo một PHASE DESCRIPTION nhằm phục vụ việc SO SÁNH và NHÓM các phase giống nhau.
+
+# YÊU CẦU:
+# - Viết 4–6 câu
+# - Mô tả hành vi chính của người dẫn trong phase
+# - Mô tả trạng thái trình bày sản phẩm (nếu có, không suy đoán)
+# - Cho biết vai trò của lời nói (giải thích, demo, kêu gọi, nói chuyện, filler, chuyển tiếp)
+# - Không nhắc tên sản phẩm cụ thể nếu hình ảnh không cho thấy rõ
+# - Không nhắc giá, số liệu, thời gian, viewer, like
+# - Không đưa ra nhận xét hay đánh giá
+
+# Mục tiêu là để các phase có hành vi và cách trình bày tương tự
+# sẽ có mô tả tương tự về mặt ngữ nghĩa.
+
+# Output JSON:
+# {
+#   "phase_description": "string"
+# }
+# """.strip()
+
+SYSTEM_PROMPT_PHASE_DESC = """
+あなたはライブコマース配信を分析するシステムです。
+
+あなたは1つのフェーズについて、以下の情報を受け取ります。
+
 1) IMAGE CAPTION:
-   - Là mô tả hình ảnh đại diện của phase
-   - Chỉ phản ánh trạng thái trực quan (có/không có trình bày sản phẩm, mức độ cận cảnh, v.v.)
+   - フェーズを代表する画像の視覚的な説明
+   - 見た目の状態のみを反映する
 
 2) SPEECH TEXT:
-   - Là nội dung lời nói của người dẫn trong phase đó
-   - Phản ánh hành vi, mục đích và vai trò của phase trong livestream
+   - そのフェーズ中の配信者の発話内容
+   - 行動や役割を反映する
 
-Nhiệm vụ của bạn:
-Tạo một PHASE DESCRIPTION nhằm phục vụ việc SO SÁNH và NHÓM các phase giống nhau.
+タスク：
+フェーズ同士を比較・分類するための
+PHASE DESCRIPTIONを作成してください。
 
-YÊU CẦU:
-- Viết 4–6 câu
-- Mô tả hành vi chính của người dẫn trong phase
-- Mô tả trạng thái trình bày sản phẩm (nếu có, không suy đoán)
-- Cho biết vai trò của lời nói (giải thích, demo, kêu gọi, nói chuyện, filler, chuyển tiếp)
-- Không nhắc tên sản phẩm cụ thể nếu hình ảnh không cho thấy rõ
-- Không nhắc giá, số liệu, thời gian, viewer, like
-- Không đưa ra nhận xét hay đánh giá
+要件：
+- 4〜6文
+- 配信者の主な行動を説明する
+- 商品を提示・説明・デモしているかを記述する（推測しない）
+- 話し方の役割（説明、デモ、呼びかけ、雑談など）を示す
+- 商品名、価格、数値、時間、視聴者数は書かない
+- 評価や感想は書かない
 
-Mục tiêu là để các phase có hành vi và cách trình bày tương tự
-sẽ có mô tả tương tự về mặt ngữ nghĩa.
-
-Output JSON:
+出力（JSON）：
 {
   "phase_description": "string"
 }
 """.strip()
-
 
 def build_phase_descriptions(phase_units):
     """
@@ -616,9 +646,14 @@ SPEECH TEXT:
             phase_desc = None
 
         if not phase_desc:
+            # phase_desc = (
+            #     "Phase này bao gồm hoạt động trình bày và giao tiếp trong livestream. "
+            #     "Người dẫn đang tương tác và cung cấp thông tin liên quan đến nội dung đang hiển thị."
+            # )
             phase_desc = (
-                "Phase này bao gồm hoạt động trình bày và giao tiếp trong livestream. "
-                "Người dẫn đang tương tác và cung cấp thông tin liên quan đến nội dung đang hiển thị."
+                "このフェーズでは、配信者が視聴者とやり取りしながら、"
+                "画面に表示されている内容に関連する説明や進行を行っている。"
+                "詳細な説明は処理制限により取得できなかった。"
             )
 
         phase["phase_description"] = phase_desc

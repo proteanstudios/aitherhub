@@ -33,7 +33,7 @@ def get_group_root(art_root: str, video_id: str):
 def get_group_file(art_root: str, video_id: str):
     return os.path.join(get_group_root(art_root, video_id), "groups.json")
 
-COSINE_THRESHOLD = 0.82
+COSINE_THRESHOLD = 0.85
 
 AZURE_OPENAI_ENDPOINT_EMBED=env("AZURE_OPENAI_ENDPOINT_EMBED")
 AZURE_OPENAI_API_VERSION_EMBED=env("AZURE_OPENAI_API_VERSION_EMBED")
