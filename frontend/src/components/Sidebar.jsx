@@ -244,7 +244,13 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect }) {
             className="absolute bottom-[80px] left-[30px] w-[210px]
             bg-white rounded-[10px] border shadow-lg z-50"
           >
-            <li className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer">
+            <li 
+              onClick={() => {
+                setOpenDropdown(false);
+                if (onClose) onClose();
+              }}
+              className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer"
+            >
               <img src={MyAccount} className="w-4 h-4" />
               マイアカウント
             </li>
@@ -253,6 +259,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect }) {
               onClick={() => {
                 setOpenDropdown(false);
                 setOpenForgotPassword(true);
+                if (onClose) onClose();
               }}
               className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer"
             >
@@ -263,6 +270,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect }) {
             <li 
               onClick={() => {
                 setOpenDropdown(false);
+                if (onClose) onClose();
                 AuthService.logout();
                 window.location.reload();
               }}
