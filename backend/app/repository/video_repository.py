@@ -3,7 +3,7 @@ from typing import Callable
 import uuid as _uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
 
 from app.models.orm.video import Video
@@ -49,6 +49,7 @@ class VideoRepository(BaseRepository):
         try:
             result = await session.execute(
                 select(Video).filter(Video.user_id == user_id)
+                .order_by(desc(Video.created_at))
             )
             return result.scalars().all()
         finally:

@@ -109,3 +109,16 @@ h1 {
 .font-cabin.font-normal {
   font-weight: 400;
 }
+
+/* Improve touch interactions on mobile */
+button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Ensure smooth transitions on mobile */
+@media (hover: none) and (pointer: coarse) {
+  button {
+    -webkit-tap-highlight-color: transparent;
+  }
+}

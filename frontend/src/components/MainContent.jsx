@@ -10,6 +10,7 @@ export default function MainContent({
   onOpenSidebar,
   user,
   setUser,
+  onUploadSuccess,
 }) {
   const isLoggedIn = Boolean(
     user &&
@@ -81,6 +82,10 @@ export default function MainContent({
       setMessage(`✅ Upload complete! ID: ${video_id}`);
       toast.success("Video uploaded successfully");
       setSelectedFile(null);
+      
+      if (onUploadSuccess) {
+        onUploadSuccess();
+      }
     } catch (error) {
       const errorMsg = error?.message || "Upload failed";
       setMessageType("error");

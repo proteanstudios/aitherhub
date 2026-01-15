@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 export default function PrimaryButton({
     children,
     onClick,
@@ -8,25 +10,56 @@ export default function PrimaryButton({
     width = "w-[250px]",
     height = "h-[50px]",
   }) {
+    const [isActive, setIsActive] = useState(false);
+
+    const handleTouchStart = (e) => {
+      if (disabled) return;
+      setIsActive(true);
+    };
+
+    const handleTouchEnd = (e) => {
+      setIsActive(false);
+    };
+
+    const handleMouseDown = () => {
+      if (disabled) return;
+      setIsActive(true);
+    };
+
+    const handleMouseUp = () => {
+      setIsActive(false);
+    };
+
+    const handleMouseLeave = () => {
+      setIsActive(false);
+    };
+
     return (
       <button
         type={type}
         onClick={onClick}
         disabled={disabled}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+        style={{ touchAction: 'manipulation' }}
         className={`
           group relative ${width} ${height} max-w-full
           ${rounded}
           font-cabin font-semibold text-[20px] leading-[16px]
-          text-white
           flex items-center justify-center
           border-2 border-[#4500FF]
           overflow-hidden
-          transition-transform duration-150 ease-out
+          transition-all duration-300 ease-out
           hover:text-[#4500FF]
           active:scale-[0.97]
           disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100
           focus:outline-none focus-visible:outline-none
           cursor-pointer
+          ${isActive ? "text-[#4500FF]" : "text-white"}
           ${className}
         `}
       >
@@ -38,6 +71,7 @@ export default function PrimaryButton({
             transition-opacity duration-300 ease-out
             group-hover:opacity-0
             ${disabled ? "opacity-50" : ""}
+            ${isActive ? "opacity-0" : ""}
           `}
         />
   

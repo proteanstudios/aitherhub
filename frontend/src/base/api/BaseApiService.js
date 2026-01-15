@@ -1,5 +1,7 @@
 import axios from "axios";
 import TokenManager from "../utils/tokenManager";
+import AuthService from "../services/userService";
+import { AUTH_URLS, isAuthEndpoint } from "../../constants/authConstants";
 
 export default class BaseApiService {
   constructor(baseURL) {
@@ -10,14 +12,20 @@ export default class BaseApiService {
       },
     });
 
-    // Add request interceptor to include JWT token
+    const handleAutoLogout = () => {
+      AuthService.logout();
+      if (!isAuthEndpoint(window.location.pathname)) {
+        window.location.href = AUTH_URLS.LOGIN;
+      }
+    };
+
     this.client.interceptors.request.use(
       (config) => {
         const token = TokenManager.getToken();
         if (token) {
-          // Check if token is expired and refresh if needed
           if (TokenManager.isTokenExpired(token)) {
-            console.warn('Token expired, attempting refresh...');
+            handleAutoLogout();
+            return Promise.reject(new Error('Token expired - auto logout'));
           }
           config.headers.Authorization = `Bearer ${token}`;
         }
@@ -28,14 +36,11 @@ export default class BaseApiService {
       }
     );
 
-    // Add response interceptor to handle 401 Unauthorized
     this.client.interceptors.response.use(
       (response) => response,
       (error) => {
         if (error.response?.status === 401) {
-          console.error('Unauthorized - token may be expired');
-          // Clear tokens when unauthorized
-          TokenManager.clearTokens();
+          handleAutoLogout();
         }
         return Promise.reject(error);
       }

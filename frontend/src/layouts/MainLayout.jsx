@@ -16,6 +16,7 @@ export default function MainLayout() {
   const [openSidebar, setOpenSidebar] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [user, setUser] = useState(getUserFromStorage);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const handleVideoSelect = useCallback((video) => {
     setSelectedVideo(video);
@@ -41,19 +42,25 @@ export default function MainLayout() {
     setOpenSidebar(false);
   }, []);
 
+  const handleUploadSuccess = useCallback(() => {
+    setRefreshKey(prev => prev + 1);
+  }, []);
+
   const sidebarProps = useMemo(() => ({
     isOpen: openSidebar,
     onClose: handleCloseSidebar,
     user,
     onVideoSelect: handleVideoSelect,
     onNewAnalysis: handleNewAnalysis,
-  }), [openSidebar, handleCloseSidebar, user, handleVideoSelect, handleNewAnalysis]);
+    refreshKey,
+  }), [openSidebar, handleCloseSidebar, user, handleVideoSelect, handleNewAnalysis, refreshKey]);
 
   const mainContentProps = useMemo(() => ({
     onOpenSidebar: handleOpenSidebar,
     user,
     setUser: handleUserChange,
-  }), [handleOpenSidebar, user, handleUserChange]);
+    onUploadSuccess: handleUploadSuccess,
+  }), [handleOpenSidebar, user, handleUserChange, handleUploadSuccess]);
 
   return (
     <div className="min-h-screen bg-gray-100 flex justify-center">

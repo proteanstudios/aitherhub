@@ -16,7 +16,7 @@ import ForgotPasswordModal from "./modals/ForgotPasswordModal";
 import AuthService from "../base/services/userService";
 import VideoService from "../base/services/videoService";
 
-export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAnalysis }) {
+export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAnalysis, refreshKey }) {
   const sidebarRef = useRef(null);
   const dropdownRef = useRef(null);
 
@@ -73,7 +73,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
     };
 
     fetchVideos();
-  }, [effectiveUser?.isLoggedIn, effectiveUser?.id, effectiveUser?.email]);
+  }, [effectiveUser?.isLoggedIn, effectiveUser?.id, effectiveUser?.email, refreshKey]);
 
   const handleVideoClick = (video) => {
     setSelectedVideoId(video.id);

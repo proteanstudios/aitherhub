@@ -10,8 +10,8 @@ export default function RegisterModal({ open, onClose, onSwitchToLogin }) {
         className="fixed inset-0 bg-black/40 transition-opacity data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in"
       />
 
-      <div className="fixed inset-0 z-50 flex justify-center">
-        <div className="flex min-h-full items-start justify-center p-0">
+      <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto">
+        <div className="flex min-h-full items-start justify-center p-0 w-full">
           <DialogPanel
             transition
             className="relative mt-[23.5vh] mb-[100px] mx-auto w-[92vw] max-w-[428px] rounded-xl md:mt-[23.5vh] md:mb-0 md:mx-0 md:ml-[40px] md:w-[700px] md:h-[53vh] md:max-w-none md:aspect-auto transform bg-white shadow-xl transition-all data-closed:translate-y-4 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in data-closed:sm:translate-y-0 data-closed:sm:scale-95"

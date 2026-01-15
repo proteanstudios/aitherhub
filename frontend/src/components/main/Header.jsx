@@ -74,7 +74,7 @@ export default function Header({
               </span>
 
               {openDropdown && (
-                <div className="absolute right-[-18px] top-[40px] w-[196px] bg-white border rounded-md shadow-md z-50">
+                <div className="absolute right-[-48px] top-[40px] w-[196px] bg-white border rounded-md shadow-md z-50">
                   <ul className="flex flex-col text-[16px] text-black">
                     <li className="px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2">
                       <img
