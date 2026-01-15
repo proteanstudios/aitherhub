@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { toast } from "react-toastify";
 import AuthService from "../../base/services/userService";
 import { PrimaryButton } from "../../components/buttons";
+import { VALIDATION_MESSAGES, SUCCESS_MESSAGES, mapServerErrorToJapanese } from "../../constants/authConstants";
 
 export default function Login({ onSuccess, onSwitchToRegister }) {
   const [email, setEmail] = useState("");
@@ -20,37 +21,36 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
     return emailRegex.test(email);
   };
 
-  const handleLogin = async () => {
-    // Reset errors
+  const handleLogin = async (e) => {
+    if (e) {
+      e.preventDefault();
+    }
+
     setErrors({ email: "", password: "" });
 
-    // Validate
+
     if (!email || !password) {
       const newErrors = {};
-      if (!email) newErrors.email = "メールアドレスを入力してください";
-      if (!password) newErrors.password = "パスワードを入力してください";
+      if (!email) newErrors.email = VALIDATION_MESSAGES.EMAIL_REQUIRED;
+      if (!password) newErrors.password = VALIDATION_MESSAGES.PASSWORD_REQUIRED;
       setErrors(newErrors);
       return;
     }
 
-    // Validate email format
+
     if (!validateEmail(email)) {
-      setErrors({ email: "メールアドレスの形式が正しくありません" });
+      setErrors({ email: VALIDATION_MESSAGES.EMAIL_INVALID_FORMAT });
       return;
     }
 
     setIsLoading(true);
     try {
-      // Login and get JWT tokens (tokens are automatically stored by AuthService)
       await AuthService.login(email, password);
 
-      // Get user info from /auth/me
       const userInfo = await AuthService.getCurrentUser();
 
-      // userInfo shape: { success: true, data: { id, email, ... } }
       const me = userInfo?.data || {};
 
-      // Store user info in localStorage so FE can read id/email immediately
       const userData = {
         isLoggedIn: true,
         id: me.id,
@@ -60,33 +60,28 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
       };
       localStorage.setItem("user", JSON.stringify(userData));
 
-      toast.success("ログインに成功しました");
+      toast.success(SUCCESS_MESSAGES.LOGIN_SUCCESS);
       if (onSuccess) onSuccess();
-      // Button stays disabled on success (modal will close or redirect)
     } catch (err) {
-      // Only enable button again on failure
       setIsLoading(false);
       
-      const detail =
-        err?.response?.data?.detail || err?.message || "ログインに失敗しました";
-      
-      // Try to map common error messages to Japanese
-      let errorMessage = detail;
-      if (detail.toLowerCase().includes("invalid") || detail.toLowerCase().includes("incorrect")) {
-        errorMessage = "メールアドレスまたはパスワードが正しくありません";
-      } else if (detail.toLowerCase().includes("not found") || detail.toLowerCase().includes("user")) {
-        errorMessage = "ユーザーが見つかりません";
-      } else if (detail.toLowerCase().includes("unauthorized")) {
-        errorMessage = "認証に失敗しました";
-      }
+      const detail = err?.response?.data?.detail || err?.message || "";
+      const errorMessage = mapServerErrorToJapanese(detail, 'login');
 
       setErrors({ password: errorMessage });
       toast.error(errorMessage);
     }
   };
 
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!isLoading) {
+      handleLogin();
+    }
+  };
+
   return (
-    <div className="flex flex-col items-center justify-center space-y-6">
+    <form onSubmit={handleSubmit} className="flex flex-col items-center justify-center space-y-6">
       <h2 className="pt-[50px] pb-[20px] font-cabin font-medium text-[30px] leading-[30px] h-[30px] text-center flex items-center justify-center text-black md:text-[40px] md:leading-[30px] md:h-[30px]">
         ログイン
       </h2>
@@ -171,12 +166,13 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
       </div>
 
       <PrimaryButton 
+        type="submit"
         onClick={handleLogin} 
         disabled={isLoading}
         className="mb-[50px]"
       >
         {isLoading ? "ログイン中..." : "ログイン"}
       </PrimaryButton>
-    </div>
+    </form>
   );
 }

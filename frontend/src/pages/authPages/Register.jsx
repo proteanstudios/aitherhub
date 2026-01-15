@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { toast } from "react-toastify";
 import AuthService from "../../base/services/userService";
 import { PrimaryButton, SecondaryButton } from "../../components/buttons";
+import { VALIDATION_MESSAGES, SUCCESS_MESSAGES, mapServerErrorToJapanese } from "../../constants/authConstants";
 
 export default function Register({ onSuccess }) {
   const [email, setEmail] = useState("");
@@ -27,86 +28,76 @@ export default function Register({ onSuccess }) {
     return emailRegex.test(email);
   };
 
-  const handleRegister = async () => {
-    // Reset errors
+  const handleRegister = async (e) => {
+    if (e) {
+      e.preventDefault();
+    }
+
     setErrors({ email: "", password: "", confirmPassword: "", checkbox: "" });
 
-    // Validate
     if (!email || !password || !confirmPassword) {
       const newErrors = {};
-      if (!email) newErrors.email = "メールアドレスを入力してください";
-      if (!password) newErrors.password = "パスワードを入力してください";
-      if (!confirmPassword) newErrors.confirmPassword = "パスワードを再入力してください";
+      if (!email) newErrors.email = VALIDATION_MESSAGES.EMAIL_REQUIRED;
+      if (!password) newErrors.password = VALIDATION_MESSAGES.PASSWORD_REQUIRED;
+      if (!confirmPassword) newErrors.confirmPassword = VALIDATION_MESSAGES.CONFIRM_PASSWORD_REQUIRED;
       setErrors(newErrors);
       return;
     }
 
-    // Validate email format
     if (!validateEmail(email)) {
-      setErrors({ email: "メールアドレスの形式が正しくありません" });
+      setErrors({ email: VALIDATION_MESSAGES.EMAIL_INVALID_FORMAT });
       return;
     }
 
     if (password !== confirmPassword) {
-      setErrors({ confirmPassword: "パスワードが一致しません" });
+      setErrors({ confirmPassword: VALIDATION_MESSAGES.PASSWORDS_NOT_MATCH });
       return;
     }
 
     if (password.length < 8) {
-      setErrors({ password: "パスワードは8文字以上で入力してください" });
+      setErrors({ password: VALIDATION_MESSAGES.PASSWORD_MIN_LENGTH });
       return;
     }
 
     if (!checkbox) {
-      setErrors({ checkbox: "利用規約とプライバシーポリシーに同意してください" });
+      setErrors({ checkbox: VALIDATION_MESSAGES.CHECKBOX_REQUIRED });
       return;
     }
 
     setIsLoading(true);
     try {
-      // Register and get JWT tokens (tokens are automatically stored by AuthService)
       await AuthService.register(email, password);
 
-      // Get user info from JWT token
       const userInfo = await AuthService.getCurrentUser();
 
-      // Store minimal user info in localStorage for quick display
-      // Full user info can be retrieved from JWT token via /me endpoint
       const userData = {
         isLoggedIn: true,
         email: userInfo?.email || email,
       };
       localStorage.setItem("user", JSON.stringify(userData));
 
-      toast.success("登録に成功しました");
+      toast.success(SUCCESS_MESSAGES.REGISTER_SUCCESS);
       if (onSuccess) onSuccess();
-      // Button stays disabled on success (modal will close or redirect)
     } catch (err) {
-      // Only enable button again on failure
       setIsLoading(false);
       
-      const detail =
-        err?.response?.data?.detail || err?.message || "登録に失敗しました";
-      
-      // Try to map common error messages to Japanese
-      let errorMessage = detail;
-      if (detail.toLowerCase().includes("already exists") || detail.toLowerCase().includes("duplicate")) {
-        errorMessage = "このメールアドレスは既に登録されています";
-      } else if (detail.toLowerCase().includes("invalid") || detail.toLowerCase().includes("format")) {
-        errorMessage = "メールアドレスの形式が正しくありません";
-      } else if (detail.toLowerCase().includes("password") && detail.toLowerCase().includes("short")) {
-        errorMessage = "パスワードは8文字以上で入力してください";
-      } else if (detail.toLowerCase().includes("weak")) {
-        errorMessage = "パスワードが弱すぎます";
-      }
+      const detail = err?.response?.data?.detail || err?.message || "";
+      const errorMessage = mapServerErrorToJapanese(detail, 'register');
 
       setErrors({ email: errorMessage });
       toast.error(errorMessage);
     }
   };
 
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!isLoading) {
+      handleRegister();
+    }
+  };
+
   return (
-    <div className="flex flex-col items-center justify-center space-y-6">
+    <form onSubmit={handleSubmit} className="flex flex-col items-center justify-center space-y-6">
       <h2 className=" pt-[20px] pb-[20px] font-cabin font-medium text-[25px] leading-[30px] h-[30px] text-center flex items-center justify-center text-black">
         新規登録
       </h2>
@@ -250,6 +241,7 @@ export default function Register({ onSuccess }) {
 
       <div className="flex flex-col md:flex-row items-center gap-4 w-full mt-[5px] align-center md:justify-center md:gap-[30px] md:mt-0">
         <PrimaryButton 
+          type="submit"
           onClick={handleRegister} 
           disabled={isLoading}
           rounded="rounded-[5px]"
@@ -258,6 +250,7 @@ export default function Register({ onSuccess }) {
         </PrimaryButton>
 
         <SecondaryButton
+          type="button"
           onClick={() => {
             if (onSuccess) onSuccess();
           }}
@@ -265,6 +258,6 @@ export default function Register({ onSuccess }) {
           キャンセル
         </SecondaryButton>
       </div>
-    </div>
+    </form>
   );
 }

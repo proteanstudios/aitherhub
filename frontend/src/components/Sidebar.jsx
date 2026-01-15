@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import logo from "../assets/logo/logo.svg";
 import write from "../assets/icons/write.png";
-import searchIcon from "../assets/icons/search.png";
+import searchIcon from "../assets/icons/search.svg";
 import searchMobile from "../assets/icons/searchmobile.png";
 import textSearch from "../assets/icons/text.png";
 import searchSp from "../assets/icons/searchSp.png";
