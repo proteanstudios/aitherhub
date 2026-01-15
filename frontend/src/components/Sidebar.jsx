@@ -16,7 +16,7 @@ import ForgotPasswordModal from "./modals/ForgotPasswordModal";
 import AuthService from "../base/services/userService";
 import VideoService from "../base/services/videoService";
 
-export default function Sidebar({ isOpen, onClose, user, onVideoSelect }) {
+export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAnalysis }) {
   const sidebarRef = useRef(null);
   const dropdownRef = useRef(null);
 
@@ -135,7 +135,14 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect }) {
         <div className="hidden md:block space-y-3">
         <img src={logo} className="w-[37px] h-[35px]" />
 
-          <div className="flex items-center mt-[28px] ml-[5px] gap-2 cursor-pointer hover:text-gray-400">
+          <div 
+            onClick={() => {
+              if (onNewAnalysis) {
+                onNewAnalysis();
+              }
+            }}
+            className="flex items-center mt-[28px] ml-[5px] gap-2 cursor-pointer hover:text-gray-400"
+          >
             <img src={write} className="w-[30px] h-[30px]" />
             <span className="font-semibold">新しい解析</span>
           </div>

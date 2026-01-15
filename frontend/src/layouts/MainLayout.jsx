@@ -36,12 +36,18 @@ export default function MainLayout() {
     setOpenSidebar(true);
   }, []);
 
+  const handleNewAnalysis = useCallback(() => {
+    setSelectedVideo(null);
+    setOpenSidebar(false);
+  }, []);
+
   const sidebarProps = useMemo(() => ({
     isOpen: openSidebar,
     onClose: handleCloseSidebar,
     user,
     onVideoSelect: handleVideoSelect,
-  }), [openSidebar, handleCloseSidebar, user, handleVideoSelect]);
+    onNewAnalysis: handleNewAnalysis,
+  }), [openSidebar, handleCloseSidebar, user, handleVideoSelect, handleNewAnalysis]);
 
   const mainContentProps = useMemo(() => ({
     onOpenSidebar: handleOpenSidebar,

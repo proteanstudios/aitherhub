@@ -30,7 +30,7 @@ async def register(
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered",
+            detail="このメールアドレスは既に登録されています",
         )
 
     user = await create_user_with_password(
@@ -64,14 +64,14 @@ async def login(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
+            detail="メールアドレスまたはパスワードが正しくありません",
         )
 
     valid = await verify_user_password(db, payload.email, payload.password)
     if not valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
+            detail="メールアドレスまたはパスワードが正しくありません",
         )
 
     access_token = create_access_token(str(user.id))
@@ -95,7 +95,7 @@ async def get_current_user_info(
     if not current_user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized",
+            detail="認証に失敗しました",
         )
 
     return {
@@ -127,7 +127,7 @@ async def change_password(
     if payload.new_password != payload.confirm_password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="New password and confirm password do not match",
+            detail="新しいパスワードと確認パスワードが一致しません",
         )
     
     # Verify current password
@@ -135,7 +135,7 @@ async def change_password(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            detail="ユーザーが見つかりません",
         )
     
     # Verify current password is correct
@@ -143,10 +143,10 @@ async def change_password(
     if not valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Current password is incorrect",
+            detail="現在のパスワードが正しくありません",
         )
     
     # Update password
     await update_user_password(db, current_user["id"], payload.new_password)
     
-    return {"message": "Password changed successfully"}
+    return {"message": "パスワードの変更に成功しました"}

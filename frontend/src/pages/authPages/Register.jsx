@@ -8,23 +8,61 @@ export default function Register({ onSuccess }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [checkbox, setCheckbox] = useState(false);
+  const [errors, setErrors] = useState({ 
+    email: "", 
+    password: "", 
+    confirmPassword: "", 
+    checkbox: "" 
+  });
+  const [isLoading, setIsLoading] = useState(false);
+
+  const clearError = (field) => {
+    if (errors[field]) {
+      setErrors((prev) => ({ ...prev, [field]: "" }));
+    }
+  };
+
+  const validateEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
 
   const handleRegister = async () => {
+    // Reset errors
+    setErrors({ email: "", password: "", confirmPassword: "", checkbox: "" });
+
+    // Validate
     if (!email || !password || !confirmPassword) {
-      toast.error("Please fill in all required fields");
+      const newErrors = {};
+      if (!email) newErrors.email = "メールアドレスを入力してください";
+      if (!password) newErrors.password = "パスワードを入力してください";
+      if (!confirmPassword) newErrors.confirmPassword = "パスワードを再入力してください";
+      setErrors(newErrors);
+      return;
+    }
+
+    // Validate email format
+    if (!validateEmail(email)) {
+      setErrors({ email: "メールアドレスの形式が正しくありません" });
       return;
     }
 
     if (password !== confirmPassword) {
-      toast.error("Passwords do not match");
+      setErrors({ confirmPassword: "パスワードが一致しません" });
+      return;
+    }
+
+    if (password.length < 8) {
+      setErrors({ password: "パスワードは8文字以上で入力してください" });
       return;
     }
 
     if (!checkbox) {
-      toast.error("Please agree to the terms and conditions");
+      setErrors({ checkbox: "利用規約とプライバシーポリシーに同意してください" });
       return;
     }
 
+    setIsLoading(true);
     try {
       // Register and get JWT tokens (tokens are automatically stored by AuthService)
       await AuthService.register(email, password);
@@ -40,12 +78,30 @@ export default function Register({ onSuccess }) {
       };
       localStorage.setItem("user", JSON.stringify(userData));
 
-      toast.success("Registration successful");
+      toast.success("登録に成功しました");
       if (onSuccess) onSuccess();
+      // Button stays disabled on success (modal will close or redirect)
     } catch (err) {
+      // Only enable button again on failure
+      setIsLoading(false);
+      
       const detail =
-        err?.response?.data?.detail || err?.message || "Registration failed";
-      toast.error(detail);
+        err?.response?.data?.detail || err?.message || "登録に失敗しました";
+      
+      // Try to map common error messages to Japanese
+      let errorMessage = detail;
+      if (detail.toLowerCase().includes("already exists") || detail.toLowerCase().includes("duplicate")) {
+        errorMessage = "このメールアドレスは既に登録されています";
+      } else if (detail.toLowerCase().includes("invalid") || detail.toLowerCase().includes("format")) {
+        errorMessage = "メールアドレスの形式が正しくありません";
+      } else if (detail.toLowerCase().includes("password") && detail.toLowerCase().includes("short")) {
+        errorMessage = "パスワードは8文字以上で入力してください";
+      } else if (detail.toLowerCase().includes("weak")) {
+        errorMessage = "パスワードが弱すぎます";
+      }
+
+      setErrors({ email: errorMessage });
+      toast.error(errorMessage);
     }
   };
 
@@ -64,12 +120,22 @@ export default function Register({ onSuccess }) {
           </span>
         </label>
 
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full h-[40px] border #595757 rounded-[5px] px-4 outline-none focus:border-[#4500FF] text-black"
-        />
+        <div className="flex flex-col">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              clearError("email");
+            }}
+            className="w-full h-[40px] border border-[#595757] rounded-[5px] px-4 outline-none focus:border-[#4500FF] text-black"
+          />
+          {errors.email && (
+            <span className="text-red-500 text-[12px] mt-1">
+              {errors.email}
+            </span>
+          )}
+        </div>
 
         <label className="font-cabin font-bold text-[14px] text-black">
           パスワード
@@ -77,12 +143,22 @@ export default function Register({ onSuccess }) {
             ※半角英字8文字以上
           </span>
         </label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full h-[40px] border #595757 rounded-[5px] px-4 outline-none focus:border-[#4500FF] text-black"
-        />
+        <div className="flex flex-col">
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              clearError("password");
+            }}
+            className="w-full h-[40px] border border-[#595757] rounded-[5px] px-4 outline-none focus:border-[#4500FF] text-black"
+          />
+          {errors.password && (
+            <span className="text-red-500 text-[12px] mt-1">
+              {errors.password}
+            </span>
+          )}
+        </div>
 
         <label className="font-cabin font-bold text-[14px] text-black">
           パスワードを再入力
@@ -90,12 +166,22 @@ export default function Register({ onSuccess }) {
             ※半角英字8文字以上
           </span>
         </label>
-        <input
-          type="password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          className="w-full h-[40px] border #595757 rounded-[5px] px-4 outline-none focus:border-[#4500FF] text-black"
-        />
+        <div className="flex flex-col">
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => {
+              setConfirmPassword(e.target.value);
+              clearError("confirmPassword");
+            }}
+            className="w-full h-[40px] border border-[#595757] rounded-[5px] px-4 outline-none focus:border-[#4500FF] text-black"
+          />
+          {errors.confirmPassword && (
+            <span className="text-red-500 text-[12px] mt-1">
+              {errors.confirmPassword}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col items-start w-full space-y-3 md:w-[350px]">
@@ -110,12 +196,15 @@ export default function Register({ onSuccess }) {
           をご確認ください。
         </div>
 
-        <div className="text-sm text-center text-gray-600">
-          <label className="flex items-center justify-center gap-2 text-sm text-black cursor-pointer select-none">
+        <div className="flex flex-col items-start">
+          <label className="flex items-center justify-start gap-2 text-sm text-black cursor-pointer select-none">
             <input
               type="checkbox"
               checked={checkbox}
-              onChange={(e) => setCheckbox(e.target.checked)}
+              onChange={(e) => {
+                setCheckbox(e.target.checked);
+                clearError("checkbox");
+              }}
               className="sr-only"
             />
 
@@ -124,10 +213,9 @@ export default function Register({ onSuccess }) {
               className={`
                 w-[23px] h-[23px]
                 rounded-[6px]
-                border border-[#8F9393]
-                flex items-center justify-center
+                border flex items-center justify-center
                 transition-all duration-150 ease-out
-                ${checkbox ? "bg-[#7D01FF]" : "bg-transparent"}
+                ${checkbox ? "bg-[#7D01FF] border-[#7D01FF]" : "bg-transparent border-[#8F9393]"}
                 active:scale-[0.92]
               `}
             >
@@ -152,12 +240,21 @@ export default function Register({ onSuccess }) {
 
             <span>同意します</span>
           </label>
+          {errors.checkbox && (
+            <span className="text-red-500 text-[12px] mt-1">
+              {errors.checkbox}
+            </span>
+          )}
         </div>
       </div>
 
       <div className="flex flex-col md:flex-row items-center gap-4 w-full mt-[5px] align-center md:justify-center md:gap-[30px] md:mt-0">
-        <PrimaryButton onClick={handleRegister} rounded="rounded-[5px]">
-          登録する
+        <PrimaryButton 
+          onClick={handleRegister} 
+          disabled={isLoading}
+          rounded="rounded-[5px]"
+        >
+          {isLoading ? "登録中..." : "登録する"}
         </PrimaryButton>
 
         <SecondaryButton
