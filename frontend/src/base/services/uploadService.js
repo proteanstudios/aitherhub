@@ -31,9 +31,9 @@ class UploadService extends BaseApiService {
   async uploadToAzure(file, uploadUrl, onProgress) {
     const blockBlobClient = new BlockBlobClient(uploadUrl);
     
-    await blockBlobClient.uploadBrowserData(file, {
-      blockSize: 50 * 1024 * 1024, // 50MB chunks
-      concurrency: 4,
+    await blockBlobClient.uploadData(file, {
+      blockSize: 8 * 1024 * 1024, // 8MB chunks
+      concurrency: 8,
       onProgress: (progress) => {
         const percentage = Math.round((progress.loadedBytes / file.size) * 100);
         if (onProgress) onProgress(percentage);
