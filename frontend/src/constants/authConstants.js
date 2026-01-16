@@ -1,8 +1,3 @@
-export const AUTH_URLS = {
-  LOGIN: '/login',
-  REGISTER: '/register',
-};
-
 export function isAuthEndpoint(url) {
   if (!url) return false;
   try {

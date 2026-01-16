@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { API_CONFIG, HTTP_STATUS } from './config';
 import TokenManager from '../utils/tokenManager';
-import { AUTH_URLS, isAuthEndpoint } from '../../constants/authConstants';
+import { isAuthEndpoint } from '../../constants/authConstants';
 import AuthService from '../services/userService';
 // import { getCurrentStoreId } from '../../utils/storeHelpers';
 
@@ -15,10 +15,13 @@ const apiClient = axios.create({
 });
 
 const handleAutoLogout = () => {
+  // First, perform logout (clear tokens and user data)
   AuthService.logout();
-  if (!isAuthEndpoint(window.location.pathname)) {
-    window.location.href = AUTH_URLS.LOGIN;
-  }
+  // Then dispatch event to open login modal
+  // Use setTimeout to ensure logout completes before opening modal
+  setTimeout(() => {
+    window.dispatchEvent(new CustomEvent('openLoginModal'));
+  }, 0);
 };
 
 apiClient.interceptors.request.use(
@@ -63,13 +66,25 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
+    // Handle 401 Unauthorized
     if (error.response?.status === HTTP_STATUS.UNAUTHORIZED && !originalRequest._retry) {
       originalRequest._retry = true;
+
+      // Don't auto logout if this is an auth endpoint (login/register)
+      // Let the component handle the error and display it in the modal
+      const requestUrl = originalRequest?.url || '';
+      const isAuthRequest = isAuthEndpoint(requestUrl);
 
       const errorMessage = error.response?.data?.message || '';
       const isSignatureError = errorMessage.toLowerCase().includes('signature') || 
                               errorMessage.toLowerCase().includes('token') ||
                               errorMessage.toLowerCase().includes('jwt');
+
+      // If it's an auth endpoint (login/register), just reject the error
+      // Don't try to refresh token or logout
+      if (isAuthRequest) {
+        return Promise.reject(error);
+      }
 
       if (isSignatureError) {
         handleAutoLogout();
@@ -102,6 +117,15 @@ apiClient.interceptors.response.use(
       } catch (refreshError) {
         handleAutoLogout();
         return Promise.reject(refreshError);
+      }
+    }
+
+    // Handle 403 Forbidden - auto logout and open login modal
+    if (error.response?.status === HTTP_STATUS.FORBIDDEN) {
+      const requestUrl = originalRequest?.url || '';
+      // Don't auto logout if this is an auth endpoint
+      if (!isAuthEndpoint(requestUrl)) {
+        handleAutoLogout();
       }
     }
 

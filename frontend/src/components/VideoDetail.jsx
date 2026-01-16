@@ -31,7 +31,11 @@ export default function VideoDetail({ video }) {
         });
         
       } catch (err) {
-        setError("動画の詳細を取得できませんでした");
+        // If it's 403 Forbidden, interceptor will handle logout and open login modal
+        // Don't show error message in this case
+        if (err?.response?.status !== 403) {
+          setError("動画の詳細を取得できませんでした");
+        }
       } finally {
         setLoading(false);
       }

@@ -28,6 +28,35 @@ export default function Header({
     }
   }, [propUser]);
 
+  // Check URL query parameter to auto-open login modal
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('showLogin') === 'true') {
+      setOpenLogin(true);
+      // Remove query parameter from URL
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  // Listen for custom event to open login modal
+  useEffect(() => {
+    const handleOpenLoginModal = () => {
+      // First, ensure user state is updated to reflect logout
+      // Clear user from localStorage (already done by AuthService.logout)
+      // Update local user state
+      setLocalUser({ isLoggedIn: false });
+      if (setPropUser) {
+        setPropUser({ isLoggedIn: false });
+      }
+      // Then open login modal
+      setOpenLogin(true);
+    };
+    window.addEventListener('openLoginModal', handleOpenLoginModal);
+    return () => {
+      window.removeEventListener('openLoginModal', handleOpenLoginModal);
+    };
+  }, [setPropUser]);
+
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {

@@ -1,7 +1,7 @@
 import axios from "axios";
 import TokenManager from "../utils/tokenManager";
 import AuthService from "../services/userService";
-import { AUTH_URLS, isAuthEndpoint } from "../../constants/authConstants";
+import { isAuthEndpoint } from "../../constants/authConstants";
 
 export default class BaseApiService {
   constructor(baseURL) {
@@ -13,10 +13,13 @@ export default class BaseApiService {
     });
 
     const handleAutoLogout = () => {
+      // First, perform logout (clear tokens and user data)
       AuthService.logout();
-      if (!isAuthEndpoint(window.location.pathname)) {
-        window.location.href = AUTH_URLS.LOGIN;
-      }
+      // Then dispatch event to open login modal
+      // Use setTimeout to ensure logout completes before opening modal
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('openLoginModal'));
+      }, 0);
     };
 
     this.client.interceptors.request.use(
@@ -39,9 +42,26 @@ export default class BaseApiService {
     this.client.interceptors.response.use(
       (response) => response,
       (error) => {
+        const requestUrl = error.config?.url || '';
+        const isAuthRequest = isAuthEndpoint(requestUrl);
+
+        // Handle 401 Unauthorized
         if (error.response?.status === 401) {
-          handleAutoLogout();
+          // Don't auto logout if this is an auth endpoint (login/register)
+          // Let the component handle the error and display it in the modal
+          if (!isAuthRequest) {
+            handleAutoLogout();
+          }
         }
+
+        // Handle 403 Forbidden - auto logout and open login modal
+        if (error.response?.status === 403) {
+          // Don't auto logout if this is an auth endpoint
+          if (!isAuthRequest) {
+            handleAutoLogout();
+          }
+        }
+
         return Promise.reject(error);
       }
     );
