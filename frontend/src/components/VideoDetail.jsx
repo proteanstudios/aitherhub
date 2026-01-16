@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import ChatInput from "./ChatInput";
 import VideoService from "../base/services/videoService";
+import "../assets/css/sidebar.css";
 
 export default function VideoDetail({ video }) {
   const [loading, setLoading] = useState(false);
@@ -84,7 +85,7 @@ export default function VideoDetail({ video }) {
         </div>
 
         {/* SCROLL AREA */}
-        <div className="flex-1 overflow-y-auto text-left">
+        <div className="flex-1 overflow-y-auto scrollbar-custom text-left">
           <div className="rounded-lg font-[Cabin] font-semibold text-[18px] leading-[35px] tracking-[0]">
             <div className="mt-4">アップロードありがとうございます。</div>
             <div className="mb-2">
@@ -99,29 +100,31 @@ export default function VideoDetail({ video }) {
           <div className="mt-4 font-semibold">
             {videoData?.reports_1 && videoData.reports_1.length > 0 ? (
               <div className="flex flex-col gap-3">
-                {videoData.reports_1.map((it) => (
-                  <div
-                    key={it.phase_index}
-                    className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-4 items-start p-3 bg-white/5 rounded-md"
-                  >
-                    <div className="text-sm text-gray-400 font-mono whitespace-nowrap">
-                      {it.time_start != null || it.time_end != null ? (
-                        <>
-                          {it.time_start != null ? it.time_start : ""}
-                          {" : "}
-                          {it.time_end != null ? it.time_end : ""}
-                        </>
-                      ) : (
-                        <span className="text-gray-500">-</span>
-                      )}
-                    </div>
-
-                    <div className="text-sm text-left text-gray-100 whitespace-pre-wrap">
-                      {it.insight || "(No insight)"}
-                    </div>
+              {videoData.reports_1.map((it, index) => (
+                <div
+                  key={it.phase_index}
+                  className={`grid grid-cols-1 md:grid-cols-[120px_1fr] gap-4 items-start p-3 bg-white/5 rounded-md
+                    ${index === videoData.reports_1.length - 1 ? "mb-[30px]" : ""}
+                  `}
+                >
+                  <div className="text-sm text-gray-400 font-mono whitespace-nowrap">
+                    {it.time_start != null || it.time_end != null ? (
+                      <>
+                        {it.time_start != null ? it.time_start : ""}
+                        {" : "}
+                        {it.time_end != null ? it.time_end : ""}
+                      </>
+                    ) : (
+                      <span className="text-gray-500">-</span>
+                    )}
                   </div>
-                ))}
-              </div>
+            
+                  <div className="text-sm text-left text-gray-100 whitespace-pre-wrap">
+                    {it.insight || "(No insight)"}
+                  </div>
+                </div>
+              ))}
+            </div>
             ) : (
               <div className="text-[18px] leading-[35px] tracking-[0] text-gray-500">
                 解析結果はまだありません

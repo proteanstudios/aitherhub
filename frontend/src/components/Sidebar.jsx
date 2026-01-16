@@ -12,6 +12,7 @@ import MyAccount from "../assets/icons/user-profile-icon-df.png";
 import PasswordIcon from "../assets/icons/password-icon.svg";
 import Signout from "../assets/icons/signout-icon-df.png";
 
+import "../assets/css/sidebar.css";
 import ForgotPasswordModal from "./modals/ForgotPasswordModal";
 import AuthService from "../base/services/userService";
 import VideoService from "../base/services/videoService";
@@ -126,10 +127,11 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
       <aside
         ref={sidebarRef}
         className={`fixed md:static top-0 left-0 z-50
-        w-[350px] md:w-[260px] h-screen bg-white p-4
-        overflow-y-auto scrollbar-custom
+        w-[350px] md:w-[260px] h-screen bg-white
+        flex flex-col 
         transition-transform duration-300 ease-in-out
-        ${isOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`}
+        ${isOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0
+        md:overflow-y-auto md:scrollbar-custom md:py-4 md:pl-4 md:pr-0`}
       >
         {/* ================= PC ================= */}
         <div className="hidden md:block space-y-3">
@@ -154,7 +156,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
         </div>
 
         {/* ================= SP ================= */}
-        <div className="md:hidden mt-[6px]">
+        <div className="md:hidden mt-[22px] px-4 flex-shrink-0">
           <div className="flex justify-between items-center mb-[20px]">
             <div className="relative w-[270px]">
               <div className="p-[1px] rounded-[5px] bg-gradient-to-b from-[#4500FF] to-[#9B00FF]">
@@ -198,43 +200,45 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
         </div>
 
         {/* ================= COMMON ================= */}
-        <div className="mt-6 space-y-3">
-          <span className="block ml-[16px] text-[#9E9E9E] font-semibold text-left">解析履歴</span>
+        <div className="mt-6 md:space-y-3 flex flex-col flex-1 min-h-0 pl-4 pr-0 md:px-0">
+          <span className="block ml-[16px] text-[#9E9E9E] font-semibold text-left flex-shrink-0">解析履歴</span>
 
           {effectiveUser?.isLoggedIn && (
             <>
-              {loadingVideos ? (
-                <div className="flex items-center justify-center py-4">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-400"></div>
-                </div>
-              ) : videos.length > 0 ? (
-                <div className="flex flex-col items-start gap-2">
-                  {videos.map((video) => (
-                    <span
-                      key={video.id}
-                      onClick={() => handleVideoClick(video)}
-                      className={`block font-semibold cursor-pointer transition-colors px-4 py-2 rounded-lg w-full text-left ${
-                        selectedVideoId === video.id
-                          ? "bg-purple-100 text-purple-700"
-                          : "hover:text-gray-400 hover:bg-gray-100"
-                      }`}
-                    >
-                      {video.original_filename || `Video ${video.id}`}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center text-gray-400 text-sm py-4">
-                  ビデオがありません
-                </div>
-              )}
+              <div className="flex-1 min-h-0 flex flex-col">
+                {loadingVideos ? (
+                  <div className="flex items-center justify-center py-4">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-400"></div>
+                  </div>
+                ) : videos.length > 0 ? (
+                  <div className="flex flex-col items-start gap-2 flex-1 min-h-0 overflow-y-auto scrollbar-custom">
+                    {videos.map((video) => (
+                      <span
+                        key={video.id}
+                        onClick={() => handleVideoClick(video)}
+                        className={`block font-semibold cursor-pointer transition-colors px-4 py-2 rounded-lg w-full text-left ${
+                          selectedVideoId === video.id
+                            ? "bg-purple-100 text-purple-700"
+                            : "hover:text-gray-400 hover:bg-gray-100"
+                        }`}
+                      >
+                        {video.original_filename || `Video ${video.id}`}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center text-gray-400 text-sm py-4">
+                    ビデオがありません
+                  </div>
+                )}
+              </div>
 
               {/* ===== Email pill (SP) ===== */}
               <div
                 onClick={toggleDropdown}
-                className="absolute bottom-[25px] ml-[7px] w-[223px] h-[45px]
+                className="ml-[7px] w-[223px] h-[45px] mb-[25px] mt-auto
                 md:hidden rounded-[50px] border border-[#B5B5B5]
-                flex items-center justify-center shadow cursor-pointer"
+                flex items-center justify-center shadow cursor-pointer flex-shrink-0"
               >
                 <span className="font-bold text-[18px] max-w-[160px] truncate inline-block align-middle">
                   {effectiveUser.email}

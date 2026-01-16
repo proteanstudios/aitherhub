@@ -1,25 +1,24 @@
-/* Luôn hiển thị scrollbar dọc */
+
 .scrollbar-custom {
     overflow-y: scroll; /* thay vì overflow-auto */
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
   }
   
-  /* Ẩn mũi tên trên/dưới */
   .scrollbar-custom::-webkit-scrollbar-button {
     display: none;
   }
   
-  /* Scrollbar dọc */
+
   .scrollbar-custom::-webkit-scrollbar {
     width: 8px;
   }
   
-  /* Thumb của scroll */
   .scrollbar-custom::-webkit-scrollbar-thumb {
-    background-color: #7D01FF;
+    background-color: #e5e3e9;
     border-radius: 4px;
   }
   
-  /* Track scrollbar */
   .scrollbar-custom::-webkit-scrollbar-track {
     background: rgba(0, 0, 0, 0.05);
     border-radius: 4px;
