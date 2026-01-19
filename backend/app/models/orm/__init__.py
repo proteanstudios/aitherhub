@@ -15,3 +15,4 @@ from .phase_group import PhaseGroup
 from .phase_group_best_phase import PhaseGroupBestPhase
 from .phase_insight import PhaseInsight
 from .base import Base
+from .chat import Chat
