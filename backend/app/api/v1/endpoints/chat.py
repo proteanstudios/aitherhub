@@ -133,35 +133,81 @@ async def stream_chat(
             try:
                 call_messages = [system_msg] + history_msgs + payload.messages
 
-                resp = client.chat.completions.create(
+                # Responses API (new): messages -> input. Build input payload.
+                input_payload = []
+                for m in call_messages:
+                    # keep structure role/content
+                    try:
+                        input_payload.append({"role": m.get("role"), "content": m.get("content")})
+                    except Exception:
+                        # skip malformed
+                        continue
+
+                resp = client.responses.create(
                     stream=True,
                     model=model,
-                    messages=call_messages,
-                    max_completion_tokens=payload.max_tokens,
+                    input=input_payload,
+                    max_output_tokens=payload.max_tokens,
                 )
 
                 # accumulate full answer to persist after stream
-
                 for update in resp:
-                    # update may be an object-like response from Azure client
                     try:
-                        choices = getattr(update, "choices", None) or update.get("choices")
+                        # Try common fields for streamed chunks across SDKs
+                        text_chunk = None
+
+
+                        # direct/common attributes
+                        text_chunk = None
+                        # delta events on the update object
+                        if getattr(update, "delta", None):
+                            text_chunk = getattr(update, "delta")
+                        # direct text field
+                        if not text_chunk:
+                            text_chunk = getattr(update, "text", None)
+                        # older field used by some events
+                        if not text_chunk:
+                            text_chunk = getattr(update, "output_text", None)
+
+                        # dict-like fallback
+                        if not text_chunk and isinstance(update, dict):
+                            text_chunk = update.get("delta") or update.get("output_text") or update.get("text") or update.get("content")
+
+                        # try choices/delta style fallback
+                        if not text_chunk:
+                            choices = getattr(update, "choices", None) or (update.get("choices") if isinstance(update, dict) else None)
+                            if choices:
+                                first = choices[0]
+                                delta = getattr(first, "delta", None) or (first.get("delta") if isinstance(first, dict) else None)
+                                if delta:
+                                    text_chunk = getattr(delta, "text", None) or (delta.get("text") if isinstance(delta, dict) else None) or getattr(delta, "content", None) or (delta.get("content") if isinstance(delta, dict) else None)
+
+                        # try output array structure
+                        if not text_chunk:
+                            out = getattr(update, "output", None) if not isinstance(update, dict) else update.get("output")
+                            if out:
+                                if isinstance(out, str):
+                                    text_chunk = out
+                                elif isinstance(out, list):
+                                    parts = []
+                                    for o in out:
+                                        if isinstance(o, dict):
+                                            c = o.get("content")
+                                            if isinstance(c, str):
+                                                parts.append(c)
+                                            elif isinstance(c, list):
+                                                for p in c:
+                                                    if isinstance(p, dict):
+                                                        parts.append(p.get("text") or p.get("content") or "")
+                                    if parts:
+                                        text_chunk = "".join(parts)
+
+                        if text_chunk:
+                            full_answer_parts.append(text_chunk)
+                            yield f"data: {text_chunk}\n\n"
                     except Exception:
-                        choices = None
-
-                    if choices:
-                        first = choices[0]
-                        delta = getattr(first, "delta", None) or first.get("delta")
-                        content = None
-                        if delta is not None:
-                            content = getattr(delta, "content", None)
-                            if content is None and isinstance(delta, dict):
-                                content = delta.get("content")
-
-                        if content:
-                            # SSE: send token chunk as data event
-                            full_answer_parts.append(content)
-                            yield f"data: {content}\n\n"
+                        # ignore streaming chunk parse errors
+                        continue
 
                 # signal end
                 yield "data: [DONE]\n\n"
