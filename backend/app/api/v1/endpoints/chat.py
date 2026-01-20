@@ -66,16 +66,20 @@ async def stream_chat(
 
         report_text = ""
         try:
-            # phase_insights contains per-phase insights for the video; combine them
-            sql = text(
-                "SELECT phase_index, insight FROM phase_insights WHERE video_id = :video_id ORDER BY phase_index ASC"
+            sql_join = text(
+                "SELECT pi.phase_index, pi.insight, vp.phase_description, vp.time_start, vp.time_end, "
+                "vp.view_start, vp.view_end, vp.like_start, vp.like_end, vp.delta_view, vp.delta_like "
+                "FROM phase_insights pi "
+                "LEFT JOIN video_phases vp ON pi.video_id = vp.video_id AND pi.phase_index = vp.phase_index "
+                "WHERE pi.video_id = :video_id "
+                "ORDER BY pi.phase_index ASC"
             )
-            res = await db.execute(sql, {"video_id": video_id})
+            res = await db.execute(sql_join, {"video_id": video_id})
             rows = res.fetchall()
+
+            parts: List[str] = []
             if rows:
-                parts: List[str] = []
                 for r in rows:
-                    # Row may support attribute access or index access
                     try:
                         idx = getattr(r, "phase_index", None) or r[0]
                     except Exception:
@@ -84,13 +88,161 @@ async def stream_chat(
                         insight = getattr(r, "insight", None) or r[1]
                     except Exception:
                         insight = r[1] if len(r) > 1 else ""
-                    parts.append(f"Phase {idx}: {insight}")
-                report_text = "\n\n".join(parts)
-        except Exception:
-            # non-fatal: proceed without report if DB fetch fails
-            report_text = ""
 
-        # prepend system message containing the report so the model focuses on it
+                    try:
+                        p_desc = getattr(r, "phase_description", None) or r[2]
+                    except Exception:
+                        p_desc = r[2] if len(r) > 2 else None
+                    try:
+                        p_time_start = getattr(r, "time_start", None) or r[3]
+                    except Exception:
+                        p_time_start = r[3] if len(r) > 3 else None
+                    try:
+                        p_time_end = getattr(r, "time_end", None) or r[4]
+                    except Exception:
+                        p_time_end = r[4] if len(r) > 4 else None
+                    try:
+                        p_view_start = getattr(r, "view_start", None) if hasattr(r, "view_start") else (r[5] if len(r) > 5 else None)
+                    except Exception:
+                        p_view_start = r[5] if len(r) > 5 else None
+                    try:
+                        p_view_end = getattr(r, "view_end", None) if hasattr(r, "view_end") else (r[6] if len(r) > 6 else None)
+                    except Exception:
+                        p_view_end = r[6] if len(r) > 6 else None
+                    try:
+                        p_like_start = getattr(r, "like_start", None) if hasattr(r, "like_start") else (r[7] if len(r) > 7 else None)
+                    except Exception:
+                        p_like_start = r[7] if len(r) > 7 else None
+                    try:
+                        p_like_end = getattr(r, "like_end", None) if hasattr(r, "like_end") else (r[8] if len(r) > 8 else None)
+                    except Exception:
+                        p_like_end = r[8] if len(r) > 8 else None
+                    try:
+                        p_delta_view = getattr(r, "delta_view", None) if hasattr(r, "delta_view") else (r[9] if len(r) > 9 else None)
+                    except Exception:
+                        p_delta_view = r[9] if len(r) > 9 else None
+                    try:
+                        p_delta_like = getattr(r, "delta_like", None) if hasattr(r, "delta_like") else (r[10] if len(r) > 10 else None)
+                    except Exception:
+                        p_delta_like = r[10] if len(r) > 10 else None
+
+                    header = f"Phase {idx}"
+                    if p_desc:
+                        header += f": {p_desc}"
+                    if p_time_start is not None or p_time_end is not None:
+                        ts = f"{p_time_start if p_time_start is not None else ''}" \
+                            f"-{p_time_end if p_time_end is not None else ''}"
+                        header += f" ({ts}s)"
+
+                    combined = header
+                    if insight:
+                        combined += f"\nInsight: {insight}"
+
+                    metrics_lines = []
+                    if p_view_start is not None or p_view_end is not None or p_delta_view is not None:
+                        vs = f"start={p_view_start}" if p_view_start is not None else ""
+                        ve = f"end={p_view_end}" if p_view_end is not None else ""
+                        dv = f"delta={p_delta_view}" if p_delta_view is not None else ""
+                        metrics = ", ".join([m for m in [vs, ve, dv] if m])
+                        metrics_lines.append(f"Views: {metrics}")
+                    if p_like_start is not None or p_like_end is not None or p_delta_like is not None:
+                        ls = f"start={p_like_start}" if p_like_start is not None else ""
+                        le = f"end={p_like_end}" if p_like_end is not None else ""
+                        dl = f"delta={p_delta_like}" if p_delta_like is not None else ""
+                        metrics = ", ".join([m for m in [ls, le, dl] if m])
+                        metrics_lines.append(f"Likes: {metrics}")
+
+                    if metrics_lines:
+                        combined += "\n" + "\n".join(metrics_lines)
+
+                    parts.append(combined)
+
+            report_text = "\n\n".join(parts) if parts else ""
+        except Exception:
+            try:
+                sql_insights = text(
+                    "SELECT phase_index, insight FROM phase_insights WHERE video_id = :video_id ORDER BY phase_index ASC"
+                )
+                res_ins = await db.execute(sql_insights, {"video_id": video_id})
+                rows_ins = res_ins.fetchall()
+
+                phases_map: Dict[Any, Dict[str, Any]] = {}
+                try:
+                    sql_phases = text(
+                        "SELECT phase_index, title, description, view_count, like_count FROM video_phases WHERE video_id = :video_id ORDER BY phase_index ASC"
+                    )
+                    res_ph = await db.execute(sql_phases, {"video_id": video_id})
+                    rows_ph = res_ph.fetchall()
+                    if rows_ph:
+                        for r in rows_ph:
+                            try:
+                                p_idx = getattr(r, "phase_index", None) or r[0]
+                            except Exception:
+                                p_idx = r[0] if len(r) > 0 else None
+                            try:
+                                p_title = getattr(r, "title", None) or r[1]
+                            except Exception:
+                                p_title = r[1] if len(r) > 1 else None
+                            try:
+                                p_desc = getattr(r, "description", None) or r[2]
+                            except Exception:
+                                p_desc = r[2] if len(r) > 2 else None
+                            try:
+                                p_views = getattr(r, "view_count", None) if hasattr(r, "view_count") else (r[3] if len(r) > 3 else None)
+                            except Exception:
+                                p_views = r[3] if len(r) > 3 else None
+                            try:
+                                p_likes = getattr(r, "like_count", None) if hasattr(r, "like_count") else (r[4] if len(r) > 4 else None)
+                            except Exception:
+                                p_likes = r[4] if len(r) > 4 else None
+                            if p_idx is not None:
+                                phases_map[p_idx] = {
+                                    "title": p_title or "",
+                                    "description": p_desc or "",
+                                    "views": p_views,
+                                    "likes": p_likes,
+                                }
+                except Exception:
+                    phases_map = {}
+
+                parts: List[str] = []
+                if rows_ins:
+                    for r in rows_ins:
+                        try:
+                            idx = getattr(r, "phase_index", None) or r[0]
+                        except Exception:
+                            idx = r[0] if len(r) > 0 else "?"
+                        try:
+                            insight = getattr(r, "insight", None) or r[1]
+                        except Exception:
+                            insight = r[1] if len(r) > 1 else ""
+
+                        phase_info = phases_map.get(idx)
+                        if phase_info:
+                            title = phase_info.get("title") or ""
+                            desc = phase_info.get("description") or ""
+                            header = f"Phase {idx}: {title}" if title else f"Phase {idx}"
+                            combined = header
+                            if desc:
+                                combined += f" - {desc}"
+                            if insight:
+                                combined += f"\nInsight: {insight}"
+                            views = phase_info.get("views")
+                            likes = phase_info.get("likes")
+                            metrics = []
+                            if views is not None:
+                                metrics.append(f"views={views}")
+                            if likes is not None:
+                                metrics.append(f"likes={likes}")
+                            if metrics:
+                                combined += f"\nMetrics: {', '.join(metrics)}"
+                            parts.append(combined)
+                        else:
+                            parts.append(f"Phase {idx}: {insight}")
+                report_text = "\n\n".join(parts) if parts else ""
+            except Exception:
+                report_text = ""
+
         system_msg = {
             "role": "system",
             "content": (

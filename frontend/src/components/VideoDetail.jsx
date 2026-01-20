@@ -42,6 +42,9 @@ export default function VideoDetail({ video }) {
   const handleChatSend = (text) => {
     try {
       const vid = video?.id || videoData?.id;
+      if (streamCancelRef.current) {
+        return;
+      }
       const hasReport = !!(videoData && Array.isArray(videoData.reports_1) && videoData.reports_1.length > 0);
       const statusDone = (videoData && (String(videoData.status || "").toUpperCase() === "DONE")) || false;
       if (!vid || !(hasReport || statusDone)) {
@@ -148,7 +151,7 @@ export default function VideoDetail({ video }) {
     const onGlobalSubmit = (ev) => {
       try {
         const text = ev?.detail?.text;
-        if (text) handleChatSend(text);
+        if (text && !streamCancelRef.current) handleChatSend(text);
       } catch (e) {}
     };
     window.addEventListener("videoInput:submitted", onGlobalSubmit);
@@ -329,7 +332,7 @@ export default function VideoDetail({ video }) {
         </div>
 
         <div className="hidden md:block mt-4 pb-4">
-          <ChatInput onSend={handleChatSend} />
+          <ChatInput onSend={handleChatSend} disabled={!!streamCancelRef.current} />
         </div>
       </div>
     </div>

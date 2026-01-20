@@ -2,10 +2,11 @@ import { useState } from "react";
 import AddIcon from "../assets/icons/add.png";
 import SendIcon from "../assets/icons/send.png";
 
-export default function ChatInput({ className = "", onSend }) {
+export default function ChatInput({ className = "", onSend, disabled = false }) {
   const [message, setMessage] = useState("");
 
   const handleSend = () => {
+    if (disabled) return;
     const text = message.trim();
     if (text) {
       try {
@@ -31,7 +32,7 @@ export default function ChatInput({ className = "", onSend }) {
   const handleKeyDown = (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      handleSend();
+      if (!disabled) handleSend();
     }
   };
 
@@ -49,6 +50,7 @@ export default function ChatInput({ className = "", onSend }) {
           type="text"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
+          disabled={disabled}
           onKeyDown={handleKeyDown}
           placeholder="質問をしてみましょう"
           className="text-[18px] leading-[40px] text-black w-full h-[50px] pl-[16px] md:pl-[60px] pr-[50px] rounded-[25px] border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
@@ -56,8 +58,8 @@ export default function ChatInput({ className = "", onSend }) {
         <img
           src={SendIcon}
           alt="Send"
-          onClick={handleSend}
-          className="absolute right-[7px] top-1/2 -translate-y-1/2 w-[40px] h-[40px] cursor-pointer hover:opacity-80 transition-opacity"
+          onClick={() => { if (!disabled) handleSend(); }}
+          className={`absolute right-[7px] top-1/2 -translate-y-1/2 w-[40px] h-[40px] ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:opacity-80 transition-opacity'}`}
         />
       </div>
     </div>
