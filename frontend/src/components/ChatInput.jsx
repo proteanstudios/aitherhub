@@ -2,18 +2,35 @@ import { useState } from "react";
 import AddIcon from "../assets/icons/add.png";
 import SendIcon from "../assets/icons/send.png";
 
-export default function ChatInput({ className = "" }) {
+export default function ChatInput({ className = "", onSend }) {
   const [message, setMessage] = useState("");
 
   const handleSend = () => {
-    if (message.trim()) {
-      console.log("Sending message:", message);
+    const text = message.trim();
+    if (text) {
+      try {
+        try {
+          if (typeof onSend === "function") {
+            onSend(text);
+          } else {
+            try {
+              window.dispatchEvent(new CustomEvent("videoInput:submitted", { detail: { text } }));
+            } catch (evErr) {
+              console.error("ChatInput: failed to dispatch global event", evErr);
+            }
+          }
+        } catch (innerErr) {
+          console.error("ChatInput: onSend threw", innerErr);
+          throw innerErr;
+        }
+      } catch (err) {}
       setMessage("");
     }
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyDown = (e) => {
     if (e.key === "Enter") {
+      e.preventDefault();
       handleSend();
     }
   };
@@ -32,7 +49,7 @@ export default function ChatInput({ className = "" }) {
           type="text"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          onKeyPress={handleKeyPress}
+          onKeyDown={handleKeyDown}
           placeholder="質問をしてみましょう"
           className="text-[18px] leading-[40px] text-black w-full h-[50px] pl-[16px] md:pl-[60px] pr-[50px] rounded-[25px] border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
         />

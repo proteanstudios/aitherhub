@@ -155,10 +155,6 @@ async def stream_chat(
                     try:
                         # Try common fields for streamed chunks across SDKs
                         text_chunk = None
-
-
-                        # direct/common attributes
-                        text_chunk = None
                         # delta events on the update object
                         if getattr(update, "delta", None):
                             text_chunk = getattr(update, "delta")
@@ -228,6 +224,11 @@ async def stream_chat(
         def _bg_save_sync() -> None:
             try:
                 full_answer = "".join(full_answer_parts)
+                try:
+                    if "\\n" in full_answer or "\\r\\n" in full_answer:
+                        full_answer = full_answer.replace('\\r\\n', '\r\n').replace('\\n', '\n')
+                except Exception:
+                    pass
                 question_text = None
                 for m in reversed(payload.messages):
                     if m.get("role") == "user":
@@ -262,3 +263,69 @@ async def stream_chat(
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Streaming failure: {exc}")
+
+
+@router.get("/history")
+async def get_chat_history(
+    video_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Return chat history for a given video_id.
+
+    Requires authentication. Returns JSON `{"data": [...]}` where each item
+    contains `id`, `video_id`, `question`, `answer`, `created_at`, `updated_at`.
+    """
+    if not video_id:
+        raise HTTPException(status_code=400, detail="Missing video_id")
+
+    try:
+        sql = text(
+            "SELECT id, video_id, question, answer, created_at, updated_at FROM chats WHERE video_id = :video_id ORDER BY created_at ASC"
+        )
+        res = await db.execute(sql, {"video_id": video_id})
+        rows = res.fetchall()
+
+        out = []
+        for r in rows:
+            try:
+                row_id = getattr(r, "id", None) or r[0]
+            except Exception:
+                row_id = r[0] if len(r) > 0 else None
+            try:
+                v_id = getattr(r, "video_id", None) or r[1]
+            except Exception:
+                v_id = r[1] if len(r) > 1 else None
+            try:
+                question = getattr(r, "question", None) or r[2]
+            except Exception:
+                question = r[2] if len(r) > 2 else None
+            try:
+                answer = getattr(r, "answer", None) or r[3]
+            except Exception:
+                answer = r[3] if len(r) > 3 else None
+            try:
+                created_at = getattr(r, "created_at", None) or r[4]
+            except Exception:
+                created_at = r[4] if len(r) > 4 else None
+            try:
+                updated_at = getattr(r, "updated_at", None) or r[5]
+            except Exception:
+                updated_at = r[5] if len(r) > 5 else None
+
+            out.append(
+                {
+                    "id": row_id,
+                    "video_id": v_id,
+                    "question": question,
+                    "answer": answer,
+                    "created_at": created_at,
+                    "updated_at": updated_at,
+                }
+            )
+
+        return {"data": out}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch chat history: {exc}")

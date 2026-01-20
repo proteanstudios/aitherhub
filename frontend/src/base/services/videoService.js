@@ -1,5 +1,6 @@
 import BaseApiService from '../api/BaseApiService';
 import { URL_CONSTANTS } from '../api/endpoints/constant';
+import TokenManager from '../utils/tokenManager';
 
 class VideoService extends BaseApiService {
   constructor() {
@@ -79,6 +80,120 @@ class VideoService extends BaseApiService {
         }
       }
       throw error;
+    }
+  }
+
+  /**
+   * Stream chat responses from backend SSE endpoint.
+   * params: { videoId, messages, token, onMessage, onDone, onError }
+   * Returns: { cancel: () => void }
+   */
+  streamChat({ videoId, messages = [], onMessage = () => {}, onDone = () => {}, onError = () => {} }) {
+    const base = (this.client && this.client.defaults && this.client.defaults.baseURL) || import.meta.env.VITE_API_BASE_URL || "";
+    const url = `${base.replace(/\/$/, "")}/api/v1/chat/stream?video_id=${encodeURIComponent(videoId)}`;
+
+    const controller = new AbortController();
+    const signal = controller.signal;
+
+    (async () => {
+      try {
+        const headers = {
+          Accept: "text/event-stream",
+          "Content-Type": "application/json",
+        };
+
+        const token = TokenManager.getToken();
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+
+        const resp = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ messages }),
+          credentials: "same-origin",
+          signal,
+        });
+
+        if (!resp.ok) {
+          const txt = await resp.text();
+          throw new Error(`Stream request failed: ${resp.status} ${txt}`);
+        }
+
+        if (!resp.body) {
+          throw new Error("Stream response has no body");
+        }
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          let idx;
+          while ((idx = buffer.indexOf("\n\n")) !== -1) {
+            const raw = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            const lines = raw.split(/\r?\n/);
+            for (const line of lines) {
+              if (line === "") continue;
+              if (line.startsWith("data:")) {
+                let payload = line.slice(5);
+                if (payload.charAt(0) === " ") payload = payload.slice(1);
+                if ((payload.startsWith('"') && payload.endsWith('"')) || (payload.startsWith("'") && payload.endsWith("'"))) {
+                  payload = payload.slice(1, -1).trim();
+                }
+                const isDone = payload === "[DONE]" || payload === "DONE";
+                if (isDone) {
+                  try { onDone(); } catch (e) {}
+                } else if (payload.startsWith("[ERROR]")) {
+                  try { onError(new Error(payload)); } catch (e) {}
+                } else {
+                  try { onMessage(payload); } catch (e) {}
+                }
+              }
+            }
+          }
+        }
+
+        if (buffer) {
+          const lines = buffer.split(/\r?\n/);
+          for (const line of lines) {
+            if (line === "") continue;
+            if (line.startsWith("data:")) {
+              let payload = line.slice(5);
+              if (payload.charAt(0) === " ") payload = payload.slice(1);
+              if ((payload.startsWith('"') && payload.endsWith('"')) || (payload.startsWith("'") && payload.endsWith("'"))) {
+                payload = payload.slice(1, -1);
+              }
+              const isDone = payload === "[DONE]" || payload === "DONE";
+              if (isDone) onDone();
+              else if (payload.startsWith("[ERROR]")) onError(new Error(payload));
+              else onMessage(payload);
+            }
+          }
+        }
+
+        try { onDone(); } catch (e) {}
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          return;
+        }
+        try { onError(err); } catch (e) {}
+      }
+    })();
+
+    return { cancel: () => controller.abort() };
+  }
+
+  async getChatHistory(videoId) {
+    try {
+      const response = await this.get(`/api/v1/chat/history?video_id=${encodeURIComponent(videoId)}`);
+      if (response?.data) return response.data;
+      return response;
+    } catch (err) {
+      throw err;
     }
   }
 }
