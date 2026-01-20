@@ -41,7 +41,11 @@ export default function VideoDetail({ video }) {
 
   const handleChatSend = (text) => {
     try {
-      if (streamCancelRef.current) {
+      const vid = video?.id || videoData?.id;
+      const hasReport = !!(videoData && Array.isArray(videoData.reports_1) && videoData.reports_1.length > 0);
+      const statusDone = (videoData && (String(videoData.status || "").toUpperCase() === "DONE")) || false;
+      if (!vid || !(hasReport || statusDone)) {
+        try {  } catch (e) {}
         return;
       }
       const now = Date.now();
