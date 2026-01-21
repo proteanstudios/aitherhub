@@ -6,6 +6,33 @@ import VideoService from "../base/services/videoService";
 import "../assets/css/sidebar.css";
 
 export default function VideoDetail({ video }) {
+  const markdownTableStyles = `
+  .markdown table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.5rem 0;
+  }
+  .markdown th,
+  .markdown td {
+    border: 1px solid rgba(255,255,255,0.12);
+    padding: 0.5rem 0.65rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  .markdown th {
+    font-weight: 600;
+    background: rgba(255,255,255,0.03);
+  }
+  .markdown tr:nth-child(even) td {
+    background: rgba(255,255,255,0.02);
+  }
+  .markdown caption {
+    caption-side: top;
+    text-align: left;
+    font-weight: 600;
+    padding-bottom: 0.25rem;
+  }
+  `;
   const [loading, setLoading] = useState(false);
   const [videoData, setVideoData] = useState(null);
   const [error, setError] = useState(null);
@@ -253,6 +280,7 @@ export default function VideoDetail({ video }) {
 
   return (
     <div className="w-full h-full flex flex-col gap-6 p-0 lg:p-6">
+      <style>{markdownTableStyles}</style>
       <h4 className="md:top-[5px] w-full text-[26px] leading-[35px] font-semibold font-cabin text-center">
         あなたの配信、AIで最適化。<br className="block md:hidden" /> 売上アップの秘密がここに。
       </h4>
@@ -302,9 +330,11 @@ export default function VideoDetail({ video }) {
                   </div>
             
                   <div className="text-sm text-left text-gray-100">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {it.insight || "(No insight)"}
-                    </ReactMarkdown>
+                    <div className="markdown">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {it.insight || "(No insight)"}
+                      </ReactMarkdown>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -326,9 +356,11 @@ export default function VideoDetail({ video }) {
                     <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md">
                       <div className="text-xs text-gray-400 font-mono">Bot</div>
                       <div className="min-w-0 text-sm text-gray-100">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {item.answer || ""}
-                        </ReactMarkdown>
+                        <div className="markdown">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {item.answer || ""}
+                          </ReactMarkdown>
+                        </div>
                       </div>
                     </div>
                   </div>
