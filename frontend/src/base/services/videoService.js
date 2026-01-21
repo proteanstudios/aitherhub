@@ -197,6 +197,46 @@ class VideoService extends BaseApiService {
     }
   }
 
+
+  /**
+   * Generate a download URL for a video from Azure Blob Storage
+   * @param {string} videoId - The video ID
+   * @param {Object} options
+   * @param {number} [options.expiresInMinutes=60] - URL expiration time in minutes
+   * @param {string} [options.email] - User email (required by backend). Will fallback to localStorage if not provided.
+   * @returns {Promise<string>} - Download URL with SAS token
+   */
+  async getDownloadUrl(videoId, { expiresInMinutes = 60, email } = {}) {
+    try {
+      const payload = {
+        video_id: videoId,
+        expires_in_minutes: expiresInMinutes,
+      };
+
+      // Backend expects email; try to supply if available
+      if (email) {
+        payload.email = email;
+      } else {
+        try {
+          const storedUser = localStorage.getItem("user");
+          if (storedUser) {
+            const parsed = JSON.parse(storedUser);
+            if (parsed && parsed.email) {
+              payload.email = parsed.email;
+            }
+          }
+        } catch {
+          // ignore storage access / parse errors
+        }
+      }
+
+      const response = await this.post(`/api/v1/videos/generate-download-url`, payload);
+      return response?.download_url || response?.data?.download_url || response;
+    } catch (err) {
+      console.error("Failed to get download URL:", err);
+      throw err;
+    }
+  }
   /**
    * Stream video processing status updates via Server-Sent Events (SSE).
    *

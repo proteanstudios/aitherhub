@@ -35,3 +35,10 @@ frontend/node_modules/
 backend/.env
 
 worker/batch/output/
+
+# Claude config / rules
+.claude/
+CLAUDE.md
+
+# Cursor config / rules
+.cursor/

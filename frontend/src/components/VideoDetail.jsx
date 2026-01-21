@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import ChatInput from "./ChatInput";
+import VideoPreviewModal from "./modals/VideoPreviewModal";
 import VideoService from "../base/services/videoService";
 import "../assets/css/sidebar.css";
 
@@ -11,6 +12,8 @@ export default function VideoDetail({ video }) {
   const [error, setError] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [processingStatus, setProcessingStatus] = useState(null);
+  const [previewData, setPreviewData] = useState(null); // { url, timeStart, timeEnd }
+  const [previewLoading, setPreviewLoading] = useState(false);
   const answerRef = useRef("");
   const streamCancelRef = useRef(null);
   const lastSentRef = useRef({ text: null, t: 0 });
@@ -25,6 +28,24 @@ export default function VideoDetail({ video }) {
       } catch (e) {
         // Ignore scroll errors
       }
+    }
+  };
+
+  const handlePhasePreview = async (phase) => {
+    if (!phase?.time_start && !phase?.time_end) return;
+    if (!videoData?.id) return;
+    setPreviewLoading(true);
+    try {
+      const url = await VideoService.getDownloadUrl(videoData.id);
+      setPreviewData({
+        url,
+        timeStart: Number(phase.time_start) || 0,
+        timeEnd: phase.time_end != null ? Number(phase.time_end) : null,
+      });
+    } catch (err) {
+      console.error("Failed to load preview url", err);
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -454,7 +475,13 @@ export default function VideoDetail({ video }) {
                     ${index === videoData.reports_1.length - 1 ? "mb-[30px]" : ""}
                   `}
                 >
-                  <div className="text-sm text-gray-400 font-mono whitespace-nowrap">
+                  <div
+                    className={`text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 transition-colors ${
+                      previewLoading ? "opacity-60 pointer-events-none" : ""
+                    }`}
+                    onClick={() => handlePhasePreview(it)}
+                    title="クリックしてプレビュー"
+                  >
                     {it.time_start != null || it.time_end != null ? (
                       <>
                         {it.time_start != null ? it.time_start : ""}
@@ -504,6 +531,14 @@ export default function VideoDetail({ video }) {
           <ChatInput onSend={handleChatSend} disabled={!!streamCancelRef.current} />
         </div>
       </div>
+
+      <VideoPreviewModal
+        open={!!previewData}
+        onClose={() => setPreviewData(null)}
+        videoUrl={previewData?.url}
+        timeStart={previewData?.timeStart}
+        timeEnd={previewData?.timeEnd}
+      />
     </div>
   );
 }
