@@ -32,6 +32,34 @@ export default function VideoDetail({ video }) {
     font-weight: 600;
     padding-bottom: 0.25rem;
   }
+  .markdown p,
+  .markdown li {
+    line-height: 1.9;
+    margin-top: 0.4rem;
+    margin-bottom: 0.4rem;
+  }
+  .markdown hr {
+    border: none;
+    border-top: 1px solid rgba(255,255,255,0.12);
+    margin: 0.75rem 0;
+  }
+  .markdown h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-top: 0.6rem;
+    margin-bottom: 0.6rem;
+    line-height: 1.2;
+  }
+  .markdown h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin-top: 0.45rem;
+    margin-bottom: 0.45rem;
+    line-height: 1.2;
+  }
+  .markdown strong {
+    font-weight: 800;
+  }
   `;
   const [loading, setLoading] = useState(false);
   const [videoData, setVideoData] = useState(null);
