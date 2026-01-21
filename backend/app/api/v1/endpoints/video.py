@@ -1,8 +1,12 @@
 from typing import List
+import json
+import asyncio
 
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+from loguru import logger
 
 from app.schema.video_schema import (
     GenerateUploadURLRequest,
@@ -16,6 +20,7 @@ from app.schema.video_schema import (
 from app.services.video_service import VideoService
 from app.repository.video_repository import VideoRepository
 from app.core.dependencies import get_db, get_current_user
+from app.utils.video_progress import calculate_progress, get_status_message
 
 router = APIRouter(
     prefix="/videos",
@@ -108,6 +113,118 @@ async def get_videos_by_user(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to fetch videos: {exc}")
 
+
+
+@router.get("/{video_id}/status/stream")
+async def stream_video_status(
+    video_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """
+    Stream video processing status updates via Server-Sent Events (SSE).
+
+    This endpoint provides real-time status updates for video processing.
+    It polls the database every 2 seconds and sends status changes to the client.
+    The stream automatically closes when processing reaches DONE or ERROR status.
+
+    Args:
+        video_id: UUID of the video to monitor
+        db: Database session
+        current_user: Authenticated user
+
+    Returns:
+        StreamingResponse with SSE events containing:
+        - status: Current processing status
+        - progress: Progress percentage (0-100)
+        - message: User-friendly Japanese status message
+        - updated_at: Timestamp of last update
+
+    Example SSE event:
+        data: {"video_id": "...", "status": "STEP_3_TRANSCRIBE_AUDIO", "progress": 40, "message": "音声書き起こし中...", "updated_at": "2026-01-20T..."}
+    """
+
+    async def event_generator():
+        last_status = None
+        poll_count = 0
+        max_polls = 300  # 10 minutes max (300 * 2 seconds)
+
+        try:
+            # Verify video exists and ownership
+            video_repo = VideoRepository(lambda: db)
+            video = await video_repo.get_video_by_id(video_id)
+
+            if not video:
+                yield f"data: {json.dumps({'error': 'Video not found'})}\n\n"
+                return
+
+            if current_user and current_user.get("id") != video.user_id:
+                yield f"data: {json.dumps({'error': 'Forbidden'})}\n\n"
+                return
+
+            # Stream status updates
+            while poll_count < max_polls:
+                try:
+                    # Refresh video data
+                    video = await video_repo.get_video_by_id(video_id)
+
+                    if not video:
+                        yield f"data: {json.dumps({'error': 'Video not found'})}\n\n"
+                        break
+
+                    current_status = video.status
+
+                    # Send update only if status changed
+                    if current_status != last_status:
+                        progress = calculate_progress(current_status)
+                        message = get_status_message(current_status)
+
+                        payload = {
+                            "video_id": str(video.id),
+                            "status": current_status,
+                            "progress": progress,
+                            "message": message,
+                            "updated_at": video.updated_at.isoformat() if video.updated_at else None,
+                        }
+
+                        yield f"data: {json.dumps(payload)}\n\n"
+                        last_status = current_status
+
+                        logger.info(f"SSE: Video {video_id} status changed to {current_status} ({progress}%)")
+
+                    # Stop streaming if processing complete or error
+                    if current_status in ["DONE", "ERROR"]:
+                        yield "data: [DONE]\n\n"
+                        logger.info(f"SSE: Video {video_id} processing completed with status {current_status}")
+                        break
+
+                    # Poll every 2 seconds
+                    await asyncio.sleep(2)
+                    poll_count += 1
+
+                except Exception as e:
+                    logger.error(f"SSE poll error for video {video_id}: {e}")
+                    yield f"data: {json.dumps({'error': f'Poll error: {str(e)}'})}\n\n"
+                    break
+
+            # Timeout reached
+            if poll_count >= max_polls:
+                logger.warning(f"SSE: Video {video_id} stream timeout after {max_polls * 2} seconds")
+                yield f"data: {json.dumps({'error': 'Stream timeout'})}\n\n"
+
+        except Exception as e:
+            logger.error(f"SSE stream error for video {video_id}: {e}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "Connection": "keep-alive",
+        }
+    )
 
 
 @router.get("/{video_id}")
