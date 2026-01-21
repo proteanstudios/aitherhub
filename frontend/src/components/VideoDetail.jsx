@@ -1,4 +1,6 @@
 import { useEffect, useState, useRef } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import ChatInput from "./ChatInput";
 import VideoService from "../base/services/videoService";
 import "../assets/css/sidebar.css";
@@ -463,9 +465,11 @@ export default function VideoDetail({ video }) {
                       <span className="text-gray-500">-</span>
                     )}
                   </div>
-
-                  <div className="text-sm text-left text-gray-100 whitespace-pre-wrap">
-                    {it.insight || "(No insight)"}
+            
+                  <div className="text-sm text-left text-gray-100">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {it.insight || "(No insight)"}
+                    </ReactMarkdown>
                   </div>
                 </div>
               ))}
@@ -482,7 +486,11 @@ export default function VideoDetail({ video }) {
 
                     <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md">
                       <div className="text-xs text-gray-400 font-mono">Bot</div>
-                      <div className="min-w-0 text-sm text-gray-100 whitespace-pre-wrap break-words">{item.answer}</div>
+                      <div className="min-w-0 text-sm text-gray-100">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {item.answer || ""}
+                        </ReactMarkdown>
+                      </div>
                     </div>
                   </div>
                 ))}
