@@ -1,5 +1,5 @@
-from app.db_ops import (
-    get_video_phases_sync,
+from db_ops import (
+    load_video_phases_sync,
     upsert_video_structure_features_sync,
 )
 
@@ -12,21 +12,21 @@ def build_video_structure_features(video_id: str):
     - Save into video_structure_features
     """
 
-    phases = get_video_phases_sync(video_id)
+    phases = load_video_phases_sync(video_id)
 
     if not phases:
         print("[STEP 9] No phases, skip video structure features")
         return
 
     # sort by time
-    phases = sorted(phases, key=lambda p: p["start_time"])
+    phases = sorted(phases, key=lambda p: p["time_start"])
 
     durations = []
     for p in phases:
         if p.get("duration") is not None:
             d = float(p["duration"])
         else:
-            d = float(p["end_time"] - p["start_time"])
+            d = float(p["time_end"] - p["time_start"])
         durations.append(d)
 
     total_time = sum(durations)

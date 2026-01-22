@@ -1,5 +1,5 @@
 import json
-from app.db_ops import (
+from db_ops import (
     get_video_structure_group_members_by_group_sync,
     get_video_structure_features_sync,
     update_video_structure_group_sync,
