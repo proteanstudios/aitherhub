@@ -145,8 +145,12 @@ export default function MainContent({
           <>
             <div className="relative w-full">
               <h4 className="absolute top-[11px] md:top-[5px] w-full text-[26px] leading-[40px] font-semibold font-cabin text-center">
-                あなたの配信、AIで最適化。
-                <br className="block md:hidden" /> 売上アップの秘密がここに。
+                {window.__t('header').split('\n').map((line, idx, arr) => (
+                  <span key={idx}>
+                    {line}
+                    {idx < arr.length - 1 && <br className="block md:hidden" />}
+                  </span>
+                ))}
               </h4>
 
               <h4 className="absolute top-[125px] md:top-[157px] w-full text-[28px] leading-[40px] font-semibold font-cabin text-center">

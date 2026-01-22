@@ -306,7 +306,7 @@ export default function VideoDetail({ video }) {
   if (!video) {
     return (
       <div className="w-full h-full flex items-center justify-center">
-        <p className="text-gray-400 text-lg">選択されたビデオがありません</p>
+        <p className="text-gray-400 text-lg">{t('noVideo')}</p>
       </div>
     );
   }
@@ -331,7 +331,12 @@ export default function VideoDetail({ video }) {
     <div className="w-full h-full flex flex-col gap-6 p-0 lg:p-6">
       <style>{markdownTableStyles}</style>
       <h4 className="md:top-[5px] w-full text-[26px] leading-[35px] font-semibold font-cabin text-center">
-        あなたの配信、AIで最適化。<br className="block md:hidden" /> 売上アップの秘密がここに。
+        {window.__t('header').split('\n').map((line, idx, arr) => (
+          <span key={idx}>
+            {line}
+            {idx < arr.length - 1 && <br className="block md:hidden" />}
+          </span>
+        ))}
       </h4>
       {/* Video Header */}
       <div className="flex flex-col lg:ml-[65px] h-full">
@@ -346,13 +351,14 @@ export default function VideoDetail({ video }) {
         {/* SCROLL AREA */}
         <div className="flex-1 overflow-y-auto scrollbar-custom text-left">
           <div className="rounded-lg font-[Cabin] font-semibold text-[18px] leading-[35px] tracking-[0]">
-            <div className="mt-4">アップロードありがとうございます。</div>
+            <div className="mt-4">{window.__t('thankYou')}</div>
             <div className="mb-2">
-              解析が完了しました！
-              <br className="block md:hidden" />
-              今後の配信をより成功させるために、
-              <br className="block md:hidden" />
-              次の提案をお伝えします。
+              {window.__t('analysisDone').split('\n').map((line, idx, arr) => (
+                <span key={idx}>
+                  {line}
+                  {idx < arr.length - 1 && <br className="block md:hidden" />}
+                </span>
+              ))}
             </div>
           </div>
 
@@ -390,7 +396,7 @@ export default function VideoDetail({ video }) {
             </div>
             ) : (
               <div className="text-[18px] leading-[35px] tracking-[0] text-gray-500">
-                解析結果はまだありません
+                {window.__t('noReports')}
               </div>
             )}
             {chatMessages && chatMessages.length > 0 && (
@@ -398,12 +404,12 @@ export default function VideoDetail({ video }) {
                 {chatMessages.map((item) => (
                   <div key={item.id || `${item.question}-${item.created_at || ''}`} className="flex flex-col gap-2">
                     <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md">
-                      <div className="text-xs text-gray-400 font-mono">User</div>
+                      <div className="text-xs text-gray-400 font-mono">{window.__t('userLabel')}</div>
                       <div className="min-w-0 text-sm text-gray-100 whitespace-pre-wrap break-words">{item.question}</div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md">
-                      <div className="text-xs text-gray-400 font-mono">Bot</div>
+                      <div className="text-xs text-gray-400 font-mono">{window.__t('botLabel')}</div>
                       <div className="min-w-0 text-sm text-gray-100">
                         <div className="markdown">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>
