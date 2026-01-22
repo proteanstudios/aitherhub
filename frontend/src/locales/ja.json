@@ -6,5 +6,8 @@
   "analysisDone": "解析が完了しました！\n今後の配信をより成功させるために、\n次の提案をお伝えします。",
   "noReports": "解析結果はまだありません",
   "userLabel": "User",
-  "botLabel": "Assistant"
+  "botLabel": "Assistant",
+  "report3Title": "追加レポート"
+  ,"report1Title": "レポート 1：フェーズ説明"
+  ,"report2Title": "レポート 2：インサイト"
 }

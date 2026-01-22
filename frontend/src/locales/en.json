@@ -6,5 +6,8 @@
   "analysisDone": "Analysis is complete!\nHere are recommendations to improve future streams.",
   "noReports": "No analysis results yet",
   "userLabel": "User",
-  "botLabel": "Bot"
+  "botLabel": "Assistant",
+  "report3Title": "Additional Report"
+  ,"report1Title": "Report 1: Phase descriptions"
+  ,"report2Title": "Report 2: Insights"
 }
