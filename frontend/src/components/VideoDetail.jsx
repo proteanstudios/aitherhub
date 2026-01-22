@@ -289,12 +289,26 @@ export default function VideoDetail({ video }) {
         const response = await VideoService.getVideoById(video.id);
         const data = response || {};
 
+        // normalize reports
+        const r1 = Array.isArray(data.reports_1) ? data.reports_1 : (data.reports_1 ? [data.reports_1] : []);
+        let r2 = Array.isArray(data.reports_2) ? data.reports_2 : (data.reports_2 ? [data.reports_2] : []);
+        // if API doesn't provide reports_2, derive it from reports_1 (use insight if present, else fallback to phase_description)
+        if ((!r2 || r2.length === 0) && r1 && r1.length > 0) {
+          r2 = r1.map((it) => ({
+            phase_index: it.phase_index,
+            time_start: it.time_start,
+            time_end: it.time_end,
+            insight: it.insight ?? it.phase_description ?? "",
+          }));
+        }
         setVideoData({
           id: data.id || video.id,
           title: data.original_filename || video.original_filename || `Video ${video.id}`,
           status: data.status || video.status || "processing",
           uploadedAt: data.created_at || video.created_at || new Date().toISOString(),
-          reports_1: data.reports_1 || video.description || {},
+          reports_1: r1,
+          reports_2: r2,
+          report3: Array.isArray(data.report3) ? data.report3 : (data.report3 ? [data.report3] : []),
         });
 
         // Set initial processing status if not done
@@ -429,12 +443,24 @@ export default function VideoDetail({ video }) {
         // Processing complete - reload full video data to get reports
         try {
           const response = await VideoService.getVideoById(video.id);
+          const rr1 = Array.isArray(response.reports_1) ? response.reports_1 : (response.reports_1 ? [response.reports_1] : []);
+          let rr2 = Array.isArray(response.reports_2) ? response.reports_2 : (response.reports_2 ? [response.reports_2] : []);
+          if ((!rr2 || rr2.length === 0) && rr1 && rr1.length > 0) {
+            rr2 = rr1.map((it) => ({
+              phase_index: it.phase_index,
+              time_start: it.time_start,
+              time_end: it.time_end,
+              insight: it.insight ?? it.phase_description ?? "",
+            }));
+          }
           setVideoData({
             id: response.id || video.id,
             title: response.original_filename || video.original_filename,
             status: response.status,
             uploadedAt: response.created_at,
-            reports_1: response.reports_1 || [],
+            reports_1: rr1,
+            reports_2: rr2,
+            report3: Array.isArray(response.report3) ? response.report3 : (response.report3 ? [response.report3] : []),
           });
           setProcessingStatus(null);
         } catch (err) {
@@ -563,41 +589,106 @@ export default function VideoDetail({ video }) {
           <div className="mt-4 font-semibold flex flex-col gap-3">
             {videoData?.status === 'DONE' && videoData?.reports_1 && videoData.reports_1.length > 0 ? (
               <div className="flex flex-col gap-3">
+                {/* Report 1: phase descriptions */}
+                <div className="text-lg font-semibold mb-2">{window.__t('report1Title') || 'Report 1'}</div>
                 {videoData.reports_1.map((it, index) => (
-                <div
-                  key={it.phase_index}
-                  className={`grid grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md
-                    ${index === videoData.reports_1.length - 1 ? "mb-[30px]" : ""}
-                  `}
-                >
                   <div
-                    className={`text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 transition-colors ${
-                      previewLoading ? "opacity-60 pointer-events-none" : ""
-                    }`}
-                    onClick={() => handlePhasePreview(it)}
-                    title="クリックしてプレビュー"
+                    key={`r1-${it.phase_index ?? index}`}
+                    className={`grid grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md
+                      ${index === videoData.reports_1.length - 1 ? "mb-[30px]" : ""}
+                    `}
                   >
-                    {it.time_start != null || it.time_end != null ? (
-                      <>
-                        {it.time_start != null ? it.time_start : ""}
-                        {" : "}
-                        {it.time_end != null ? it.time_end : ""}
-                      </>
-                    ) : (
-                      <span className="text-gray-500">-</span>
-                    )}
-                  </div>
-            
-                  <div className="text-sm text-left text-gray-100">
-                    <div className="markdown">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {it.insight || "(No insight)"}
-                      </ReactMarkdown>
+                    <div
+                      className={`text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 transition-colors ${
+                        previewLoading ? "opacity-60 pointer-events-none" : ""
+                      }`}
+                      onClick={() => handlePhasePreview(it)}
+                      title="クリックしてプレビュー"
+                    >
+                      {it.time_start != null || it.time_end != null ? (
+                        <>
+                          {it.time_start != null ? it.time_start : ""}
+                          {" : "}
+                          {it.time_end != null ? it.time_end : ""}
+                        </>
+                      ) : (
+                        <span className="text-gray-500">-</span>
+                      )}
+                    </div>
+
+                    <div className="text-sm text-left text-gray-100">
+                      <div className="markdown">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {it.phase_description || "(No description)"}
+                        </ReactMarkdown>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+
+                {/* Report 2: insights - prefer reports_2 if present, otherwise use reports_1.insight */}
+                {(videoData.reports_2 || videoData.reports_1) && (
+                  <div className="mt-2">
+                    <div className="text-lg font-semibold mb-2">{window.__t('report2Title') || 'Report 2'}</div>
+                    <div className="flex flex-col gap-3">
+                    {(videoData.reports_2 || videoData.reports_1).map((it, idx) => (
+                      <div
+                        key={`r2-${it.phase_index ?? idx}`}
+                        className={`grid grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md
+                          ${idx === (videoData.reports_2 ? videoData.reports_2.length - 1 : videoData.reports_1.length - 1) ? "mb-[30px]" : ""}
+                        `}
+                      >
+                        <div className="text-sm text-gray-400 font-mono whitespace-nowrap">
+                          {it.time_start != null || it.time_end != null ? (
+                            <>
+                              {it.time_start != null ? it.time_start : ""}
+                              {" : "}
+                              {it.time_end != null ? it.time_end : ""}
+                            </>
+                          ) : (
+                            <span className="text-gray-500">-</span>
+                          )}
+                        </div>
+
+                        <div className="text-sm text-left text-gray-100">
+                          <div className="markdown">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {it.insight || "(No insight)"}
+                            </ReactMarkdown>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    </div>
+                  </div>
+                )}
+                {/* Report 3: additional single-item report (title + content) */}
+                {videoData?.report3 && Array.isArray(videoData.report3) && videoData.report3.length > 0 && (
+                  <div className="mt-4">
+                    <div className="text-lg font-semibold mb-2">{window.__t('report3Title') || 'Report 3'}</div>
+                    {videoData.report3.map((r, i) => (
+                      <div
+                        key={`r3-${i}`}
+                        className={`grid min-w-0 grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md ${
+                          i === videoData.report3.length - 1 ? "mb-[30px]" : "mb-2"
+                        }`}
+                      >
+                        <div className="text-sm text-gray-400 font-mono whitespace-normal break-words break-all">
+                          {r.title ? r.title : <span className="text-gray-500">-</span>}
+                        </div>
+
+                        <div className="text-sm text-left text-gray-100">
+                          <div className="markdown">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {r.content || ""}
+                            </ReactMarkdown>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="text-[18px] leading-[35px] tracking-[0] text-gray-500">
                 {window.__t('noReports')}

@@ -282,10 +282,10 @@ async def get_video_detail(
             for r in phase_rows
         }
 
-        items = []
+        report1_items = []
         for r in insight_rows:
             pm = phase_map.get(r.phase_index, {})
-            items.append({
+            report1_items.append({
                 "phase_index": int(r.phase_index),
                 "phase_description": pm.get("phase_description"),
                 "time_start": pm.get("time_start"),
@@ -293,11 +293,31 @@ async def get_video_detail(
                 "insight": r.insight,
             })
 
+        # load latest video_insights record for report3 (single item)
+        sql_latest_insight = text("""
+            SELECT title, content, created_at
+            FROM video_insights
+            WHERE video_id = :video_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+
+        rres = await db.execute(sql_latest_insight, {"video_id": video_id})
+        latest = rres.fetchone()
+
+        report3 = []
+        if latest:
+            report3.append({
+                "title": latest.title,
+                "content": latest.content,
+            })
+
         return {
             "id": str(video.id),
             "original_filename": video.original_filename,
             "status": video.status,
-            "reports_1": items,
+            "reports_1": report1_items,
+            "report3": report3,
         }
     except HTTPException:
         raise
