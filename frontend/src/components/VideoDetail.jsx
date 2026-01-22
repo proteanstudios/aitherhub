@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import ChatInput from "./ChatInput";
+import VideoPreviewModal from "./modals/VideoPreviewModal";
 import VideoService from "../base/services/videoService";
 import "../assets/css/sidebar.css";
 
@@ -86,18 +87,84 @@ export default function VideoDetail({ video }) {
   const [videoData, setVideoData] = useState(null);
   const [error, setError] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
+  const [processingStatus, setProcessingStatus] = useState(null);
+  const [previewData, setPreviewData] = useState(null); // { url, timeStart, timeEnd }
+  const [previewLoading, setPreviewLoading] = useState(false);
   const answerRef = useRef("");
   const streamCancelRef = useRef(null);
   const lastSentRef = useRef({ text: null, t: 0 });
   const reloadTimeoutRef = useRef(null);
   const chatEndRef = useRef(null);
+  const statusStreamRef = useRef(null);
 
   const scrollToBottom = (smooth = true) => {
     if (chatEndRef.current) {
       try {
         chatEndRef.current.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "end" });
-      } catch (e) {}
+      } catch (e) {
+        // Ignore scroll errors
+      }
     }
+  };
+
+  const handlePhasePreview = async (phase) => {
+    if (!phase?.time_start && !phase?.time_end) return;
+    if (!videoData?.id) return;
+    setPreviewLoading(true);
+    try {
+      const url = await VideoService.getDownloadUrl(videoData.id);
+      setPreviewData({
+        url,
+        timeStart: Number(phase.time_start) || 0,
+        timeEnd: phase.time_end != null ? Number(phase.time_end) : null,
+      });
+    } catch (err) {
+      console.error("Failed to load preview url", err);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  // Helper to calculate progress percentage from status
+  const calculateProgressFromStatus = (status) => {
+    const statusMap = {
+      NEW: 0,
+      uploaded: 0,
+      STEP_0_EXTRACT_FRAMES: 10,
+      STEP_1_DETECT_PHASES: 20,
+      STEP_2_EXTRACT_METRICS: 30,
+      STEP_3_TRANSCRIBE_AUDIO: 40,
+      STEP_4_IMAGE_CAPTION: 50,
+      STEP_5_BUILD_PHASE_UNITS: 60,
+      STEP_6_BUILD_PHASE_DESCRIPTION: 70,
+      STEP_7_GROUPING: 80,
+      STEP_8_UPDATE_BEST_PHASE: 90,
+      STEP_9_BUILD_REPORTS: 95,
+      DONE: 100,
+      ERROR: -1,
+    };
+    return statusMap[status] || 0;
+  };
+
+  // Helper to get user-friendly status message
+  const getStatusMessage = (status) => {
+    const messages = {
+      NEW: "アップロード待ち",
+      uploaded: "アップロード完了",
+      STEP_0_EXTRACT_FRAMES: "フレーム抽出中...",
+      STEP_1_DETECT_PHASES: "フェーズ検出中...",
+      STEP_2_EXTRACT_METRICS: "メトリクス抽出中...",
+      STEP_3_TRANSCRIBE_AUDIO: "音声書き起こし中...",
+      STEP_4_IMAGE_CAPTION: "画像キャプション生成中...",
+      STEP_5_BUILD_PHASE_UNITS: "フェーズユニット構築中...",
+      STEP_6_BUILD_PHASE_DESCRIPTION: "フェーズ説明生成中...",
+      STEP_7_GROUPING: "グルーピング中...",
+      STEP_8_UPDATE_BEST_PHASE: "ベストフェーズ更新中...",
+      STEP_9_BUILD_REPORTS: "レポート生成中...",
+      DONE: "解析完了",
+      ERROR: "エラーが発生しました",
+    };
+    return messages[status] || "処理中...";
   };
 
   const reloadHistory = async () => {
@@ -198,11 +265,11 @@ export default function VideoDetail({ video }) {
 
       setLoading(true);
       setError(null);
-      
+
       try {
         const response = await VideoService.getVideoById(video.id);
         const data = response || {};
-        
+
         setVideoData({
           id: data.id || video.id,
           title: data.original_filename || video.original_filename || `Video ${video.id}`,
@@ -210,7 +277,16 @@ export default function VideoDetail({ video }) {
           uploadedAt: data.created_at || video.created_at || new Date().toISOString(),
           reports_1: data.reports_1 || video.description || {},
         });
-        
+
+        // Set initial processing status if not done
+        if (data.status && data.status !== 'DONE' && data.status !== 'ERROR') {
+          setProcessingStatus({
+            status: data.status,
+            progress: calculateProgressFromStatus(data.status),
+            message: getStatusMessage(data.status),
+          });
+        }
+
       } catch (err) {
         // If it's 403 Forbidden, interceptor will handle logout and open login modal
         // Don't show error message in this case
@@ -299,9 +375,112 @@ export default function VideoDetail({ video }) {
     if (chatEndRef.current) {
       try {
         chatEndRef.current.scrollIntoView({ behavior: "smooth" });
-      } catch (e) {}
+      } catch (e) {
+        // Ignore scroll errors
+      }
     }
   }, [chatMessages]);
+
+  // Stream status updates if video is processing
+  useEffect(() => {
+    // Only stream if video exists and is not done/error
+    if (!video?.id || !videoData) return;
+    if (videoData.status === 'DONE' || videoData.status === 'ERROR') return;
+
+    // Close any existing stream
+    if (statusStreamRef.current) {
+      statusStreamRef.current.close();
+      statusStreamRef.current = null;
+    }
+
+    // Start SSE stream
+    statusStreamRef.current = VideoService.streamVideoStatus({
+      videoId: video.id,
+
+      onStatusUpdate: (data) => {
+        setProcessingStatus({
+          status: data.status,
+          progress: data.progress,
+          message: data.message,
+          updatedAt: data.updated_at,
+        });
+      },
+
+      onDone: async () => {
+        // Processing complete - reload full video data to get reports
+        try {
+          const response = await VideoService.getVideoById(video.id);
+          setVideoData({
+            id: response.id || video.id,
+            title: response.original_filename || video.original_filename,
+            status: response.status,
+            uploadedAt: response.created_at,
+            reports_1: response.reports_1 || [],
+          });
+          setProcessingStatus(null);
+        } catch (err) {
+          console.error('Failed to reload video after processing:', err);
+        }
+      },
+
+      onError: (error) => {
+        console.error('Status stream error:', error);
+        setProcessingStatus(null);
+        // Could implement polling fallback here
+      },
+    });
+
+    // Cleanup
+    return () => {
+      if (statusStreamRef.current) {
+        statusStreamRef.current.close();
+        statusStreamRef.current = null;
+      }
+    };
+  }, [video?.id, videoData?.status]);
+
+  // Render processing status UI
+  const renderProcessingStatus = () => {
+    if (!processingStatus) return null;
+
+    const { status, progress, message } = processingStatus;
+    const isError = status === 'ERROR';
+
+    return (
+      <div className={`mt-4 p-4 rounded-lg ${isError ? 'bg-red-500/10 border border-red-500/50' : 'bg-white/5'}`}>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-semibold">
+            {message}
+          </span>
+          {!isError && (
+            <span className="text-sm text-gray-400">
+              {progress}%
+            </span>
+          )}
+        </div>
+
+        {!isError && progress >= 0 && (
+          <>
+            <div className="w-full bg-gray-700 rounded-full h-2">
+              <div
+                className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              解析が完了すると、自動的に結果が表示されます。
+            </p>
+          </>
+        )}
+
+        {isError && (
+          <p className="text-sm text-red-400 mt-2">
+            動画の解析中にエラーが発生しました。もう一度アップロードしてください。
+          </p>
+        )}
+      </div>
+    );
+  };
 
   if (!video) {
     return (
@@ -363,7 +542,7 @@ export default function VideoDetail({ video }) {
           </div>
 
           <div className="mt-4 font-semibold flex flex-col gap-3">
-            {videoData?.reports_1 && videoData.reports_1.length > 0 ? (
+            {videoData?.status === 'DONE' && videoData?.reports_1 && videoData.reports_1.length > 0 ? (
               <div className="flex flex-col gap-3">
                 {videoData.reports_1.map((it, index) => (
                 <div
@@ -372,7 +551,13 @@ export default function VideoDetail({ video }) {
                     ${index === videoData.reports_1.length - 1 ? "mb-[30px]" : ""}
                   `}
                 >
-                  <div className="text-sm text-gray-400 font-mono whitespace-nowrap">
+                  <div
+                    className={`text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 transition-colors ${
+                      previewLoading ? "opacity-60 pointer-events-none" : ""
+                    }`}
+                    onClick={() => handlePhasePreview(it)}
+                    title="クリックしてプレビュー"
+                  >
                     {it.time_start != null || it.time_end != null ? (
                       <>
                         {it.time_start != null ? it.time_start : ""}
@@ -430,6 +615,14 @@ export default function VideoDetail({ video }) {
           <ChatInput onSend={handleChatSend} disabled={!!streamCancelRef.current} />
         </div>
       </div>
+
+      <VideoPreviewModal
+        open={!!previewData}
+        onClose={() => setPreviewData(null)}
+        videoUrl={previewData?.url}
+        timeStart={previewData?.timeStart}
+        timeEnd={previewData?.timeEnd}
+      />
     </div>
   );
 }
