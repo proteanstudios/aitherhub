@@ -7,7 +7,25 @@
   "noReports": "解析結果はまだありません",
   "userLabel": "User",
   "botLabel": "Assistant",
-  "report3Title": "追加レポート"
-  ,"report1Title": "レポート 1：フェーズ説明"
-  ,"report2Title": "レポート 2：インサイト"
+  "report3Title": "追加レポート",
+  "report1Title": "レポート 1：フェーズ説明",
+  "report2Title": "レポート 2：インサイト",
+  "statusNew": "アップロード待ち",
+  "statusUploaded": "アップロード完了",
+  "statusStep0": "フレーム抽出中...",
+  "statusStep1": "フェーズ検出中...",
+  "statusStep2": "メトリクス抽出中...",
+  "statusStep3": "音声書き起こし中...",
+  "statusStep4": "画像キャプション生成中...",
+  "statusStep5": "フェーズユニット構築中...",
+  "statusStep6": "フェーズ説明生成中...",
+  "statusStep7": "グルーピング中...",
+  "statusStep8": "ベストフェーズ更新中...",
+  "statusStep9": "レポート生成中...",
+  "statusDone": "解析完了",
+  "statusError": "エラーが発生しました",
+  "statusProcessing": "処理中...",
+  "progressCompleteMessage": "解析が完了すると、自動的に結果が表示されます。",
+  "errorAnalysisMessage": "動画の解析中にエラーが発生しました。もう一度アップロードしてください。",
+  "clickToPreview": "クリックしてプレビュー"
 }

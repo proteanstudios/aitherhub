@@ -168,22 +168,22 @@ export default function VideoDetail({ video }) {
   // Helper to get user-friendly status message
   const getStatusMessage = (status) => {
     const messages = {
-      NEW: "アップロード待ち",
-      uploaded: "アップロード完了",
-      STEP_0_EXTRACT_FRAMES: "フレーム抽出中...",
-      STEP_1_DETECT_PHASES: "フェーズ検出中...",
-      STEP_2_EXTRACT_METRICS: "メトリクス抽出中...",
-      STEP_3_TRANSCRIBE_AUDIO: "音声書き起こし中...",
-      STEP_4_IMAGE_CAPTION: "画像キャプション生成中...",
-      STEP_5_BUILD_PHASE_UNITS: "フェーズユニット構築中...",
-      STEP_6_BUILD_PHASE_DESCRIPTION: "フェーズ説明生成中...",
-      STEP_7_GROUPING: "グルーピング中...",
-      STEP_8_UPDATE_BEST_PHASE: "ベストフェーズ更新中...",
-      STEP_9_BUILD_REPORTS: "レポート生成中...",
-      DONE: "解析完了",
-      ERROR: "エラーが発生しました",
+      NEW: window.__t('statusNew'),
+      uploaded: window.__t('statusUploaded'),
+      STEP_0_EXTRACT_FRAMES: window.__t('statusStep0'),
+      STEP_1_DETECT_PHASES: window.__t('statusStep1'),
+      STEP_2_EXTRACT_METRICS: window.__t('statusStep2'),
+      STEP_3_TRANSCRIBE_AUDIO: window.__t('statusStep3'),
+      STEP_4_IMAGE_CAPTION: window.__t('statusStep4'),
+      STEP_5_BUILD_PHASE_UNITS: window.__t('statusStep5'),
+      STEP_6_BUILD_PHASE_DESCRIPTION: window.__t('statusStep6'),
+      STEP_7_GROUPING: window.__t('statusStep7'),
+      STEP_8_UPDATE_BEST_PHASE: window.__t('statusStep8'),
+      STEP_9_BUILD_REPORTS: window.__t('statusStep9'),
+      DONE: window.__t('statusDone'),
+      ERROR: window.__t('statusError'),
     };
-    return messages[status] || "処理中...";
+    return messages[status] || window.__t('statusProcessing');
   };
 
   const reloadHistory = async () => {
@@ -324,7 +324,7 @@ export default function VideoDetail({ video }) {
         // If it's 403 Forbidden, interceptor will handle logout and open login modal
         // Don't show error message in this case
         if (err?.response?.status !== 403) {
-          setError("動画の詳細を取得できませんでした");
+          setError(window.__t('fetchError'));
         }
       } finally {
         setLoading(false);
@@ -513,14 +513,14 @@ export default function VideoDetail({ video }) {
               />
             </div>
             <p className="text-xs text-gray-400 mt-2">
-              解析が完了すると、自動的に結果が表示されます。
+              {window.__t('progressCompleteMessage')}
             </p>
           </>
         )}
 
         {isError && (
           <p className="text-sm text-red-400 mt-2">
-            動画の解析中にエラーが発生しました。もう一度アップロードしてください。
+            {window.__t('errorAnalysisMessage')}
           </p>
         )}
       </div>
@@ -530,7 +530,7 @@ export default function VideoDetail({ video }) {
   if (!video) {
     return (
       <div className="w-full h-full flex items-center justify-center">
-        <p className="text-gray-400 text-lg">{t('noVideo')}</p>
+        <p className="text-gray-400 text-lg">{window.__t('noVideo')}</p>
       </div>
     );
   }
@@ -574,17 +574,23 @@ export default function VideoDetail({ video }) {
 
         {/* SCROLL AREA */}
         <div className="flex-1 overflow-y-auto scrollbar-custom text-left">
-          <div className="rounded-lg font-[Cabin] font-semibold text-[18px] leading-[35px] tracking-[0]">
-            <div className="mt-4">{window.__t('thankYou')}</div>
-            <div className="mb-2">
-              {window.__t('analysisDone').split('\n').map((line, idx, arr) => (
-                <span key={idx}>
-                  {line}
-                  {idx < arr.length - 1 && <br className="block md:hidden" />}
-                </span>
-              ))}
+          {/* Show processing status when video is being processed */}
+          {renderProcessingStatus()}
+
+          {/* Show thank you message and reports only when video is done */}
+          {videoData?.status === 'DONE' && videoData?.reports_1 && videoData.reports_1.length > 0 && (
+            <div className="rounded-lg font-[Cabin] font-semibold text-[18px] leading-[35px] tracking-[0]">
+              <div className="mt-4">{window.__t('thankYou')}</div>
+              <div className="mb-2">
+                {window.__t('analysisDone').split('\n').map((line, idx, arr) => (
+                  <span key={idx}>
+                    {line}
+                    {idx < arr.length - 1 && <br className="block md:hidden" />}
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="mt-4 font-semibold flex flex-col gap-3">
             {videoData?.status === 'DONE' && videoData?.reports_1 && videoData.reports_1.length > 0 ? (
@@ -603,7 +609,7 @@ export default function VideoDetail({ video }) {
                         previewLoading ? "opacity-60 pointer-events-none" : ""
                       }`}
                       onClick={() => handlePhasePreview(it)}
-                      title="クリックしてプレビュー"
+                      title={window.__t('clickToPreview')}
                     >
                       {it.time_start != null || it.time_end != null ? (
                         <>
@@ -638,7 +644,13 @@ export default function VideoDetail({ video }) {
                           ${idx === (videoData.reports_2 ? videoData.reports_2.length - 1 : videoData.reports_1.length - 1) ? "mb-[30px]" : ""}
                         `}
                       >
-                        <div className="text-sm text-gray-400 font-mono whitespace-nowrap">
+                        <div
+                          className={`text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 transition-colors ${
+                            previewLoading ? "opacity-60 pointer-events-none" : ""
+                          }`}
+                          onClick={() => handlePhasePreview(it)}
+                          title={window.__t('clickToPreview')}
+                        >
                           {it.time_start != null || it.time_end != null ? (
                             <>
                               {it.time_start != null ? it.time_start : ""}

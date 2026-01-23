@@ -7,7 +7,25 @@
   "noReports": "No analysis results yet",
   "userLabel": "User",
   "botLabel": "Assistant",
-  "report3Title": "Additional Report"
-  ,"report1Title": "Report 1: Phase descriptions"
-  ,"report2Title": "Report 2: Insights"
+  "report3Title": "Additional Report",
+  "report1Title": "Report 1: Phase descriptions",
+  "report2Title": "Report 2: Insights",
+  "statusNew": "Waiting for upload",
+  "statusUploaded": "Upload completed",
+  "statusStep0": "Extracting frames...",
+  "statusStep1": "Detecting phases...",
+  "statusStep2": "Extracting metrics...",
+  "statusStep3": "Transcribing audio...",
+  "statusStep4": "Generating image captions...",
+  "statusStep5": "Building phase units...",
+  "statusStep6": "Generating phase descriptions...",
+  "statusStep7": "Grouping...",
+  "statusStep8": "Updating best phase...",
+  "statusStep9": "Building reports...",
+  "statusDone": "Analysis completed",
+  "statusError": "An error occurred",
+  "statusProcessing": "Processing...",
+  "progressCompleteMessage": "Results will be displayed automatically when analysis is complete.",
+  "errorAnalysisMessage": "An error occurred during video analysis. Please upload again.",
+  "clickToPreview": "Click to preview"
 }
