@@ -1,6 +1,7 @@
 from typing import List
 import json
 import asyncio
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
@@ -199,7 +200,7 @@ async def stream_video_status(
                     if poll_count > 0 and poll_count % 15 == 0:
                         heartbeat_payload = {
                             "heartbeat": True,
-                            "timestamp": video.updated_at.isoformat() if video.updated_at else None,
+                            "timestamp": datetime.utcnow().isoformat(),
                             "poll_count": poll_count
                         }
                         yield f"data: {json.dumps(heartbeat_payload)}\n\n"

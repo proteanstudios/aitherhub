@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import ChatInput from "./ChatInput";
@@ -96,6 +96,41 @@ export default function VideoDetail({ video }) {
   const reloadTimeoutRef = useRef(null);
   const chatEndRef = useRef(null);
   const statusStreamRef = useRef(null);
+
+  // Smooth progress bar animation - gradual increase every few seconds
+  const [smoothProgress, setSmoothProgress] = useState(0);
+  const progressIntervalRef = useRef(null);
+  const lastStatusChangeRef = useRef(Date.now());
+
+  // Start gradual progress increase
+  const startGradualProgress = useCallback((targetProgress) => {
+    // Clear any existing interval
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+    }
+
+    // Set initial progress to current target
+    setSmoothProgress(targetProgress);
+
+    // Start interval to gradually increase progress every 3-5 seconds
+    progressIntervalRef.current = setInterval(() => {
+      setSmoothProgress(prev => {
+        const increment = Math.random() * 2 + 1; // Random increment 1-3%
+        const newProgress = Math.min(prev + increment, 99); // Cap at 99% until actually complete
+
+        // Stop if we've reached a reasonable limit for this step
+        if (newProgress >= targetProgress + 5) {
+          if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
+          }
+          return targetProgress + 5; // Allow slight overshoot for visual effect
+        }
+
+        return newProgress;
+      });
+    }, 2000 + Math.random() * 3000); // Random interval 2-5 seconds
+  }, []);
 
   const scrollToBottom = (smooth = true) => {
     if (chatEndRef.current) {
@@ -368,6 +403,14 @@ export default function VideoDetail({ video }) {
     }
     answerRef.current = "";
     lastSentRef.current = { text: null, t: 0 };
+    lastStatusChangeRef.current = Date.now();
+
+    // Reset smooth progress when video changes
+    setSmoothProgress(0);
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
   }, [video?.id]);
 
   useEffect(() => {
@@ -437,6 +480,10 @@ export default function VideoDetail({ video }) {
           message: data.message,
           updatedAt: data.updated_at,
         });
+
+        // Start gradual progress increase
+        startGradualProgress(data.progress);
+        lastStatusChangeRef.current = Date.now();
       },
 
       onDone: async () => {
@@ -481,6 +528,10 @@ export default function VideoDetail({ video }) {
         statusStreamRef.current.close();
         statusStreamRef.current = null;
       }
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
     };
   }, [video?.id, videoData?.status]);
 
@@ -499,17 +550,17 @@ export default function VideoDetail({ video }) {
           </span>
           {!isError && (
             <span className="text-sm text-gray-400">
-              {progress}%
+              {Math.round(smoothProgress)}%
             </span>
           )}
         </div>
 
-        {!isError && progress >= 0 && (
+        {!isError && smoothProgress >= 0 && (
           <>
             <div className="w-full bg-gray-700 rounded-full h-2">
               <div
                 className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${progress}%` }}
+                style={{ width: `${smoothProgress}%` }}
               />
             </div>
             <p className="text-xs text-gray-400 mt-2">
