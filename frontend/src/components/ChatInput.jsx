@@ -52,7 +52,7 @@ export default function ChatInput({ className = "", onSend, disabled = false }) 
           onChange={(e) => setMessage(e.target.value)}
           disabled={disabled}
           onKeyDown={handleKeyDown}
-          placeholder="質問をしてみましょう"
+          placeholder={window.__t('askQuestionPlaceholder')}
           className="text-[18px] leading-[40px] text-black w-full h-[50px] pl-[16px] md:pl-[60px] pr-[50px] rounded-[25px] border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
         />
         <img

@@ -99,15 +99,15 @@ export default function Register({ onSuccess }) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col items-center justify-center space-y-6">
       <h2 className=" pt-[20px] pb-[20px] font-cabin font-medium text-[25px] leading-[30px] h-[30px] text-center flex items-center justify-center text-black">
-        新規登録
+{window.__t('register')}
       </h2>
 
       <div className="w-full space-y-4 md:space-y-0 md:grid md:grid-cols-[180px_1fr] md:gap-x-6 md:gap-y-6 text-left md:w-[500px]">
         <label className="font-cabin font-bold text-[14px] text-black">
-          <span className=""> メールアドレス </span>
+          <span className=""> {window.__t('emailAddress')} </span>
           <span className="hidden md:block text-[#646464] text-[12px] font-normal">
             {" "}
-            ※半角英字8文字以上{" "}
+{window.__t('passwordMinLength')} 
           </span>
         </label>
 
@@ -129,7 +129,7 @@ export default function Register({ onSuccess }) {
         </div>
 
         <label className="font-cabin font-bold text-[14px] text-black">
-          パスワード
+{window.__t('password')}
           <span className="block text-[#646464] text-[12px] font-normal">
             ※半角英字8文字以上
           </span>
@@ -152,7 +152,7 @@ export default function Register({ onSuccess }) {
         </div>
 
         <label className="font-cabin font-bold text-[14px] text-black">
-          パスワードを再入力
+{window.__t('reenterPassword')}
           <span className="block text-[#646464] text-[12px] font-normal">
             ※半角英字8文字以上
           </span>
@@ -178,13 +178,13 @@ export default function Register({ onSuccess }) {
       <div className="flex flex-col items-start w-full space-y-3 md:w-[350px]">
         <div className="text-sm text-center text-gray-600">
           <span className="text-[#4500FF] underline cursor-pointer">
-            利用規約
+{window.__t('termsOfService')}
           </span>{" "}
-          と
+{window.__t('and')}
           <span className="text-[#4500FF] underline cursor-pointer">
-            プライバシーポリシー
+{window.__t('privacyPolicy')}
           </span>{" "}
-          をご確認ください。
+{window.__t('pleaseConfirm')}
         </div>
 
         <div className="flex flex-col items-start">
@@ -229,7 +229,7 @@ export default function Register({ onSuccess }) {
               </svg>
             </span>
 
-            <span>同意します</span>
+            <span>{window.__t('agree')}</span>
           </label>
           {errors.checkbox && (
             <span className="text-red-500 text-[12px] mt-1">
@@ -246,7 +246,7 @@ export default function Register({ onSuccess }) {
           disabled={isLoading}
           rounded="rounded-[5px]"
         >
-          {isLoading ? "登録中..." : "登録する"}
+          {isLoading ? window.__t('registering') : window.__t('registerButton')}
         </PrimaryButton>
 
         <SecondaryButton

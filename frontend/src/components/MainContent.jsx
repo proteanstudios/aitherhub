@@ -45,7 +45,7 @@ export default function MainContent({
 
     if (!file.type.startsWith("video/")) {
       setMessageType("error");
-      setMessage("Please select a valid video file");
+      setMessage(window.__t('selectValidVideoError'));
       return;
     }
 
@@ -61,7 +61,7 @@ export default function MainContent({
     }
 
     if (!selectedFile) {
-      toast.error("Please select a file first");
+      toast.error(window.__t('selectFileFirstError'));
       return;
     }
 
@@ -79,15 +79,15 @@ export default function MainContent({
       );
 
       setMessageType("success");
-      setMessage(`✅ Upload complete! ID: ${video_id}`);
-      toast.success("Video uploaded successfully");
+      setMessage(`✅ ${window.__t('uploadCompleteMessage')} ${video_id}`);
+      toast.success(window.__t('uploadSuccessMessage'));
       setSelectedFile(null);
       
       if (onUploadSuccess) {
         onUploadSuccess();
       }
     } catch (error) {
-      const errorMsg = error?.message || "Upload failed";
+      const errorMsg = error?.message || window.__t('uploadFailedMessage');
       setMessageType("error");
       setMessage(`❌ ${errorMsg}`);
       toast.error(errorMsg);
@@ -122,7 +122,7 @@ export default function MainContent({
       const file = files[0];
       if (!file.type.startsWith("video/")) {
         setMessageType("error");
-        setMessage("Please select a valid video file");
+        setMessage(window.__t('selectValidVideoError'));
         return;
       }
       setSelectedFile(file);
@@ -154,9 +154,12 @@ export default function MainContent({
               </h4>
 
               <h4 className="absolute top-[125px] md:top-[157px] w-full text-[28px] leading-[40px] font-semibold font-cabin text-center">
-                動画ファイルを
-                <br className="block md:hidden" /> アップロードして
-                <br className="block md:hidden" /> 解析を開始
+                {window.__t('uploadText').split('\n').map((line, idx, arr) => (
+                  <span key={idx}>
+                    {line}
+                    {idx < arr.length - 1 && <br className="block md:hidden" />}
+                  </span>
+                ))}
               </h4>
             </div>
             <div className="relative w-full">
@@ -180,7 +183,7 @@ export default function MainContent({
                       onClick={handleCancel}
                       className="w-[143px] h-[41px] bg-white text-gray-600 border border-gray-300 rounded-[30px] text-sm"
                     >
-                      キャンセル
+                      {window.__t('cancelButton')}
                     </button>
                   </>
                 ) : selectedFile ? (
@@ -199,13 +202,13 @@ export default function MainContent({
                         onClick={handleUpload}
                         className="w-[143px] h-[41px] flex items-center justify-center bg-white text-[#7D01FF] border border-[#7D01FF] rounded-[30px] leading-[28px] font-semibold"
                       >
-                        アップロード
+                        {window.__t('uploadButton')}
                       </button>
                       <button
                         onClick={handleCancel}
                         className="w-[143px] h-[41px] bg-gray-300 text-gray-700 rounded-[30px] text-sm"
                       >
-                        キャンセル
+                        {window.__t('cancelButton')}
                       </button>
                     </div>
                   </>
@@ -217,7 +220,7 @@ export default function MainContent({
                       className="w-[135px] h-[135px]"
                     />
                     <h5 className="hidden md:inline text-[20px] leading-[35px] font-semibold font-cabin text-center h-[35px]">
-                      動画ファイルをドラッグ＆ドロップ
+                      {window.__t('dragDropText')}
                     </h5>
                     <label
                       className="
@@ -240,7 +243,7 @@ export default function MainContent({
                         }
                       }}
                     >
-                      ファイルを選択
+{window.__t('selectFileText')}
                       <input
                         type="file"
                         accept="video/*"

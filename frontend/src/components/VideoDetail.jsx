@@ -303,7 +303,7 @@ export default function VideoDetail({ video }) {
         }
         setVideoData({
           id: data.id || video.id,
-          title: data.original_filename || video.original_filename || `Video ${video.id}`,
+          title: data.original_filename || video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`,
           status: data.status || video.status || "processing",
           uploadedAt: data.created_at || video.created_at || new Date().toISOString(),
           reports_1: r1,
@@ -625,7 +625,7 @@ export default function VideoDetail({ video }) {
                     <div className="text-sm text-left text-gray-100">
                       <div className="markdown">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {it.phase_description || "(No description)"}
+                          {it.phase_description || window.__t('noDescription')}
                         </ReactMarkdown>
                       </div>
                     </div>
@@ -665,7 +665,7 @@ export default function VideoDetail({ video }) {
                         <div className="text-sm text-left text-gray-100">
                           <div className="markdown">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {it.insight || "(No insight)"}
+                              {it.insight || window.__t('noInsight')}
                             </ReactMarkdown>
                           </div>
                         </div>

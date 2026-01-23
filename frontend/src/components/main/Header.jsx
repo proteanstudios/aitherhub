@@ -111,7 +111,7 @@ export default function Header({
                         alt="My Account"
                         className="w-[16px] h-[16px]"
                       />
-                      マイアカウント
+{window.__t('myAccount')}
                     </li>
 
                     <li
@@ -126,7 +126,7 @@ export default function Header({
                         alt="Password"
                         className="w-[16px] h-[16px]"
                       />
-                      パスワード変更
+{window.__t('changePassword')}
                     </li>
 
                     <li
@@ -143,7 +143,7 @@ export default function Header({
                         alt="Signout"
                         className="w-[16px] h-[16px]"
                       />
-                      ログアウト
+{window.__t('logout')}
                     </li>
                   </ul>
                 </div>
@@ -155,13 +155,13 @@ export default function Header({
                 onClick={() => setOpenLogin(true)}
                 variant="secondary"
               >
-                ログイン
+{window.__t('login')}
               </BasicButton>
               <BasicButton
                 onClick={() => setOpenRegister(true)}
                 variant="primary"
               >
-                新規登録
+{window.__t('register')}
               </BasicButton>
             </>
           )}
