@@ -228,6 +228,13 @@ def main():
         # Chỉ cho resume nếu >= STEP 7
         if raw_start_step >= 7:
             start_step = raw_start_step
+
+            keyframes = None
+            rep_frames = None
+            total_frames = None
+            phase_stats = None
+            keyframe_captions = None
+
             print(f"[RESUME] resume from step {start_step} (status={current_status})")
         else:
             start_step = 0
@@ -259,31 +266,65 @@ def main():
         # =========================
         # STEP 1 – PHASE DETECTION (YOLO + CACHE)
         # =========================
+        # if start_step <= 1:
+        #     update_video_status_sync(video_id, VideoStatus.STEP_1_DETECT_PHASES)
+
+        #     cache = load_step1_cache(video_id)
+        #     if cache:
+        #         print("[CACHE] Load STEP 1 cache")
+        #         keyframes = cache["keyframes"]
+        #         rep_frames = cache["rep_frames"]
+        #         total_frames = cache["total_frames"]
+        #     else:
+        #         print("=== STEP 1 – PHASE DETECTION (YOLO) ===")
+        #         model = YOLO("yolov8n.pt", verbose=False)
+        #         keyframes, rep_frames, total_frames = detect_phases(
+        #             frame_dir=frame_dir,
+        #             model=model,
+        #         )
+        #         save_step1_cache(video_id, keyframes, rep_frames, total_frames)
+        # else:
+        #     # print("[SKIP] STEP 1")
+        #     # cache = load_step1_cache(video_id)
+        #     # if not cache:
+        #     #     raise RuntimeError("Missing STEP 1 cache while resuming")
+        #     # keyframes = cache["keyframes"]
+        #     # rep_frames = cache["rep_frames"]
+        #     # total_frames = cache["total_frames"]
+
+        #     print("[SKIP] STEP 1")
+        #     if start_step < 7:
+        #         cache = load_step1_cache(video_id)
+        #         if not cache:
+        #             raise RuntimeError("Missing STEP 1 cache while resuming")
+        #         keyframes = cache["keyframes"]
+        #         rep_frames = cache["rep_frames"]
+        #         total_frames = cache["total_frames"]
+        #     else:
+        #         # Resume >= 7: không cần mấy thứ này nữa
+        #         keyframes = None
+        #         rep_frames = None
+        #         total_frames = None
+
+        # =========================
+        # STEP 1 – PHASE DETECTION (YOLO)
+        # =========================
         if start_step <= 1:
             update_video_status_sync(video_id, VideoStatus.STEP_1_DETECT_PHASES)
 
-            cache = load_step1_cache(video_id)
-            if cache:
-                print("[CACHE] Load STEP 1 cache")
-                keyframes = cache["keyframes"]
-                rep_frames = cache["rep_frames"]
-                total_frames = cache["total_frames"]
-            else:
-                print("=== STEP 1 – PHASE DETECTION (YOLO) ===")
-                model = YOLO("yolov8n.pt", verbose=False)
-                keyframes, rep_frames, total_frames = detect_phases(
-                    frame_dir=frame_dir,
-                    model=model,
-                )
-                save_step1_cache(video_id, keyframes, rep_frames, total_frames)
+            print("=== STEP 1 – PHASE DETECTION (YOLO) ===")
+            model = YOLO("yolov8n.pt", verbose=False)
+            keyframes, rep_frames, total_frames = detect_phases(
+                frame_dir=frame_dir,
+                model=model,
+            )
         else:
             print("[SKIP] STEP 1")
-            cache = load_step1_cache(video_id)
-            if not cache:
-                raise RuntimeError("Missing STEP 1 cache while resuming")
-            keyframes = cache["keyframes"]
-            rep_frames = cache["rep_frames"]
-            total_frames = cache["total_frames"]
+            # Resume >= 7: không cần mấy thứ này nữa
+            keyframes = None
+            rep_frames = None
+            total_frames = None
+
 
         # =========================
         # STEP 2 – PHASE METRICS
@@ -297,12 +338,15 @@ def main():
                 frame_dir=frame_dir,
             )
         else:
-            print("[SKIP] STEP 2 – but recompute phase_stats")
-            phase_stats = extract_phase_stats(
-                keyframes=keyframes,
-                total_frames=total_frames,
-                frame_dir=frame_dir,
-            )
+            # print("[SKIP] STEP 2 – but recompute phase_stats")
+            # phase_stats = extract_phase_stats(
+            #     keyframes=keyframes,
+            #     total_frames=total_frames,
+            #     frame_dir=frame_dir,
+            # )
+
+            print("[SKIP] STEP 2")
+            phase_stats = None
 
         # =========================
         # STEP 3 – AUDIO → TEXT
@@ -336,13 +380,13 @@ def main():
             # print("[CLEANUP] Remove frames")
             # shutil.rmtree(frames_dir(video_id), ignore_errors=True)
         else:
+            # print("[SKIP] STEP 4")
+            # keyframe_captions = caption_keyframes(
+            #     frame_dir=frame_dir,
+            #     rep_frames=rep_frames,
+            # )
             print("[SKIP] STEP 4")
-            keyframe_captions = caption_keyframes(
-                frame_dir=frame_dir,
-                rep_frames=rep_frames,
-            )
-            # print("[SKIP] STEP 4 (captions already used in STEP 5)")
-            # keyframe_captions = None
+            keyframe_captions = None
 
         # =========================
         # STEP 5 – BUILD PHASE UNITS (DB CHECKPOINT)
@@ -556,6 +600,12 @@ def main():
         else:
             print("[SKIP] STEP 12")
 
+
+        # ---------- ensure best_data for resume ----------
+        if 'best_data' not in locals() or best_data is None:
+            print("[RESUME] Reload best_data from artifact")
+            from best_phase_pipeline import load_group_best_phases
+            best_data = load_group_best_phases(ART_ROOT, video_id)
 
         # =========================
         # STEP 13 – BUILD REPORTS

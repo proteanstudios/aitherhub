@@ -618,12 +618,41 @@ async def load_video_phases(video_id: str):
 
     phases = []
     for r in rows:
+        # phases.append({
+        #     "video_id": video_id,
+        #     "phase_index": r.phase_index,
+        #     "phase_description": r.phase_description,
+        #     "time_start": r.time_start,
+        #     "time_end": r.time_end,
+        #     "view_start": r.view_start,
+        #     "view_end": r.view_end,
+        #     "like_start": r.like_start,
+        #     "like_end": r.like_end,
+        #     "delta_view": r.delta_view,
+        #     "delta_like": r.delta_like,
+        #     "group_id": r.group_id,
+        #     # fields expected by later pipeline:
+        #     "metrics": {
+        #         "delta_view": r.delta_view,
+        #         "delta_like": r.delta_like,
+        #     }
+        # })
+
         phases.append({
             "video_id": video_id,
             "phase_index": r.phase_index,
             "phase_description": r.phase_description,
+
             "time_start": r.time_start,
             "time_end": r.time_end,
+
+            "time_range": {
+                "start": r.time_start,
+                "end": r.time_end,
+                "start_sec": float(r.time_start) if r.time_start is not None else 0.0,
+                "end_sec": float(r.time_end) if r.time_end is not None else 0.0,
+            },
+
             "view_start": r.view_start,
             "view_end": r.view_end,
             "like_start": r.like_start,
@@ -631,12 +660,25 @@ async def load_video_phases(video_id: str):
             "delta_view": r.delta_view,
             "delta_like": r.delta_like,
             "group_id": r.group_id,
-            # fields expected by later pipeline:
+
             "metrics": {
                 "delta_view": r.delta_view,
                 "delta_like": r.delta_like,
+            },
+
+            "metric_timeseries": {
+                "start": {
+                    "view": r.view_start,
+                    "like": r.like_start,
+                },
+                "end": {
+                    "view": r.view_end,
+                    "like": r.like_end,
+                }
             }
         })
+
+
     return phases
 
 
@@ -657,7 +699,7 @@ async def upsert_video_structure_features(
     early_ratio: dict,
     mid_ratio: dict,
     late_ratio: dict,
-    structure_embedding: list[float],
+    structure_embedding: list,
 ):
     sql = text("""
         INSERT INTO video_structure_features (
@@ -675,10 +717,10 @@ async def upsert_video_structure_features(
             :phase_count,
             :avg_phase_duration,
             :switch_rate,
-            :early_ratio::jsonb,
-            :mid_ratio::jsonb,
-            :late_ratio::jsonb,
-            :structure_embedding::jsonb
+            :early_ratio,
+            :mid_ratio,
+            :late_ratio,
+            :structure_embedding
         )
         ON CONFLICT (video_id)
         DO UPDATE SET
@@ -688,8 +730,7 @@ async def upsert_video_structure_features(
             early_ratio = EXCLUDED.early_ratio,
             mid_ratio = EXCLUDED.mid_ratio,
             late_ratio = EXCLUDED.late_ratio,
-            structure_embedding = EXCLUDED.structure_embedding,
-            updated_at = now()
+            structure_embedding = EXCLUDED.structure_embedding
     """)
 
     async with AsyncSessionLocal() as session:
@@ -704,6 +745,7 @@ async def upsert_video_structure_features(
             "structure_embedding": json.dumps(structure_embedding),
         })
         await session.commit()
+
 
 
 def upsert_video_structure_features_sync(*args, **kwargs):
@@ -786,29 +828,30 @@ async def create_video_structure_group(
     late_ratio,
 ):
     sql = text("""
-        INSERT INTO video_structure_groups (
-            id,
-            structure_embedding,
-            avg_phase_count,
-            avg_phase_duration,
-            avg_switch_rate,
-            early_ratio,
-            mid_ratio,
-            late_ratio,
-            video_count
-        )
-        VALUES (
-            :id,
-            :structure_embedding::jsonb,
-            :avg_phase_count,
-            :avg_phase_duration,
-            :avg_switch_rate,
-            :early_ratio::jsonb,
-            :mid_ratio::jsonb,
-            :late_ratio::jsonb,
-            1
-        )
-    """)
+    INSERT INTO video_structure_groups (
+        id,
+        structure_embedding,
+        avg_phase_count,
+        avg_phase_duration,
+        avg_switch_rate,
+        early_ratio,
+        mid_ratio,
+        late_ratio,
+        video_count
+    )
+    VALUES (
+        :id,
+        CAST(:structure_embedding AS jsonb),
+        :avg_phase_count,
+        :avg_phase_duration,
+        :avg_switch_rate,
+        CAST(:early_ratio AS jsonb),
+        CAST(:mid_ratio AS jsonb),
+        CAST(:late_ratio AS jsonb),
+        1
+    )
+""")
+
 
     new_id = str(uuid.uuid4())
 
@@ -849,13 +892,13 @@ async def update_video_structure_group(
     sql = text("""
         UPDATE video_structure_groups
         SET
-            structure_embedding = :structure_embedding::jsonb,
+            structure_embedding = CAST(:structure_embedding AS jsonb),
             avg_phase_count = :avg_phase_count,
             avg_phase_duration = :avg_phase_duration,
             avg_switch_rate = :avg_switch_rate,
-            early_ratio = :early_ratio::jsonb,
-            mid_ratio = :mid_ratio::jsonb,
-            late_ratio = :late_ratio::jsonb,
+            early_ratio = CAST(:early_ratio AS jsonb),
+            mid_ratio = CAST(:mid_ratio AS jsonb),
+            late_ratio = CAST(:late_ratio AS jsonb),
             video_count = :video_count,
             updated_at = now()
         WHERE id = :id
@@ -1046,7 +1089,7 @@ async def upsert_video_structure_group_best_video(
             :group_id,
             :video_id,
             :score,
-            :metrics::jsonb
+            CAST(:metrics AS jsonb)
         )
         ON CONFLICT (group_id)
         DO UPDATE SET
@@ -1127,3 +1170,34 @@ async def clear_video_insight_need_refresh(video_id: str):
 def clear_video_insight_need_refresh_sync(video_id: str):
     loop = get_event_loop()
     return loop.run_until_complete(clear_video_insight_need_refresh(video_id))
+
+# ---------- get video_structure_group stats ----------
+
+async def get_video_structure_group_stats(group_id: str):
+    sql = text("""
+        SELECT
+            id,
+            structure_embedding,
+            avg_phase_count,
+            avg_phase_duration,
+            avg_switch_rate,
+            early_ratio,
+            mid_ratio,
+            late_ratio,
+            video_count
+        FROM video_structure_groups
+        WHERE id = :group_id
+    """)
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(sql, {"group_id": group_id})
+        row = result.mappings().first()
+
+    if not row:
+        return None
+
+    return dict(row)
+
+
+def get_video_structure_group_stats_sync(group_id: str):
+    loop = get_event_loop()
+    return loop.run_until_complete(get_video_structure_group_stats(group_id))

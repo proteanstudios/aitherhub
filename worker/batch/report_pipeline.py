@@ -30,6 +30,81 @@ client = AzureOpenAI(
 MAX_RETRY = 5
 
 
+# =========================================================
+# STRUCTURE FEATURE COMPARATORS (for Report 3)
+# =========================================================
+
+STRUCTURE_FEATURE_TYPES = {
+    "phase_count": "scalar",
+    "avg_phase_duration": "scalar",
+    "switch_rate": "scalar",
+
+    "early_ratio": "distribution",
+    "mid_ratio": "distribution",
+    "late_ratio": "distribution",
+
+    "structure_embedding": "vector",
+}
+
+
+def compare_scalar(a, b):
+    try:
+        if a is None or b is None or b == 0:
+            return 0.0
+        return (float(a) - float(b)) / float(b)
+    except Exception:
+        return 0.0
+
+
+def compare_distribution(a: dict, b: dict):
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return 0.0
+
+    keys = set(a.keys()) | set(b.keys())
+    dist = 0.0
+    for k in keys:
+        try:
+            dist += abs(float(a.get(k, 0.0)) - float(b.get(k, 0.0)))
+        except Exception:
+            pass
+    return dist
+
+
+def cosine_distance(a: list, b: list):
+    if not isinstance(a, list) or not isinstance(b, list) or not a or not b:
+        return 0.0
+
+    try:
+        import math
+
+        dot = sum(x * y for x, y in zip(a, b))
+        na = math.sqrt(sum(x * x for x in a))
+        nb = math.sqrt(sum(x * x for x in b))
+
+        if na == 0 or nb == 0:
+            return 0.0
+
+        return 1.0 - dot / (na * nb)
+    except Exception:
+        return 0.0
+
+
+def compare_feature(feature_name, cur_v, ref_v):
+    t = STRUCTURE_FEATURE_TYPES.get(feature_name)
+
+    if t == "scalar":
+        return compare_scalar(cur_v, ref_v)
+
+    if t == "distribution":
+        return compare_distribution(cur_v, ref_v)
+
+    if t == "vector":
+        return cosine_distance(cur_v, ref_v)
+
+    return None
+
+
+
 # ======================================================
 # REPORT 1 – TIMELINE / PHASE BREAKDOWN
 # ======================================================
@@ -536,6 +611,112 @@ def rewrite_report_3_with_gpt(raw_video_insight):
     }
 
 
+# def build_report_3_structure_vs_benchmark_raw(
+#     current_features: dict,
+#     best_features: dict,
+#     group_stats: dict | None = None,
+# ):
+#     """
+#     Deterministic, rule-based.
+#     Compare current video structure vs benchmark video structure.
+#     Output: JSON-like dict, language-agnostic.
+#     """
+
+#     def pct(a, b):
+#         if not b:
+#             return None
+#         return (a - b) / b
+
+#     result = {
+#         "type": "video_structure_vs_benchmark",
+#         "metrics": {},
+#         "judgements": [],
+#         "problems": [],
+#         "suggestions": [],
+#     }
+
+#     # ---------- Pacing ----------
+#     cur_avg = current_features.get("avg_phase_duration", 0)
+#     best_avg = best_features.get("avg_phase_duration", 0)
+
+#     if best_avg > 0:
+#         delta = pct(cur_avg, best_avg)
+#         result["metrics"]["avg_phase_duration"] = {
+#             "current": cur_avg,
+#             "benchmark": best_avg,
+#             "delta_ratio": delta,
+#         }
+
+#         if delta is not None and delta > 0.25:
+#             result["judgements"].append("pacing_slower_than_benchmark")
+#             result["problems"].append("average_phase_duration_too_long")
+#             result["suggestions"].append("shorten_each_phase_to_increase_pacing")
+#         elif delta is not None and delta < -0.25:
+#             result["judgements"].append("pacing_faster_than_benchmark")
+#         else:
+#             result["judgements"].append("pacing_similar_to_benchmark")
+
+#     # ---------- Switch rate ----------
+#     cur_switch = current_features.get("phase_switch_rate", 0)
+#     best_switch = best_features.get("phase_switch_rate", 0)
+
+#     if best_switch > 0:
+#         delta = pct(cur_switch, best_switch)
+#         result["metrics"]["phase_switch_rate"] = {
+#             "current": cur_switch,
+#             "benchmark": best_switch,
+#             "delta_ratio": delta,
+#         }
+
+#         if delta is not None and delta < -0.3:
+#             result["problems"].append("phase_switch_too_infrequent")
+#             result["suggestions"].append("increase_phase_switch_frequency")
+
+#     # ---------- Structure balance ----------
+#     for key in ["early_ratio", "mid_ratio", "late_ratio"]:
+#         cur_v = current_features.get(key)
+#         best_v = best_features.get(key)
+#         if cur_v is None or best_v is None:
+#             continue
+
+#         delta = pct(cur_v, best_v)
+#         result["metrics"][key] = {
+#             "current": cur_v,
+#             "benchmark": best_v,
+#             "delta_ratio": delta,
+#         }
+
+#         if delta is not None and abs(delta) > 0.3:
+#             result["problems"].append(f"{key}_distribution_deviates_from_benchmark")
+#             result["suggestions"].append(f"adjust_{key}_distribution_toward_benchmark")
+
+#     # ---------- Complexity ----------
+#     cur_n_phase = current_features.get("num_phases", 0)
+#     best_n_phase = best_features.get("num_phases", 0)
+
+#     if best_n_phase > 0:
+#         delta = pct(cur_n_phase, best_n_phase)
+#         result["metrics"]["num_phases"] = {
+#             "current": cur_n_phase,
+#             "benchmark": best_n_phase,
+#             "delta_ratio": delta,
+#         }
+
+#         if delta is not None and delta < -0.3:
+#             result["problems"].append("too_few_phases_compared_to_benchmark")
+#             result["suggestions"].append("increase_number_of_phases_or_segments")
+#         elif delta is not None and delta > 0.5:
+#             result["problems"].append("too_many_phases_compared_to_benchmark")
+#             result["suggestions"].append("merge_or_simplify_phases")
+
+#     # ---------- Overall judgement ----------
+#     if result["problems"]:
+#         result["overall"] = "structure_quality_worse_than_benchmark"
+#     else:
+#         result["overall"] = "structure_quality_similar_or_better_than_benchmark"
+
+#     return result
+
 def build_report_3_structure_vs_benchmark_raw(
     current_features: dict,
     best_features: dict,
@@ -547,10 +728,15 @@ def build_report_3_structure_vs_benchmark_raw(
     Output: JSON-like dict, language-agnostic.
     """
 
-    def pct(a, b):
-        if not b:
-            return None
-        return (a - b) / b
+    FEATURES = [
+        "phase_count",
+        "avg_phase_duration",
+        "switch_rate",
+        "early_ratio",
+        "mid_ratio",
+        "late_ratio",
+        "structure_embedding",
+    ]
 
     result = {
         "type": "video_structure_vs_benchmark",
@@ -560,81 +746,73 @@ def build_report_3_structure_vs_benchmark_raw(
         "suggestions": [],
     }
 
-    # ---------- Pacing ----------
-    cur_avg = current_features.get("avg_phase_duration", 0)
-    best_avg = best_features.get("avg_phase_duration", 0)
+    # =====================================================
+    # 1) Compare each feature with BEST and GROUP
+    # =====================================================
+    for k in FEATURES:
+        cur_v = current_features.get(k)
+        best_v = best_features.get(k)
+        group_v = group_stats.get(k) if group_stats else None
 
-    if best_avg > 0:
-        delta = pct(cur_avg, best_avg)
-        result["metrics"]["avg_phase_duration"] = {
-            "current": cur_avg,
-            "benchmark": best_avg,
-            "delta_ratio": delta,
+        delta_vs_best = compare_feature(k, cur_v, best_v)
+        delta_vs_group = compare_feature(k, cur_v, group_v)
+
+        result["metrics"][k] = {
+            "type": STRUCTURE_FEATURE_TYPES.get(k),
+            "current": cur_v,
+            "benchmark": best_v,
+            "group": group_v,
+            "delta_vs_best": delta_vs_best,
+            "delta_vs_group": delta_vs_group,
         }
 
-        if delta is not None and delta > 0.25:
+    # =====================================================
+    # 2) Rule-based judgements (use ONLY scalar metrics)
+    # =====================================================
+
+    # ---------- Pacing ----------
+    d = result["metrics"].get("avg_phase_duration", {})
+    delta = d.get("delta_vs_best")
+    if isinstance(delta, (int, float)):
+        if delta > 0.25:
             result["judgements"].append("pacing_slower_than_benchmark")
             result["problems"].append("average_phase_duration_too_long")
             result["suggestions"].append("shorten_each_phase_to_increase_pacing")
-        elif delta is not None and delta < -0.25:
+        elif delta < -0.25:
             result["judgements"].append("pacing_faster_than_benchmark")
         else:
             result["judgements"].append("pacing_similar_to_benchmark")
 
     # ---------- Switch rate ----------
-    cur_switch = current_features.get("phase_switch_rate", 0)
-    best_switch = best_features.get("phase_switch_rate", 0)
-
-    if best_switch > 0:
-        delta = pct(cur_switch, best_switch)
-        result["metrics"]["phase_switch_rate"] = {
-            "current": cur_switch,
-            "benchmark": best_switch,
-            "delta_ratio": delta,
-        }
-
-        if delta is not None and delta < -0.3:
+    d = result["metrics"].get("switch_rate", {})
+    delta = d.get("delta_vs_best")
+    if isinstance(delta, (int, float)):
+        if delta < -0.3:
             result["problems"].append("phase_switch_too_infrequent")
             result["suggestions"].append("increase_phase_switch_frequency")
 
-    # ---------- Structure balance ----------
-    for key in ["early_ratio", "mid_ratio", "late_ratio"]:
-        cur_v = current_features.get(key)
-        best_v = best_features.get(key)
-        if cur_v is None or best_v is None:
-            continue
-
-        delta = pct(cur_v, best_v)
-        result["metrics"][key] = {
-            "current": cur_v,
-            "benchmark": best_v,
-            "delta_ratio": delta,
-        }
-
-        if delta is not None and abs(delta) > 0.3:
-            result["problems"].append(f"{key}_distribution_deviates_from_benchmark")
-            result["suggestions"].append(f"adjust_{key}_distribution_toward_benchmark")
-
-    # ---------- Complexity ----------
-    cur_n_phase = current_features.get("num_phases", 0)
-    best_n_phase = best_features.get("num_phases", 0)
-
-    if best_n_phase > 0:
-        delta = pct(cur_n_phase, best_n_phase)
-        result["metrics"]["num_phases"] = {
-            "current": cur_n_phase,
-            "benchmark": best_n_phase,
-            "delta_ratio": delta,
-        }
-
-        if delta is not None and delta < -0.3:
+    # ---------- Complexity (phase_count) ----------
+    d = result["metrics"].get("phase_count", {})
+    delta = d.get("delta_vs_best")
+    if isinstance(delta, (int, float)):
+        if delta < -0.3:
             result["problems"].append("too_few_phases_compared_to_benchmark")
             result["suggestions"].append("increase_number_of_phases_or_segments")
-        elif delta is not None and delta > 0.5:
+        elif delta > 0.5:
             result["problems"].append("too_many_phases_compared_to_benchmark")
             result["suggestions"].append("merge_or_simplify_phases")
 
-    # ---------- Overall judgement ----------
+    # ---------- Structure balance (distribution distance) ----------
+    for key in ["early_ratio", "mid_ratio", "late_ratio"]:
+        d = result["metrics"].get(key, {})
+        dist = d.get("delta_vs_best")
+        if isinstance(dist, (int, float)) and dist > 0.3:
+            result["problems"].append(f"{key}_distribution_deviates_from_benchmark")
+            result["suggestions"].append(f"adjust_{key}_distribution_toward_benchmark")
+
+    # =====================================================
+    # 3) Overall judgement
+    # =====================================================
     if result["problems"]:
         result["overall"] = "structure_quality_worse_than_benchmark"
     else:
@@ -642,34 +820,68 @@ def build_report_3_structure_vs_benchmark_raw(
 
     return result
 
+
+# PROMPT_REPORT_3_STRUCTURE = """
+# あなたはライブコマース動画の「構造品質」を分析する専門家です。
+
+# 以下は：
+# - 現在の動画と、同じ構造グループ内のベンチマーク動画の「構造比較RAWデータ」です。
+
+# あなたのタスク：
+# - RAWデータの内容のみを使って、動画制作者向けの実用的なフィードバックレポートを書いてください。
+# - テンポ、構成バランス、複雑さ、全体の流れに注目してください。
+# - 改善点がある場合は、必ず具体的な改善アドバイスを含めてください。
+
+# ルール：
+# - 数値を捏造しない
+# - 入力にない事実を推測しない
+# - 内部システムやIDの話をしない
+# - 出力は必ず JSON 形式
+
+# 出力形式：
+# {
+#   "video_insights": [
+#     {
+#       "title": "短いタイトル",
+#       "content": "数文の説明"
+#     }
+#   ]
+# }
+
+# 入力RAWデータ：
+# {data}
+# """.strip()
+
 PROMPT_REPORT_3_STRUCTURE = """
-あなたはライブコマース動画の「構造品質」を分析する専門家です。
+あなたはライブコマース動画の【構成・脚本・テンポ設計】を改善するプロのディレクターです。
 
-以下は：
-- 現在の動画と、同じ構造グループ内のベンチマーク動画の「構造比較RAWデータ」です。
+以下は、この動画の「構造的な特徴」を数値化・要約したデータです。
+（※内部的には比較分析された結果ですが、その事実には一切言及しないでください）
 
-あなたのタスク：
-- RAWデータの内容のみを使って、動画制作者向けの実用的なフィードバックレポートを書いてください。
-- テンポ、構成バランス、複雑さ、全体の流れに注目してください。
-- 改善点がある場合は、必ず具体的な改善アドバイスを含めてください。
+あなたの役割：
+- この動画の構成を「脚本・演出の観点」からレビューする
+- どんなタイプの構成の動画かを言語化する
+- どこが良くできているかを説明する
+- どこを直すと、もっと良くなるかを【具体的な演出・構成レベル】でアドバイスする
 
-ルール：
-- 数値を捏造しない
-- 入力にない事実を推測しない
-- 内部システムやIDの話をしない
-- 出力は必ず JSON 形式
+重要なルール：
+- 「ベンチマーク」「他の動画」「平均」などの言葉を一切使わない
+- 数値や内部指標の話をしない
+- 視聴者体験と構成設計の観点でのみ語る
+- コンサルではなく、現場の演出家の口調で書く
+- 出力は必ず JSON のみ
 
 出力形式：
 {
   "video_insights": [
     {
-      "title": "短いタイトル",
-      "content": "数文の説明"
+      "title": "短く要点を示すタイトル",
+      "content": "構成や脚本に対する具体的なフィードバックと改善案（数文）"
     }
   ]
 }
 
-入力RAWデータ：
+入力データ：
 {data}
 """.strip()
 
