@@ -90,16 +90,16 @@ export default function ForgotPassword({ onSuccess }) {
     return (
         <form onSubmit={handleSubmit} className="flex flex-col items-center justify-center space-y-6">
             <h2 className="hidden md:block pt-[50px] pb-[20px] font-cabin font-medium text-[25px] leading-[30px] h-[30px] text-center flex items-center justify-center text-black">
-                パスワードを変更
+{window.__t('changePasswordTitle')}
             </h2>
 
             <div className="w-full space-y-4 md:space-y-0 md:grid md:grid-cols-[180px_1fr] md:gap-x-6 md:gap-y-6 text-left md:w-[500px]">
                 {/* ===== EMAIL ===== */}
                 <label className="font-cabin font-bold text-[14px] text-black">
-                    <span className="md:hidden">メールアドレス</span>
-                    <span className="hidden md:block">アカウントID</span>
+                    <span className="md:hidden">{window.__t('emailAddress')}</span>
+                    <span className="hidden md:block">{window.__t('accountId')}</span>
                     <span className="hidden md:block text-[#646464] text-[12px] font-normal">
-                        ※半角英字8文字以上
+{window.__t('passwordMinLength')}
                     </span>
                 </label>
                 <div className="flex flex-col">
@@ -121,9 +121,9 @@ export default function ForgotPassword({ onSuccess }) {
                 
                 {/* ===== CURRENT PASSWORD ===== */}
                 <label className="hidden md:block font-cabin font-bold text-[14px] text-black">
-                    <span className="hidden md:block">現在のパスワード</span>
+                    <span className="hidden md:block">{window.__t('currentPassword')}</span>
                     <span className="block text-[#646464] text-[12px] font-normal">
-                        ※半角英字8文字以上
+{window.__t('passwordMinLength')}
                     </span>
                 </label>
                 <div className="flex flex-col">
@@ -146,10 +146,10 @@ export default function ForgotPassword({ onSuccess }) {
 
                 {/* ===== NEW PASSWORD ===== */}
                 <label className="font-cabin font-bold text-[14px] text-black">
-                    <span className="md:hidden">パスワード</span>
-                    <span className="hidden md:block">新しいパスワード</span>
+                    <span className="md:hidden">{window.__t('password')}</span>
+                    <span className="hidden md:block">{window.__t('newPassword')}</span>
                     <span className="block text-[#646464] text-[12px] font-normal">
-                        ※半角英字8文字以上
+{window.__t('passwordMinLength')}
                     </span>
                 </label>
                 <div className="flex flex-col">
@@ -171,10 +171,10 @@ export default function ForgotPassword({ onSuccess }) {
 
                 {/* ===== CONFIRM PASSWORD ===== */}
                 <label className="font-cabin font-bold text-[14px] text-black">
-                    <span className="md:hidden">パスワードを再入力</span>
-                    <span className="hidden md:block">新しいパスワードを再入力</span>
+                    <span className="md:hidden">{window.__t('reenterPassword')}</span>
+                    <span className="hidden md:block">{window.__t('reenterNewPassword')}</span>
                     <span className="block text-[#646464] text-[12px] font-normal">
-                        ※半角英字8文字以上
+{window.__t('passwordMinLength')}
                     </span>
                 </label>
                 <div className="flex flex-col">
@@ -204,7 +204,7 @@ export default function ForgotPassword({ onSuccess }) {
                     rounded="rounded-[5px]"
                     width="w-[250px] md:w-[230px]"
                 >
-                    {isLoading ? "処理中..." : "変更する"}
+                    {isLoading ? window.__t('processing') : window.__t('changePassword')}
                 </PrimaryButton>
 
                 <SecondaryButton

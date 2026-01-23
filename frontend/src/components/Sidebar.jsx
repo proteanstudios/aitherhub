@@ -146,12 +146,12 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
             className="flex items-center mt-[28px] ml-[5px] gap-2 cursor-pointer hover:text-gray-400"
           >
             <img src={write} className="w-[30px] h-[30px]" />
-            <span className="font-semibold">新しい解析</span>
+            <span className="font-semibold">{window.__t('newAnalysis')}</span>
           </div>
 
           <div className="flex items-center ml-[10px] gap-2 cursor-pointer hover:text-gray-400">
             <img src={searchIcon} className="w-[20px] h-[20px]" />
-            <span className="font-semibold">チャットを検索</span>
+            <span className="font-semibold">{window.__t('searchChat')}</span>
           </div>
         </div>
 
@@ -201,7 +201,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
 
         {/* ================= COMMON ================= */}
         <div className="mt-6 md:space-y-3 flex flex-col flex-1 min-h-0 pl-4 pr-0 md:px-0">
-          <span className="block ml-[16px] text-[#9E9E9E] font-semibold text-left flex-shrink-0">解析履歴</span>
+          <span className="block ml-[16px] text-[#9E9E9E] font-semibold text-left flex-shrink-0">{window.__t('analysisHistory')}</span>
 
           {effectiveUser?.isLoggedIn && (
             <>
@@ -222,13 +222,13 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                             : "hover:text-gray-400 hover:bg-gray-100"
                         }`}
                       >
-                        {video.original_filename || `Video ${video.id}`}
+                        {video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`}
                       </span>
                     ))}
                   </div>
                 ) : (
                   <div className="text-center text-gray-400 text-sm py-4">
-                    ビデオがありません
+{window.__t('noVideos')}
                   </div>
                 )}
               </div>
@@ -263,7 +263,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
               className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer"
             >
               <img src={MyAccount} className="w-4 h-4" />
-              マイアカウント
+{window.__t('myAccount')}
             </li>
 
             <li
@@ -275,7 +275,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
               className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer"
             >
               <img src={PasswordIcon} className="w-4 h-4" />
-              パスワード変更
+{window.__t('changePassword')}
             </li>
 
             <li 
@@ -288,7 +288,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
               className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer"
             >
               <img src={Signout} className="w-4 h-4" />
-              サインアウト
+{window.__t('signOut')}
             </li>
           </ul>
         )}

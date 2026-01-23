@@ -83,13 +83,13 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col items-center justify-center space-y-6">
       <h2 className="pt-[50px] pb-[20px] font-cabin font-medium text-[30px] leading-[30px] h-[30px] text-center flex items-center justify-center text-black md:text-[40px] md:leading-[30px] md:h-[30px]">
-        ログイン
+{window.__t('login')}
       </h2>
 
       <div className="flex flex-col max-w-full top-[126px] items-start space-y-1 w-[340px] h-[250px] md:w-[400px]">
         <div className="flex flex-col items-start w-full mb-[20px]">
           <label className="font-cabin font-bold text-[14px] text-black mb-[7px]">
-            メールアドレス
+{window.__t('emailAddress')}
           </label>
           <input
             type="email"
@@ -110,7 +110,7 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
 
         <div className="flex flex-col items-start w-full mb-[30px]">
           <label className="font-cabin font-bold text-[14px] text-black mb-[7px]">
-            パスワード
+{window.__t('password')}
           </label>
           <input
             type="password"
@@ -138,13 +138,13 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
                 rel="noopener noreferrer"
                 style={{ color: "#000", textDecoration: "underline" }}
               >
-                パスワードを再設定する
+{window.__t('resetPassword')}
               </a>
             </span>
           </div>
 
           <div className="text-[9px] text-center text-gray-600">
-            初めてご利用ですか?{" "}
+{window.__t('firstTimeUser')} 
             <span className="">
               <a
                 href="#"
@@ -158,7 +158,7 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
                   cursor: "pointer",
                 }}
               >
-                新規登録はこちら
+{window.__t('registerHere')}
               </a>
             </span>
           </div>
@@ -171,7 +171,7 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
         disabled={isLoading}
         className="mb-[50px]"
       >
-        {isLoading ? "ログイン中..." : "ログイン"}
+        {isLoading ? window.__t('loggingIn') : window.__t('login')}
       </PrimaryButton>
     </form>
   );

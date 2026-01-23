@@ -267,8 +267,18 @@ class VideoService extends BaseApiService {
     const controller = new AbortController();
     const signal = controller.signal;
 
-    (async () => {
+    // Retry configuration
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 5000; // 5 seconds
+    const HEARTBEAT_TIMEOUT = 120000; // 2 minutes without heartbeat = connection lost
+    let retryCount = 0;
+    let lastHeartbeatTime = Date.now();
+    let heartbeatTimeoutId = null;
+
+    const connectWithRetry = async () => {
       try {
+        console.log(`SSE: Connecting to video ${videoId} status stream${retryCount > 0 ? ` (retry ${retryCount}/${MAX_RETRIES})` : ''}`);
+
         const headers = {
           Accept: "text/event-stream",
         };
@@ -296,6 +306,16 @@ class VideoService extends BaseApiService {
         const decoder = new TextDecoder("utf-8");
         let buffer = "";
 
+        // Set up heartbeat timeout check
+        const checkHeartbeat = () => {
+          const timeSinceLastHeartbeat = Date.now() - lastHeartbeatTime;
+          if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT) {
+            console.warn(`SSE: No heartbeat received for ${Math.round(timeSinceLastHeartbeat/1000)}s, connection may be stale`);
+          }
+          heartbeatTimeoutId = setTimeout(checkHeartbeat, 30000); // Check every 30 seconds
+        };
+        checkHeartbeat();
+
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -315,6 +335,8 @@ class VideoService extends BaseApiService {
 
                 // Handle [DONE] marker
                 if (payload === "[DONE]" || payload === "DONE") {
+                  console.log('SSE: Stream completed successfully');
+                  clearTimeout(heartbeatTimeoutId);
                   onDone();
                   return;
                 }
@@ -323,8 +345,19 @@ class VideoService extends BaseApiService {
                 try {
                   const data = JSON.parse(payload);
 
+                  // Update heartbeat timestamp for any message
+                  lastHeartbeatTime = Date.now();
+
+                  // Handle heartbeat messages
+                  if (data.heartbeat) {
+                    console.debug(`SSE: Heartbeat received (poll ${data.poll_count})`);
+                    continue; // Don't pass heartbeat to onStatusUpdate
+                  }
+
                   // Handle error from server
                   if (data.error) {
+                    console.error('SSE: Server error:', data.error);
+                    clearTimeout(heartbeatTimeoutId);
                     onError(new Error(data.error));
                     return;
                   }
@@ -334,6 +367,8 @@ class VideoService extends BaseApiService {
 
                   // Auto-close on completion
                   if (data.status === 'DONE' || data.status === 'ERROR') {
+                    console.log(`SSE: Processing ${data.status}, closing stream`);
+                    clearTimeout(heartbeatTimeoutId);
                     onDone();
                     return;
                   }
@@ -353,22 +388,41 @@ class VideoService extends BaseApiService {
             if (line.startsWith("data:")) {
               const payload = line.slice(5).trim();
               if (payload === "[DONE]" || payload === "DONE") {
+                console.log('SSE: Stream completed (from buffer)');
+                clearTimeout(heartbeatTimeoutId);
                 onDone();
               }
             }
           }
         }
 
+        clearTimeout(heartbeatTimeoutId);
         onDone();
       } catch (err) {
+        clearTimeout(heartbeatTimeoutId);
+
         if (err.name === 'AbortError') {
-          console.log('SSE stream aborted');
+          console.log('SSE: Stream aborted by user');
           return;
         }
-        console.error('SSE stream error:', err);
-        onError(err);
+
+        console.error(`SSE: Connection failed: ${err.message}`);
+
+        // Retry logic
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          console.log(`SSE: Retrying connection in ${RETRY_DELAY}ms... (${retryCount}/${MAX_RETRIES})`);
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+          return connectWithRetry();
+        } else {
+          console.error(`SSE: Max retries (${MAX_RETRIES}) exceeded, giving up`);
+          onError(err);
+        }
       }
-    })();
+    };
+
+    // Start the connection
+    connectWithRetry();
 
     return {
       close: () => controller.abort(),

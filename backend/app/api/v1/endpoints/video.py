@@ -127,6 +127,7 @@ async def stream_video_status(
     This endpoint provides real-time status updates for video processing.
     It polls the database every 2 seconds and sends status changes to the client.
     The stream automatically closes when processing reaches DONE or ERROR status.
+    Supports long-running videos up to 4 hours with heartbeat messages every 30 seconds.
 
     Args:
         video_id: UUID of the video to monitor
@@ -139,15 +140,17 @@ async def stream_video_status(
         - progress: Progress percentage (0-100)
         - message: User-friendly Japanese status message
         - updated_at: Timestamp of last update
+        - heartbeat: Boolean indicating heartbeat message (sent every 30 seconds)
 
-    Example SSE event:
+    Example SSE events:
         data: {"video_id": "...", "status": "STEP_3_TRANSCRIBE_AUDIO", "progress": 40, "message": "音声書き起こし中...", "updated_at": "2026-01-20T..."}
+        data: {"heartbeat": true, "timestamp": "2026-01-20T...", "poll_count": 15}
     """
 
     async def event_generator():
         last_status = None
         poll_count = 0
-        max_polls = 300  # 10 minutes max (300 * 2 seconds)
+        max_polls = 7200  # 4 hours max for long videos (7200 * 2 seconds = 14400 seconds = 4 hours)
 
         try:
             # Verify video exists and ownership
@@ -191,6 +194,16 @@ async def stream_video_status(
                         last_status = current_status
 
                         logger.info(f"SSE: Video {video_id} status changed to {current_status} ({progress}%)")
+
+                    # Send heartbeat every 30 seconds (15 * 2 seconds) to keep connection alive
+                    if poll_count > 0 and poll_count % 15 == 0:
+                        heartbeat_payload = {
+                            "heartbeat": True,
+                            "timestamp": video.updated_at.isoformat() if video.updated_at else None,
+                            "poll_count": poll_count
+                        }
+                        yield f"data: {json.dumps(heartbeat_payload)}\n\n"
+                        logger.debug(f"SSE: Heartbeat sent for video {video_id} (poll {poll_count})")
 
                     # Stop streaming if processing complete or error
                     if current_status in ["DONE", "ERROR"]:
