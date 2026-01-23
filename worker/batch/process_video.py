@@ -684,6 +684,9 @@ def main():
         else:
             print("[SKIP] STEP 13")
 
+        update_video_status_sync(video_id, VideoStatus.DONE)
+        print("\n[SUCCESS] Video processing completed successfully")
+
 
     except Exception as e:
         update_video_status_sync(video_id, VideoStatus.ERROR)
