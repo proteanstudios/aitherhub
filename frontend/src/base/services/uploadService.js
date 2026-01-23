@@ -30,10 +30,36 @@ class UploadService extends BaseApiService {
    */
   async uploadToAzure(file, uploadUrl, onProgress) {
     const blockBlobClient = new BlockBlobClient(uploadUrl);
-    
+
+    // Determine proper content type for video files
+    let contentType = 'video/mp4'; // Default fallback
+
+    // Use file.type if available and valid
+    if (file.type && file.type.startsWith('video/')) {
+      contentType = file.type;
+    } else {
+      // Fallback detection based on file extension
+      const fileName = file.name.toLowerCase();
+      if (fileName.endsWith('.mp4')) {
+        contentType = 'video/mp4';
+      } else if (fileName.endsWith('.webm')) {
+        contentType = 'video/webm';
+      } else if (fileName.endsWith('.avi')) {
+        contentType = 'video/avi';
+      } else if (fileName.endsWith('.mov')) {
+        contentType = 'video/quicktime';
+      } else if (fileName.endsWith('.mkv')) {
+        contentType = 'video/x-matroska';
+      }
+    }
+
     await blockBlobClient.uploadData(file, {
       blockSize: 8 * 1024 * 1024, // 8MB chunks
       concurrency: 8,
+      blobHTTPHeaders: {
+        blobContentType: contentType,
+        blobCacheControl: 'public, max-age=3600', // Allow CDN caching
+      },
       onProgress: (progress) => {
         const percentage = Math.round((progress.loadedBytes / file.size) * 100);
         if (onProgress) onProgress(percentage);
