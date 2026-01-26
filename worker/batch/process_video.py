@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from ultralytics import YOLO
 import subprocess
 import requests
+from urllib.parse import quote
 
 from vision_pipeline import caption_keyframes
 from db_ops import init_db_sync, close_db_sync
@@ -233,9 +234,17 @@ def _ensure_dir(path: str):
 
 #     print("\n[DL] Requests download completed")
 
+def _normalize_blob_url(url: str) -> str:
+    if "?" not in url:
+        return quote(url, safe=":/")
+    base, qs = url.split("?", 1)
+    base = quote(base, safe=":/")
+    return base + "?" + qs
 
 def _download_blob(blob_url: str, dest_path: str):
     os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+
+    blob_url = _normalize_blob_url(blob_url)
 
     try:
         print(f"[DL] AzCopy download: {blob_url}")
