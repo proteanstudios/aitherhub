@@ -1,5 +1,9 @@
 class VideoStatus:
     NEW = "NEW"
+
+    # =========================
+    # PIPELINE CORE
+    # =========================
     STEP_0_EXTRACT_FRAMES = "STEP_0_EXTRACT_FRAMES"
     STEP_1_DETECT_PHASES = "STEP_1_DETECT_PHASES"
     STEP_2_EXTRACT_METRICS = "STEP_2_EXTRACT_METRICS"
@@ -7,8 +11,29 @@ class VideoStatus:
     STEP_4_IMAGE_CAPTION = "STEP_4_IMAGE_CAPTION"
     STEP_5_BUILD_PHASE_UNITS = "STEP_5_BUILD_PHASE_UNITS"
     STEP_6_BUILD_PHASE_DESCRIPTION = "STEP_6_BUILD_PHASE_DESCRIPTION"
+
+    # =========================
+    # PHASE LEVEL
+    # =========================
     STEP_7_GROUPING = "STEP_7_GROUPING"
     STEP_8_UPDATE_BEST_PHASE = "STEP_8_UPDATE_BEST_PHASE"
-    STEP_9_BUILD_REPORTS = "STEP_9_BUILD_REPORTS"
+
+    # =========================
+    # VIDEO STRUCTURE LEVEL (NEW)
+    # =========================
+    STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES = "STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES"
+    STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP = "STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP"
+    STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS = "STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS"
+    STEP_12_UPDATE_VIDEO_STRUCTURE_BEST = "STEP_12_UPDATE_VIDEO_STRUCTURE_BEST"
+
+
+    # =========================
+    # FINAL REPORT (MOVE TO LAST)
+    # =========================
+    STEP_13_BUILD_REPORTS = "STEP_13_BUILD_REPORTS"
+
+    # =========================
+    # DONE / ERROR
+    # =========================
     DONE = "DONE"
     ERROR = "ERROR"

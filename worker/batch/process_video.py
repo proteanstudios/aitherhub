@@ -53,8 +53,14 @@ from db_ops import (
     get_video_status_sync,
     load_video_phases_sync,
     update_video_phase_description_sync,
-    update_phase_group_sync
+    update_phase_group_sync,
+    get_video_structure_group_id_of_video_sync
 )
+
+from video_structure_features import build_video_structure_features
+from video_structure_grouping import assign_video_structure_group
+from video_structure_group_stats import recompute_video_structure_group_stats
+from best_video_pipeline import process_best_video
 
 from video_status import VideoStatus
 
@@ -118,7 +124,13 @@ STEP_ORDER = [
     VideoStatus.STEP_6_BUILD_PHASE_DESCRIPTION,
     VideoStatus.STEP_7_GROUPING,
     VideoStatus.STEP_8_UPDATE_BEST_PHASE,
-    VideoStatus.STEP_9_BUILD_REPORTS,
+
+    VideoStatus.STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES,
+    VideoStatus.STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP,
+    VideoStatus.STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS,
+    VideoStatus.STEP_12_UPDATE_VIDEO_STRUCTURE_BEST,
+
+    VideoStatus.STEP_13_BUILD_REPORTS,
 ]
 
 def status_to_step_index(status: str | None):
@@ -216,6 +228,13 @@ def main():
         # Chỉ cho resume nếu >= STEP 7
         if raw_start_step >= 7:
             start_step = raw_start_step
+
+            keyframes = None
+            rep_frames = None
+            total_frames = None
+            phase_stats = None
+            keyframe_captions = None
+
             print(f"[RESUME] resume from step {start_step} (status={current_status})")
         else:
             start_step = 0
@@ -247,31 +266,65 @@ def main():
         # =========================
         # STEP 1 – PHASE DETECTION (YOLO + CACHE)
         # =========================
+        # if start_step <= 1:
+        #     update_video_status_sync(video_id, VideoStatus.STEP_1_DETECT_PHASES)
+
+        #     cache = load_step1_cache(video_id)
+        #     if cache:
+        #         print("[CACHE] Load STEP 1 cache")
+        #         keyframes = cache["keyframes"]
+        #         rep_frames = cache["rep_frames"]
+        #         total_frames = cache["total_frames"]
+        #     else:
+        #         print("=== STEP 1 – PHASE DETECTION (YOLO) ===")
+        #         model = YOLO("yolov8n.pt", verbose=False)
+        #         keyframes, rep_frames, total_frames = detect_phases(
+        #             frame_dir=frame_dir,
+        #             model=model,
+        #         )
+        #         save_step1_cache(video_id, keyframes, rep_frames, total_frames)
+        # else:
+        #     # print("[SKIP] STEP 1")
+        #     # cache = load_step1_cache(video_id)
+        #     # if not cache:
+        #     #     raise RuntimeError("Missing STEP 1 cache while resuming")
+        #     # keyframes = cache["keyframes"]
+        #     # rep_frames = cache["rep_frames"]
+        #     # total_frames = cache["total_frames"]
+
+        #     print("[SKIP] STEP 1")
+        #     if start_step < 7:
+        #         cache = load_step1_cache(video_id)
+        #         if not cache:
+        #             raise RuntimeError("Missing STEP 1 cache while resuming")
+        #         keyframes = cache["keyframes"]
+        #         rep_frames = cache["rep_frames"]
+        #         total_frames = cache["total_frames"]
+        #     else:
+        #         # Resume >= 7: không cần mấy thứ này nữa
+        #         keyframes = None
+        #         rep_frames = None
+        #         total_frames = None
+
+        # =========================
+        # STEP 1 – PHASE DETECTION (YOLO)
+        # =========================
         if start_step <= 1:
             update_video_status_sync(video_id, VideoStatus.STEP_1_DETECT_PHASES)
 
-            cache = load_step1_cache(video_id)
-            if cache:
-                print("[CACHE] Load STEP 1 cache")
-                keyframes = cache["keyframes"]
-                rep_frames = cache["rep_frames"]
-                total_frames = cache["total_frames"]
-            else:
-                print("=== STEP 1 – PHASE DETECTION (YOLO) ===")
-                model = YOLO("yolov8n.pt", verbose=False)
-                keyframes, rep_frames, total_frames = detect_phases(
-                    frame_dir=frame_dir,
-                    model=model,
-                )
-                save_step1_cache(video_id, keyframes, rep_frames, total_frames)
+            print("=== STEP 1 – PHASE DETECTION (YOLO) ===")
+            model = YOLO("yolov8n.pt", verbose=False)
+            keyframes, rep_frames, total_frames = detect_phases(
+                frame_dir=frame_dir,
+                model=model,
+            )
         else:
             print("[SKIP] STEP 1")
-            cache = load_step1_cache(video_id)
-            if not cache:
-                raise RuntimeError("Missing STEP 1 cache while resuming")
-            keyframes = cache["keyframes"]
-            rep_frames = cache["rep_frames"]
-            total_frames = cache["total_frames"]
+            # Resume >= 7: không cần mấy thứ này nữa
+            keyframes = None
+            rep_frames = None
+            total_frames = None
+
 
         # =========================
         # STEP 2 – PHASE METRICS
@@ -285,12 +338,15 @@ def main():
                 frame_dir=frame_dir,
             )
         else:
-            print("[SKIP] STEP 2 – but recompute phase_stats")
-            phase_stats = extract_phase_stats(
-                keyframes=keyframes,
-                total_frames=total_frames,
-                frame_dir=frame_dir,
-            )
+            # print("[SKIP] STEP 2 – but recompute phase_stats")
+            # phase_stats = extract_phase_stats(
+            #     keyframes=keyframes,
+            #     total_frames=total_frames,
+            #     frame_dir=frame_dir,
+            # )
+
+            print("[SKIP] STEP 2")
+            phase_stats = None
 
         # =========================
         # STEP 3 – AUDIO → TEXT
@@ -324,13 +380,13 @@ def main():
             # print("[CLEANUP] Remove frames")
             # shutil.rmtree(frames_dir(video_id), ignore_errors=True)
         else:
+            # print("[SKIP] STEP 4")
+            # keyframe_captions = caption_keyframes(
+            #     frame_dir=frame_dir,
+            #     rep_frames=rep_frames,
+            # )
             print("[SKIP] STEP 4")
-            keyframe_captions = caption_keyframes(
-                frame_dir=frame_dir,
-                rep_frames=rep_frames,
-            )
-            # print("[SKIP] STEP 4 (captions already used in STEP 5)")
-            # keyframe_captions = None
+            keyframe_captions = None
 
         # =========================
         # STEP 5 – BUILD PHASE UNITS (DB CHECKPOINT)
@@ -495,15 +551,73 @@ def main():
         else:
             print("[SKIP] STEP 8")
 
+       
         # =========================
-        # STEP 9 – BUILD REPORTS
+        # STEP 9 – BUILD VIDEO STRUCTURE FEATURES
         # =========================
         if start_step <= 9:
-            update_video_status_sync(video_id, VideoStatus.STEP_9_BUILD_REPORTS)
-            print("=== STEP 9 – BUILD REPORTS ===")
+            update_video_status_sync(video_id, VideoStatus.STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES)
+            print("=== STEP 9 – BUILD VIDEO STRUCTURE FEATURES ===")
+            build_video_structure_features(video_id)
+        else:
+            print("[SKIP] STEP 9")
 
+
+        # =========================
+        # STEP 10 – ASSIGN VIDEO STRUCTURE GROUP
+        # =========================
+        if start_step <= 10:
+            update_video_status_sync(video_id, VideoStatus.STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP)
+            print("=== STEP 10 – ASSIGN VIDEO STRUCTURE GROUP ===")
+
+            assign_video_structure_group(video_id)
+        else:
+            print("[SKIP] STEP 10")
+
+
+        # =========================
+        # STEP 11 – UPDATE VIDEO STRUCTURE GROUP STATS
+        # =========================
+        if start_step <= 11:
+            update_video_status_sync(video_id, VideoStatus.STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS)
+            print("=== STEP 11 – UPDATE VIDEO STRUCTURE GROUP STATS ===")
+
+            group_id = get_video_structure_group_id_of_video_sync(video_id)
+            if group_id:
+                recompute_video_structure_group_stats(group_id)
+        else:
+            print("[SKIP] STEP 11")
+
+        # =========================
+        # STEP 12 – UPDATE VIDEO STRUCTURE BEST
+        # =========================
+        if start_step <= 12:
+            update_video_status_sync(video_id, VideoStatus.STEP_12_UPDATE_VIDEO_STRUCTURE_BEST)
+            print("=== STEP 12 – UPDATE VIDEO STRUCTURE BEST ===")
+
+            
+            process_best_video(video_id)
+        else:
+            print("[SKIP] STEP 12")
+
+
+        # ---------- ensure best_data for resume ----------
+        # ---------- ensure best_data for resume ----------
+        if 'best_data' not in locals() or best_data is None:
+            print("[RESUME] Reload best_data from artifact")
+            best_data = load_group_best_phases(ART_ROOT, video_id)
+
+        # =========================
+        # STEP 13 – BUILD REPORTS
+        # =========================
+        if start_step <= 13:
+            update_video_status_sync(video_id, VideoStatus.STEP_13_BUILD_REPORTS)
+            print("=== STEP 13 – BUILD REPORTS ===")
+
+            # ---------- REPORT 1 ----------
             r1 = build_report_1_timeline(phase_units)
 
+            # ---------- REPORT 2 (PHASE INSIGHTS) ----------
             r2_raw = build_report_2_phase_insights_raw(phase_units, best_data)
             r2_gpt = rewrite_report_2_with_gpt(r2_raw)
 
@@ -515,31 +629,64 @@ def main():
                     insight=item["insight"],
                 )
 
-            r3_raw = build_report_3_video_insights_raw(phase_units)
-            r3_gpt = rewrite_report_3_with_gpt(r3_raw)
-
-            save_reports(
-                video_id,
-                r1,
-                r2_raw,
-                r2_gpt,
-                r3_raw,
-                r3_gpt,
+            # ---------- REPORT 3 (VIDEO STRUCTURE vs BENCHMARK) ----------
+            from report_pipeline import (
+                build_report_3_structure_vs_benchmark_raw,
+                rewrite_report_3_structure_with_gpt,
+            )
+            from db_ops import (
+                get_video_structure_features_sync,
+                get_video_structure_group_best_video_sync,
+                get_video_structure_group_stats_sync,
             )
 
-            video_insights = r3_gpt.get("video_insights", [])
+            group_id = get_video_structure_group_id_of_video_sync(video_id)
+            if not group_id:
+                print("[REPORT3] No structure group, skip")
+            else:
+                best = get_video_structure_group_best_video_sync(group_id)
+                if not best:
+                    print("[REPORT3] No benchmark video, skip")
+                else:
+                    best_video_id = best["video_id"]
 
-            for item in video_insights:
-                insert_video_insight_sync(
-                    video_id=video_id,
-                    title=item.get("title", "").strip(),
-                    content=item.get("content", "").strip(),
-                )
+                    current_features = get_video_structure_features_sync(video_id)
+                    best_features = get_video_structure_features_sync(best_video_id)
+                    group_stats = get_video_structure_group_stats_sync(group_id)
+
+                    if not current_features or not best_features:
+                        print("[REPORT3] Missing structure features, skip")
+                    else:
+                        r3_raw = build_report_3_structure_vs_benchmark_raw(
+                            current_features=current_features,
+                            best_features=best_features,
+                            group_stats=group_stats,
+                        )
+
+                        r3_gpt = rewrite_report_3_structure_with_gpt(r3_raw)
+
+                        # Save debug artifacts (optional)
+                        save_reports(
+                            video_id,
+                            r1,
+                            r2_raw,
+                            r2_gpt,
+                            r3_raw,
+                            r3_gpt,
+                        )
+
+                        insert_video_insight_sync(
+                            video_id=video_id,
+                            title="Video Structure Analysis",
+                            content=json.dumps(r3_gpt, ensure_ascii=False),
+                        )
+
         else:
-            print("[SKIP] STEP 9")
+            print("[SKIP] STEP 13")
 
         update_video_status_sync(video_id, VideoStatus.DONE)
         print("\n[SUCCESS] Video processing completed successfully")
+
 
     except Exception as e:
         update_video_status_sync(video_id, VideoStatus.ERROR)
