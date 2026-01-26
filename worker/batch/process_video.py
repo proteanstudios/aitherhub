@@ -249,7 +249,7 @@ def _download_blob(blob_url: str, dest_path: str):
     try:
         print(f"[DL] AzCopy download: {blob_url}")
         subprocess.run(
-            ["azcopy", "copy", blob_url, dest_path, "--overwrite=true"],
+            ["/usr/local/bin/azcopy", "copy", blob_url, dest_path, "--overwrite=true"],
             check=True,
             capture_output=True,
             text=True
