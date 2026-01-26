@@ -688,6 +688,28 @@ def main():
         print("\n[SUCCESS] Video processing completed successfully")
 
 
+        # =========================
+        # CLEANUP – CLEAR uploadedvideo
+        # =========================
+        try:
+            upload_dir = "uploadedvideo"
+            if os.path.exists(upload_dir):
+                print(f"[CLEANUP] Clear all files in {upload_dir}/")
+
+                for name in os.listdir(upload_dir):
+                    path = os.path.join(upload_dir, name)
+                    try:
+                        if os.path.isfile(path) or os.path.islink(path):
+                            os.remove(path)
+                        elif os.path.isdir(path):
+                            shutil.rmtree(path)
+                    except Exception as e:
+                        print(f"[WARN] Could not remove {path}: {e}")
+        except Exception as e:
+            print(f"[WARN] Cleanup uploadedvideo failed: {e}")
+
+
+
     except Exception as e:
         update_video_status_sync(video_id, VideoStatus.ERROR)
         print(f"\n[ERROR] Video processing failed: {e}")
