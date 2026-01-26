@@ -307,10 +307,15 @@ async def get_video_detail(
 
         report3 = []
         if latest:
+            # If content is a JSON string (starts with '{' or '['), parse it and
+            # extract `video_insights`. Otherwise treat `content` as legacy
+            # text and return it as a single report item.
+            parsed = latest.content
             try:
-                parsed = latest.content
                 if isinstance(parsed, str):
-                    parsed = json.loads(parsed)
+                    s = parsed.lstrip()
+                    if s.startswith("{") or s.startswith("["):
+                        parsed = json.loads(parsed)
 
                 if isinstance(parsed, dict) and parsed.get("video_insights") and isinstance(parsed.get("video_insights"), list):
                     for item in parsed.get("video_insights"):
@@ -325,6 +330,7 @@ async def get_video_detail(
                             "content": item.get("content"),
                         })
                 else:
+                    # legacy text report
                     report3.append({
                         "title": latest.title,
                         "content": latest.content,
