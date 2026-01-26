@@ -5,6 +5,7 @@ import json
 import shutil
 from dotenv import load_dotenv
 from ultralytics import YOLO
+import subprocess
 
 from vision_pipeline import caption_keyframes
 from db_ops import init_db_sync, close_db_sync
@@ -157,19 +158,80 @@ def _ensure_dir(path: str):
 #                 if chunk:
 #                     f.write(chunk)
 
+# def _download_blob(blob_url: str, dest_path: str):
+#     with requests.get(blob_url, stream=True) as r:
+#         r.raise_for_status()
+#         total = int(r.headers.get("content-length", 0))
+#         downloaded = 0
+
+#         with open(dest_path, "wb") as f:
+#             for chunk in r.iter_content(chunk_size=4 * 1024 * 1024):  # 4MB
+#                 if chunk:
+#                     f.write(chunk)
+#                     downloaded += len(chunk)
+#                     if total:
+#                         print(f"[DL] {downloaded/1024/1024:.0f}MB / {total/1024/1024:.0f}MB", end="\r")
+
 def _download_blob(blob_url: str, dest_path: str):
-    with requests.get(blob_url, stream=True) as r:
+    """
+    Download blob using AzCopy if available (fast, parallel).
+    Fallback to requests if AzCopy is not installed.
+    """
+
+    # Ensure dest folder exists
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+
+    # Try AzCopy first
+    try:
+        print(f"[DL] Try AzCopy download: {blob_url}")
+
+        cmd = [
+            "azcopy",
+            "copy",
+            blob_url,
+            dest_path,
+            "--overwrite=true"
+        ]
+
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True
+        )
+
+        print("[DL] AzCopy download completed")
+        return
+
+    except FileNotFoundError:
+        print("[WARN] AzCopy not found. Fallback to requests.")
+
+    except subprocess.CalledProcessError as e:
+        print("[WARN] AzCopy failed. Fallback to requests.")
+        print(e.stdout)
+        print(e.stderr)
+
+    # -----------------------
+    # Fallback: requests
+    # -----------------------
+    print(f"[DL] Fallback: downloading with requests: {blob_url}")
+
+    with requests.get(blob_url, stream=True, timeout=60) as r:
         r.raise_for_status()
         total = int(r.headers.get("content-length", 0))
         downloaded = 0
 
         with open(dest_path, "wb") as f:
-            for chunk in r.iter_content(chunk_size=4 * 1024 * 1024):  # 4MB
+            for chunk in r.iter_content(chunk_size=8 * 1024 * 1024):  # 8MB
                 if chunk:
                     f.write(chunk)
                     downloaded += len(chunk)
                     if total:
                         print(f"[DL] {downloaded/1024/1024:.0f}MB / {total/1024/1024:.0f}MB", end="\r")
+
+    print("\n[DL] Requests download completed")
+
 
 
 def _resolve_inputs(args) -> tuple[str, str]:
