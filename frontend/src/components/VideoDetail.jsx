@@ -142,6 +142,13 @@ export default function VideoDetail({ video }) {
     }
   };
 
+  const formatTime = (seconds) => {
+    if (seconds == null || isNaN(seconds)) return "";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const handlePhasePreview = async (phase) => {
     console.log('🎬 handlePhasePreview called with phase:', {
       time_start: phase?.time_start,
@@ -247,7 +254,7 @@ export default function VideoDetail({ video }) {
       const hasReport = !!(videoData && Array.isArray(videoData.reports_1) && videoData.reports_1.length > 0);
       const statusDone = (videoData && (String(videoData.status || "").toUpperCase() === "DONE")) || false;
       if (!vid || !(hasReport || statusDone)) {
-        try {  } catch (e) {}
+        try { } catch (e) { }
         return;
       }
       const now = Date.now();
@@ -259,7 +266,7 @@ export default function VideoDetail({ video }) {
         try {
           if (typeof streamCancelRef.current.cancel === "function") streamCancelRef.current.cancel();
           else if (typeof streamCancelRef.current === "function") streamCancelRef.current();
-        } catch (e) {}
+        } catch (e) { }
         streamCancelRef.current = null;
       }
       if (reloadTimeoutRef.current) {
@@ -268,7 +275,7 @@ export default function VideoDetail({ video }) {
       }
       answerRef.current = "";
 
-      const localId = `local-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+      const localId = `local-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       setChatMessages((prev) => [...prev, { id: localId, question: text, answer: "" }]);
 
       const streamHandle = VideoService.streamChat({
@@ -280,7 +287,7 @@ export default function VideoDetail({ video }) {
             try {
               processed = processed.replace(/\\r\\n/g, "\r\n").replace(/\\n/g, "\n");
               processed = processed.replace(/([.!?])\s+([A-ZÀ-ỸÂÊÔƠƯĂĐ])/g, "$1\n$2");
-            } catch (e) {}
+            } catch (e) { }
 
             answerRef.current += processed;
             setChatMessages((prev) =>
@@ -374,7 +381,7 @@ export default function VideoDetail({ video }) {
       try {
         const text = ev?.detail?.text;
         if (text && !streamCancelRef.current) handleChatSend(text);
-      } catch (e) {}
+      } catch (e) { }
     };
     window.addEventListener("videoInput:submitted", onGlobalSubmit);
     return () => {
@@ -383,7 +390,7 @@ export default function VideoDetail({ video }) {
         try {
           if (typeof streamCancelRef.current.cancel === "function") streamCancelRef.current.cancel();
           else if (typeof streamCancelRef.current === "function") streamCancelRef.current();
-        } catch (e) {}
+        } catch (e) { }
         streamCancelRef.current = null;
       }
       if (reloadTimeoutRef.current) {
@@ -398,7 +405,7 @@ export default function VideoDetail({ video }) {
       try {
         if (typeof streamCancelRef.current.cancel === "function") streamCancelRef.current.cancel();
         else if (typeof streamCancelRef.current === "function") streamCancelRef.current();
-      } catch (e) {}
+      } catch (e) { }
       streamCancelRef.current = null;
     }
     answerRef.current = "";
@@ -603,7 +610,7 @@ export default function VideoDetail({ video }) {
   }
 
   return (
-    <div className="w-full h-full flex flex-col gap-6 p-0 lg:p-6">
+    <div className="overflow-hidden w-full h-full flex flex-col gap-6 p-0 md:overflow-auto lg:p-6">
       <style>{markdownTableStyles}</style>
       <h4 className="md:top-[5px] w-full text-[26px] leading-[35px] font-semibold font-cabin text-center">
         {window.__t('header').split('\n').map((line, idx, arr) => (
@@ -624,7 +631,7 @@ export default function VideoDetail({ video }) {
         </div>
 
         {/* SCROLL AREA */}
-        <div className="flex-1 overflow-y-auto scrollbar-custom text-left">
+        <div className="mb-[115px] flex-1 overflow-y-auto scrollbar-custom text-left md:mb-0">
           {/* Show processing status when video is being processed */}
           {renderProcessingStatus()}
 
@@ -651,14 +658,12 @@ export default function VideoDetail({ video }) {
                 {videoData.reports_1.map((it, index) => (
                   <div
                     key={`r1-${it.phase_index ?? index}`}
-                    className={`grid grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md
-                      ${index === videoData.reports_1.length - 1 ? "mb-[30px]" : ""}
+                    className={`grid grid-cols-1 md:grid-cols-[150px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md
                     `}
                   >
                     <div
-                      className={`flex items-center gap-1 text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 transition-colors ${
-                        previewLoading ? "opacity-60 pointer-events-none" : ""
-                      }`}
+                      className={`flex items-center gap-1 text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 transition-colors ${previewLoading ? "opacity-60 pointer-events-none" : ""
+                        }`}
                       onClick={() => handlePhasePreview(it)}
                       title={window.__t('clickToPreview')}
                     >
@@ -680,9 +685,9 @@ export default function VideoDetail({ video }) {
 
                       {it.time_start != null || it.time_end != null ? (
                         <>
-                          {it.time_start != null ? it.time_start : ""}
-                          {" : "}
-                          {it.time_end != null ? it.time_end : ""}
+                          {formatTime(it.time_start)}
+                          {" – "}
+                          {formatTime(it.time_end)}
                         </>
                       ) : (
                         <span className="text-gray-500">-</span>
@@ -704,40 +709,53 @@ export default function VideoDetail({ video }) {
                   <div className="mt-2">
                     <div className="text-lg font-semibold mb-2">{window.__t('report2Title') || 'Report 2'}</div>
                     <div className="flex flex-col gap-3">
-                    {(videoData.reports_2 || videoData.reports_1).map((it, idx) => (
-                      <div
-                        key={`r2-${it.phase_index ?? idx}`}
-                        className={`grid grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md
-                          ${idx === (videoData.reports_2 ? videoData.reports_2.length - 1 : videoData.reports_1.length - 1) ? "mb-[30px]" : ""}
-                        `}
-                      >
+                      {(videoData.reports_2 || videoData.reports_1).map((it, idx) => (
                         <div
-                          className={`text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 transition-colors ${
-                            previewLoading ? "opacity-60 pointer-events-none" : ""
-                          }`}
-                          onClick={() => handlePhasePreview(it)}
-                          title={window.__t('clickToPreview')}
+                          key={`r2-${it.phase_index ?? idx}`}
+                          className={`grid grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md""}
+                        `}
                         >
-                          {it.time_start != null || it.time_end != null ? (
-                            <>
-                              {it.time_start != null ? it.time_start : ""}
-                              {" : "}
-                              {it.time_end != null ? it.time_end : ""}
-                            </>
-                          ) : (
-                            <span className="text-gray-500">-</span>
-                          )}
-                        </div>
+                          <div
+                            className={`flex items-center gap-1 text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 transition-colors ${previewLoading ? "opacity-60 pointer-events-none" : ""
+                              }`}
+                            onClick={() => handlePhasePreview(it)}
+                            title={window.__t('clickToPreview')}
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              strokeWidth="1.5"
+                              stroke="currentColor"
+                              className="size-6 mt-[-2px]"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z"
+                              />
+                            </svg>
 
-                        <div className="text-sm text-left text-gray-100">
-                          <div className="markdown">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {it.insight || window.__t('noInsight')}
-                            </ReactMarkdown>
+                            {it.time_start != null || it.time_end != null ? (
+                              <>
+                                {formatTime(it.time_start)}
+                                {" – "}
+                                {formatTime(it.time_end)}
+                              </>
+                            ) : (
+                              <span className="text-gray-500">-</span>
+                            )}
+                          </div>
+
+                          <div className="text-sm text-left text-gray-100">
+                            <div className="markdown">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {it.insight || window.__t('noInsight')}
+                              </ReactMarkdown>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
                     </div>
                   </div>
                 )}
@@ -748,8 +766,7 @@ export default function VideoDetail({ video }) {
                     {videoData.report3.map((r, i) => (
                       <div
                         key={`r3-${i}`}
-                        className={`grid min-w-0 grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md ${
-                          i === videoData.report3.length - 1 ? "mb-[30px]" : "mb-2"
+                        className={`grid min-w-0 grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md
                         }`}
                       >
                         <div className="text-sm text-gray-400 font-mono whitespace-normal break-words break-all">
