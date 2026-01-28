@@ -8,17 +8,6 @@ from ultralytics import YOLO
 import subprocess
 import requests
 from urllib.parse import quote
-import sys
-
-# Ensure the batch folder is on sys.path so local imports work when running
-# the script from a different working directory or via cron/systemd.
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-if BASE_DIR not in sys.path:
-    sys.path.insert(0, BASE_DIR)
-# Also add repository root to allow imports from worker/ or shared modules
-REPO_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
 
 from vision_pipeline import caption_keyframes
 from db_ops import init_db_sync, close_db_sync
