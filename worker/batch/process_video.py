@@ -802,7 +802,6 @@ def main():
             print("=== STEP 14 – SPLIT VIDEO INTO SEGMENTS ===")
             try:
                 url = args.blob_url if getattr(args, "blob_url", None) else video_path
-                url = "https://kyogokuvideos.blob.core.windows.net/videos/abc%40gmail.com/004e97fc-2bdc-4820-b775-fcd05e88aa5e/004e97fc-2bdc-4820-b775-fcd05e88aa5e.mp4?sp=r&st=2026-01-28T03:12:45Z&se=2026-01-28T11:27:45Z&spr=https&sv=2024-11-04&sr=b&sig=CAM4Elg%2BAG95n1EWagL3ZqlUZ72MNmab1KnyZjj6JoY%3D"
                 split_video_into_segments(video_id, url, video_path)
             except Exception as e:
                 print(f"[WARN] split_video failed: {e}")
