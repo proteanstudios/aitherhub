@@ -14,7 +14,7 @@ from azure.storage.blob import (
 CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 ACCOUNT_NAME = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
 CONTAINER_NAME = os.getenv("AZURE_BLOB_CONTAINER", "videos")
-SAS_EXP_MINUTES = int(os.getenv("AZURE_BLOB_SAS_EXP_MINUTES", "60"))
+SAS_EXP_MINUTES = int(os.getenv("AZURE_BLOB_SAS_EXP_MINUTES", "1440"))  # default 1 day
 SAS_DOWNLOAD_EXP_MINUTES = int(os.getenv("AZURE_BLOB_SAS_DOWNLOAD_MINUTES", "1440"))  # Default 24 hours
 
 
@@ -40,11 +40,19 @@ def _ensure_container(service_client: BlobServiceClient, container: str) -> None
 
 def generate_blob_name(email: str, video_id: str, filename: str | None = None) -> str:
     """Create a blob name using folder structure: email/video_id/filename"""
-    if filename and "." in filename:
-        ext = filename.rsplit(".", 1)[1]
-        blob_filename = f"{video_id}.{ext}"
+    # If filename contains a path (e.g. 'reportvideo/0.0_104.0.mp4'), treat it
+    # as a relative blob path under email/video_id/ and keep it intact.
+    if filename:
+        if "/" in filename:
+            return f"{email}/{video_id}/{filename}"
+        if "." in filename:
+            ext = filename.rsplit(".", 1)[1]
+            blob_filename = f"{video_id}.{ext}"
+        else:
+            blob_filename = f"{video_id}.mp4"
     else:
         blob_filename = f"{video_id}.mp4"
+
     return f"{email}/{video_id}/{blob_filename}"
 
 

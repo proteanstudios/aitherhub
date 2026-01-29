@@ -55,6 +55,8 @@ def poll_and_process():
                 "--blob-url", blob_url,
             ]
             
+            client.delete_message(msg.id, msg.pop_receipt)
+
             result = subprocess.run(
                 cmd,
                 cwd=BATCH_DIR,
@@ -65,10 +67,7 @@ def poll_and_process():
             if result.returncode == 0:
                 print(f"[worker] Batch completed successfully for {video_id}")
             else:
-                print(f"[worker] Batch failed for {video_id} with exit code {result.returncode}")
-            
-            # Delete message from queue (success or fail, avoid infinite retry)
-            client.delete_message(msg.id, msg.pop_receipt)
+                print(f"[worker] Batch failed for {video_id} with exit code {result.returncode}")       
             
         except Exception as e:
             print(f"[worker] Error processing message: {e}")

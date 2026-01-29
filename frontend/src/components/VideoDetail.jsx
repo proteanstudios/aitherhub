@@ -153,7 +153,8 @@ export default function VideoDetail({ video }) {
     console.log('🎬 handlePhasePreview called with phase:', {
       time_start: phase?.time_start,
       time_end: phase?.time_end,
-      phase_index: phase?.phase_index
+      phase_index: phase?.phase_index,
+      video_clip_url: phase?.video_clip_url,
     });
 
     if (!phase?.time_start && !phase?.time_end) {
@@ -167,14 +168,58 @@ export default function VideoDetail({ video }) {
 
     setPreviewLoading(true);
     try {
-      console.log('📡 Fetching download URL for video ID:', videoData.id);
-      const url = await VideoService.getDownloadUrl(videoData.id);
-      console.log('✅ Got download URL:', url ? 'URL received' : 'No URL');
+      const checkUrl = async (url, timeout = 5000) => {
+        try {
+          const controller = new AbortController();
+          const id = setTimeout(() => controller.abort(), timeout);
+          const res = await fetch(url, { method: 'HEAD', mode: 'cors', signal: controller.signal });
+          clearTimeout(id);
+          return res.status === 200 || res.status === 206;
+        } catch (e) {
+          try {
+            const controller2 = new AbortController();
+            const id2 = setTimeout(() => controller2.abort(), timeout);
+            const res2 = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-0' }, mode: 'cors', signal: controller2.signal });
+            clearTimeout(id2);
+            return res2.status === 206 || res2.status === 200;
+          } catch (e2) {
+            return false;
+          }
+        }
+      };
+
+      let url = null;
+      let okPhaseUrl = false;
+
+      // If a precomputed SAS url exists on the phase, prefer it after verifying
+      if (phase?.video_clip_url) {
+        const ok = await checkUrl(phase.video_clip_url);
+        if (ok) {
+          url = phase.video_clip_url;
+          okPhaseUrl = true;
+        }
+      }
+
+      // Fallback: ask backend for a download SAS URL
+      if (!url) {
+        try {
+          const downloadUrl = await VideoService.getDownloadUrl(videoData.id);
+          url = downloadUrl;
+        } catch (err) {
+          console.error('❌ Failed to get backend download URL', err);
+        }
+      }
+
+      if (!url) {
+        console.error('❌ No preview URL available for this phase');
+        return;
+      }
 
       const previewDataObj = {
         url,
         timeStart: Number(phase.time_start) || 0,
         timeEnd: phase.time_end != null ? Number(phase.time_end) : null,
+        skipSeek: !!okPhaseUrl,
       };
 
       console.log('🎯 Setting preview data:', previewDataObj);
@@ -828,6 +873,7 @@ export default function VideoDetail({ video }) {
         videoUrl={previewData?.url}
         timeStart={previewData?.timeStart}
         timeEnd={previewData?.timeEnd}
+        skipSeek={previewData?.skipSeek}
       />
     </div>
   );

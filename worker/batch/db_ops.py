@@ -360,6 +360,121 @@ def update_phase_group_sync(*args, **kwargs):
     return loop.run_until_complete(update_phase_group(*args, **kwargs))
 
 # ---------- STEP 8: upsert group_best_phases ----------
+# ---------- STEP 8 BULK OPS ----------
+
+async def bulk_upsert_group_best_phases(rows: list[dict]):
+    """
+    rows = [
+      {
+        "group_id": int,
+        "video_id": str,
+        "phase_index": int,
+        "score": float,
+        "view_velocity": float,
+        "like_velocity": float,
+        "like_per_viewer": float,
+      },
+      ...
+    ]
+    """
+
+    if not rows:
+        return
+
+    sql = text("""
+        INSERT INTO group_best_phases (
+            id, group_id, video_id, phase_index,
+            score, view_velocity, like_velocity, like_per_viewer
+        )
+        SELECT
+            gen_random_uuid(),
+            x.group_id,
+            x.video_id,
+            x.phase_index,
+            x.score,
+            x.view_velocity,
+            x.like_velocity,
+            x.like_per_viewer
+        FROM jsonb_to_recordset(CAST(:rows AS jsonb)) AS x(
+            group_id int,
+            video_id uuid,
+            phase_index int,
+            score float8,
+            view_velocity float8,
+            like_velocity float8,
+            like_per_viewer float8
+        )
+        ON CONFLICT (group_id)
+        DO UPDATE SET
+            video_id = EXCLUDED.video_id,
+            phase_index = EXCLUDED.phase_index,
+            score = EXCLUDED.score,
+            view_velocity = EXCLUDED.view_velocity,
+            like_velocity = EXCLUDED.like_velocity,
+            like_per_viewer = EXCLUDED.like_per_viewer,
+            updated_at = now()
+    """)
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(text("SET statement_timeout = '30s'"))
+        await session.execute(sql, {"rows": json.dumps(rows)})
+        await session.commit()
+
+
+def bulk_upsert_group_best_phases_sync(rows):
+    loop = get_event_loop()
+    return loop.run_until_complete(bulk_upsert_group_best_phases(rows))
+
+
+async def bulk_refresh_phase_insights(best_rows: list[dict]):
+    """
+    best_rows = same list as above
+    """
+
+    if not best_rows:
+        return
+
+    # 1) Mark all phase_insights of affected groups = true
+    sql_mark = text("""
+        UPDATE phase_insights pi
+        SET needs_refresh = true,
+            updated_at = now()
+        WHERE pi.group_id IN (
+            SELECT DISTINCT (x->>'group_id')::int
+            FROM jsonb_array_elements(CAST(:rows AS jsonb)) x
+        )
+    """)
+
+    # 2) Clear needs_refresh for the best phases themselves
+    sql_clear = text("""
+        UPDATE phase_insights pi
+        SET needs_refresh = false,
+            updated_at = now()
+        FROM jsonb_to_recordset(CAST(:rows AS jsonb)) AS x(
+            group_id int,
+            video_id uuid,
+            phase_index int,
+            score float8,
+            view_velocity float8,
+            like_velocity float8,
+            like_per_viewer float8
+        )
+        WHERE pi.video_id = x.video_id
+          AND pi.phase_index = x.phase_index
+    """)
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(text("SET statement_timeout = '30s'"))
+        await session.execute(sql_mark, {"rows": json.dumps(best_rows)})
+        await session.execute(sql_clear, {"rows": json.dumps(best_rows)})
+        await session.commit()
+
+
+def bulk_refresh_phase_insights_sync(rows):
+    loop = get_event_loop()
+    return loop.run_until_complete(bulk_refresh_phase_insights(rows))
+
+
 
 async def upsert_group_best_phase(
     group_id: int,

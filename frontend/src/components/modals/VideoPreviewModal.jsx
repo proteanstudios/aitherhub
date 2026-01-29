@@ -5,7 +5,7 @@ import CloseSvg from "../../assets/icons/close.svg";
 /**
  * Modal video preview that seeks to a specific start time.
  */
-export default function VideoPreviewModal({ open, onClose, videoUrl, timeStart = 0, timeEnd = null }) {
+export default function VideoPreviewModal({ open, onClose, videoUrl, timeStart = 0, timeEnd = null, skipSeek = false }) {
   const videoRef = useRef(null);
   const hasSetupRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -67,30 +67,23 @@ export default function VideoPreviewModal({ open, onClose, videoUrl, timeStart =
 
       const seekAndPlay = async () => {
         try {
-          console.log('🎯 Starting seekAndPlay, current readyState:', vid.readyState);
-          console.log('🎯 Current time before seek:', vid.currentTime);
-
           // Show custom loading when starting seek/play process
           setShowCustomLoading(true);
           setIsLoading(true);
 
-          // Only seek if we haven't seeked yet and current time is not at desired position
-          const shouldSeek = !hasSeeked && Math.abs(vid.currentTime - timeStart) > 0.5;
-
+          const shouldSeek = !skipSeek && !hasSeeked && Math.abs(vid.currentTime - timeStart) > 0.5;
           if (shouldSeek && timeStart !== null && timeStart !== undefined) {
-            console.log('⏰ Setting currentTime to:', timeStart);
             vid.currentTime = timeStart;
             hasSeeked = true;
-            console.log('⏰ Current time after seek:', vid.currentTime);
+          } else if (skipSeek) {
+            hasSeeked = true;
           } else {
             console.log('⏭️ Skipping seek - already at correct position or already seeked');
           }
 
           // Try to play, handle promise rejection (autoPlay blocked)
           try {
-            console.log('▶️ Attempting to play video...');
             await vid.play();
-            console.log('✅ Video started playing successfully');
             setPlayBlocked(false);
             setIsLoading(false);
             // Keep custom loading for a moment to show success, then hide

@@ -49,7 +49,7 @@ async def generate_upload_url(payload: GenerateUploadURLRequest):
 async def generate_download_url(payload: GenerateDownloadURLRequest):
     try:
         result = await video_service.generate_download_url(
-            email=payload.email,
+            email=payload.email,    
             video_id=payload.video_id,
             filename=payload.filename,
             expires_in_minutes=payload.expires_in_minutes,
@@ -297,14 +297,52 @@ async def get_video_detail(
         }
 
         report1_items = []
+        # Lấy email từ bảng users dựa vào user_id của video
+        email = None
+        if hasattr(video, "user_id") and video.user_id:
+            sql_user = text("""
+                SELECT email FROM users WHERE id = :user_id
+            """)
+            ures = await db.execute(sql_user, {"user_id": video.user_id})
+            user_row = ures.fetchone()
+            if user_row and hasattr(user_row, "email"):
+                email = user_row.email
+        # Nếu không có email, bỏ qua video_clip_url
+        # Đồng bộ video_clip_url với SAS URL động
+        from app.services.video_service import VideoService
+        video_service = VideoService()
         for r in insight_rows:
             pm = phase_map.get(r.phase_index, {})
+            time_start = pm.get("time_start")
+            time_end = pm.get("time_end")
+            video_clip_url = None
+            if email and time_start is not None and time_end is not None:
+                try:
+                    ts = float(time_start)
+                    te = float(time_end)
+                    ts_str = f"{ts:.1f}"
+                    te_str = f"{te:.1f}"
+                    filename = f"{ts_str}_{te_str}.mp4"
+                    # Gọi generate_download_url để lấy SAS URL
+                    try:
+                        download_url_result = await video_service.generate_download_url(
+                            email=email,
+                            video_id=video_id,
+                            filename=f"reportvideo/{filename}",
+                            expires_in_minutes=60*24,  # 1 ngày
+                        )
+                        video_clip_url = download_url_result.get("download_url")
+                    except Exception as e:
+                        video_clip_url = None
+                except Exception:
+                    video_clip_url = None
             report1_items.append({
                 "phase_index": int(r.phase_index),
                 "phase_description": pm.get("phase_description"),
-                "time_start": pm.get("time_start"),
-                "time_end": pm.get("time_end"),
+                "time_start": time_start,
+                "time_end": time_end,
                 "insight": r.insight,
+                "video_clip_url": video_clip_url,
             })
 
         # load latest video_insights record for report3 (single item)

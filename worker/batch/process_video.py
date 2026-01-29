@@ -12,6 +12,11 @@ from urllib.parse import quote
 from vision_pipeline import caption_keyframes
 from db_ops import init_db_sync, close_db_sync
 
+from datetime import datetime
+
+LOG_DIR = "logs"
+DOWNLOAD_LOG = os.path.join(LOG_DIR, "download.log")
+
 # Load environment variables
 load_dotenv()
 
@@ -45,11 +50,12 @@ from report_pipeline import (
 
 from db_ops import (
     upsert_phase_group_sync,
-    update_phase_group_for_video_phase_sync,
     upsert_group_best_phase_sync,
     mark_phase_insights_need_refresh_sync,
     clear_phase_insight_need_refresh_sync,
     get_group_best_phase_sync,
+
+    update_phase_group_for_video_phase_sync,
     upsert_phase_insight_sync,
     insert_video_insight_sync,
     update_video_status_sync,
@@ -57,7 +63,9 @@ from db_ops import (
     load_video_phases_sync,
     update_video_phase_description_sync,
     update_phase_group_sync,
-    get_video_structure_group_id_of_video_sync
+    get_video_structure_group_id_of_video_sync,
+    bulk_upsert_group_best_phases_sync,
+    bulk_refresh_phase_insights_sync,
 )
 
 from video_structure_features import build_video_structure_features
@@ -66,6 +74,17 @@ from video_structure_group_stats import recompute_video_structure_group_stats
 from best_video_pipeline import process_best_video
 
 from video_status import VideoStatus
+from split_video import split_video_into_segments
+
+
+
+def _log_download(msg: str):
+    os.makedirs(LOG_DIR, exist_ok=True)
+    ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{ts}] {msg}\n"
+    print(line, end="")  # vẫn in ra console
+    with open(DOWNLOAD_LOG, "a", encoding="utf-8") as f:
+        f.write(line)
 
 # =========================
 # Artifact layout (PERSISTENT)
@@ -241,40 +260,109 @@ def _normalize_blob_url(url: str) -> str:
     base = quote(base, safe=":/")
     return base + "?" + qs
 
+# def _download_blob(blob_url: str, dest_path: str):
+#     os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+
+#     # blob_url = _normalize_blob_url(blob_url)
+
+#     try:
+#         print(f"[DL] AzCopy download: {blob_url}")
+#         subprocess.run(
+#             ["/usr/local/bin/azcopy", "copy", blob_url, dest_path, "--overwrite=true"],
+#             check=True,
+#             capture_output=True,
+#             text=True
+#         )
+#         print("[DL] AzCopy completed")
+#         return
+
+#     except FileNotFoundError:
+#         print("[WARN] AzCopy not found. Fallback to requests.")
+
+#     except subprocess.CalledProcessError as e:
+#         print("[WARN] AzCopy failed. Fallback to requests.")
+#         print("STDOUT:", e.stdout)
+#         print("STDERR:", e.stderr)
+
+#     # ---- fallback ----
+#     print("[DL] Fallback to requests.get")
+#     with requests.get(blob_url, stream=True, timeout=60) as r:
+#         r.raise_for_status()
+#         with open(dest_path, "wb") as f:
+#             for chunk in r.iter_content(chunk_size=8 * 1024 * 1024):
+#                 if chunk:
+#                     f.write(chunk)
+
+#     print("[DL] Requests download completed")
+
 def _download_blob(blob_url: str, dest_path: str):
     os.makedirs(os.path.dirname(dest_path), exist_ok=True)
 
-    blob_url = _normalize_blob_url(blob_url)
+    # blob_url = _normalize_blob_url(blob_url)
+
+    _log_download(f"START download")
+    _log_download(f"URL = {blob_url}")
+    _log_download(f"DEST = {dest_path}")
 
     try:
-        print(f"[DL] AzCopy download: {blob_url}")
-        subprocess.run(
+        _log_download("Try AzCopy...")
+
+        result = subprocess.run(
             ["/usr/local/bin/azcopy", "copy", blob_url, dest_path, "--overwrite=true"],
             check=True,
             capture_output=True,
             text=True
         )
-        print("[DL] AzCopy completed")
+
+        _log_download("AzCopy SUCCESS")
+        _log_download("AzCopy STDOUT:")
+        _log_download(result.stdout or "<empty>")
+        _log_download("AzCopy STDERR:")
+        _log_download(result.stderr or "<empty>")
+
         return
 
-    except FileNotFoundError:
-        print("[WARN] AzCopy not found. Fallback to requests.")
+    except FileNotFoundError as e:
+        _log_download("AzCopy NOT FOUND")
+        _log_download(f"Exception: {repr(e)}")
 
     except subprocess.CalledProcessError as e:
-        print("[WARN] AzCopy failed. Fallback to requests.")
-        print("STDOUT:", e.stdout)
-        print("STDERR:", e.stderr)
+        _log_download("AzCopy FAILED")
+        _log_download("AzCopy STDOUT:")
+        _log_download(e.stdout or "<empty>")
+        _log_download("AzCopy STDERR:")
+        _log_download(e.stderr or "<empty>")
+        _log_download(f"Return code: {e.returncode}")
+
+    except Exception as e:
+        _log_download("AzCopy UNKNOWN ERROR")
+        _log_download(f"Exception: {repr(e)}")
 
     # ---- fallback ----
-    print("[DL] Fallback to requests.get")
-    with requests.get(blob_url, stream=True, timeout=60) as r:
-        r.raise_for_status()
-        with open(dest_path, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8 * 1024 * 1024):
-                if chunk:
-                    f.write(chunk)
+    _log_download("Fallback to requests.get")
 
-    print("[DL] Requests download completed")
+    try:
+        with requests.get(blob_url, stream=True, timeout=60) as r:
+            r.raise_for_status()
+
+            total = int(r.headers.get("content-length", 0))
+            downloaded = 0
+
+            with open(dest_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8 * 1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+
+            _log_download(f"Requests SUCCESS: downloaded {downloaded} bytes (total={total})")
+
+    except Exception as e:
+        _log_download("Requests FAILED")
+        _log_download(f"Exception: {repr(e)}")
+        raise
+
+    _log_download("END download")
+
 
 
 def _resolve_inputs(args) -> tuple[str, str]:
@@ -595,17 +683,70 @@ def main():
         # =========================
         # STEP 8 – GROUP BEST PHASES
         # =========================
+        # if start_step <= 8:
+        #     update_video_status_sync(video_id, VideoStatus.STEP_8_UPDATE_BEST_PHASE)
+        #     print("=== STEP 8 – GROUP BEST PHASES ===")
+
+        #     # best_data = load_group_best_phases()
+        #     # best_data = update_group_best_phases(
+        #     #     phase_units=phase_units,
+        #     #     best_data=best_data,
+        #     #     video_id=video_id,
+        #     # )
+        #     # save_group_best_phases(best_data)
+
+        #     best_data = load_group_best_phases(ART_ROOT, video_id)
+
+        #     best_data = update_group_best_phases(
+        #         phase_units=phase_units,
+        #         best_data=best_data,
+        #         video_id=video_id,
+        #     )
+
+        #     save_group_best_phases(best_data, ART_ROOT, video_id)
+
+        #     for gid, g in best_data["groups"].items():
+        #         if not g["phases"]:
+        #             continue
+
+        #         gid = int(gid)
+        #         best = g["phases"][0]
+        #         m = best["metrics"]
+
+        #         new_best_video_id = best["video_id"]
+        #         new_best_phase_index = best["phase_index"]
+
+        #         old_video_id, old_phase_index = get_group_best_phase_sync(gid)
+
+        #         upsert_group_best_phase_sync(
+        #             group_id=gid,
+        #             video_id=new_best_video_id,
+        #             phase_index=new_best_phase_index,
+        #             score=best["score"],
+        #             view_velocity=m.get("view_velocity"),
+        #             like_velocity=m.get("like_velocity"),
+        #             like_per_viewer=m.get("like_per_viewer"),
+        #         )
+
+        #         if (old_video_id, old_phase_index) != (new_best_video_id, new_best_phase_index):
+        #             print(f"[INFO] Best phase changed for group {gid}: marking insights dirty")
+
+        #             mark_phase_insights_need_refresh_sync(
+        #                 group_id=gid,
+        #                 except_video_id=new_best_video_id,
+        #                 except_phase_index=new_best_phase_index,
+        #             )
+
+        #             clear_phase_insight_need_refresh_sync(
+        #                 video_id=new_best_video_id,
+        #                 phase_index=new_best_phase_index,
+        #             )
+        # else:
+        #     print("[SKIP] STEP 8")
+
         if start_step <= 8:
             update_video_status_sync(video_id, VideoStatus.STEP_8_UPDATE_BEST_PHASE)
-            print("=== STEP 8 – GROUP BEST PHASES ===")
-
-            # best_data = load_group_best_phases()
-            # best_data = update_group_best_phases(
-            #     phase_units=phase_units,
-            #     best_data=best_data,
-            #     video_id=video_id,
-            # )
-            # save_group_best_phases(best_data)
+            print("=== STEP 8 – GROUP BEST PHASES (BULK) ===")
 
             best_data = load_group_best_phases(ART_ROOT, video_id)
 
@@ -617,6 +758,9 @@ def main():
 
             save_group_best_phases(best_data, ART_ROOT, video_id)
 
+            # --------- Build bulk rows ---------
+            bulk_rows = []
+
             for gid, g in best_data["groups"].items():
                 if not g["phases"]:
                     continue
@@ -625,34 +769,21 @@ def main():
                 best = g["phases"][0]
                 m = best["metrics"]
 
-                new_best_video_id = best["video_id"]
-                new_best_phase_index = best["phase_index"]
+                bulk_rows.append({
+                    "group_id": gid,
+                    "video_id": best["video_id"],
+                    "phase_index": best["phase_index"],
+                    "score": best["score"],
+                    "view_velocity": m.get("view_velocity"),
+                    "like_velocity": m.get("like_velocity"),
+                    "like_per_viewer": m.get("like_per_viewer"),
+                })
 
-                old_video_id, old_phase_index = get_group_best_phase_sync(gid)
+            print(f"[STEP8] Bulk upsert {len(bulk_rows)} group best phases")
 
-                upsert_group_best_phase_sync(
-                    group_id=gid,
-                    video_id=new_best_video_id,
-                    phase_index=new_best_phase_index,
-                    score=best["score"],
-                    view_velocity=m.get("view_velocity"),
-                    like_velocity=m.get("like_velocity"),
-                    like_per_viewer=m.get("like_per_viewer"),
-                )
+            bulk_upsert_group_best_phases_sync(bulk_rows)
+            bulk_refresh_phase_insights_sync(bulk_rows)
 
-                if (old_video_id, old_phase_index) != (new_best_video_id, new_best_phase_index):
-                    print(f"[INFO] Best phase changed for group {gid}: marking insights dirty")
-
-                    mark_phase_insights_need_refresh_sync(
-                        group_id=gid,
-                        except_video_id=new_best_video_id,
-                        except_phase_index=new_best_phase_index,
-                    )
-
-                    clear_phase_insight_need_refresh_sync(
-                        video_id=new_best_video_id,
-                        phase_index=new_best_phase_index,
-                    )
         else:
             print("[SKIP] STEP 8")
 
@@ -789,9 +920,25 @@ def main():
         else:
             print("[SKIP] STEP 13")
 
-        update_video_status_sync(video_id, VideoStatus.DONE)
-        print("\n[SUCCESS] Video processing completed successfully")
+        # update_video_status_sync(video_id, VideoStatus.DONE)
+        # print("\n[SUCCESS] Video processing completed successfully")
 
+
+        # =========================
+        # STEP 14 – Split the video into segments based on the report
+        # =========================
+        if start_step <= 14:
+            update_video_status_sync(video_id, VideoStatus.STEP_14_SPLIT_VIDEO)
+            print("=== STEP 14 – SPLIT VIDEO INTO SEGMENTS ===")
+            try:
+                url = args.blob_url if getattr(args, "blob_url", None) else video_path
+                split_video_into_segments(video_id, url, video_path)
+            except Exception as e:
+                print(f"[WARN] split_video failed: {e}")
+
+            update_video_status_sync(video_id, VideoStatus.DONE)
+            print("\n[SUCCESS] Video processing completed successfully")
+        
 
         # =========================
         # CLEANUP – CLEAR uploadedvideo

@@ -31,6 +31,7 @@ class VideoStatus:
     # FINAL REPORT (MOVE TO LAST)
     # =========================
     STEP_13_BUILD_REPORTS = "STEP_13_BUILD_REPORTS"
+    STEP_14_SPLIT_VIDEO = "STEP_14_SPLIT_VIDEO"
 
     # =========================
     # DONE / ERROR
