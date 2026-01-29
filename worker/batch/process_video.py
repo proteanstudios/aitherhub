@@ -45,11 +45,12 @@ from report_pipeline import (
 
 from db_ops import (
     upsert_phase_group_sync,
-    update_phase_group_for_video_phase_sync,
     upsert_group_best_phase_sync,
     mark_phase_insights_need_refresh_sync,
     clear_phase_insight_need_refresh_sync,
     get_group_best_phase_sync,
+
+    update_phase_group_for_video_phase_sync,
     upsert_phase_insight_sync,
     insert_video_insight_sync,
     update_video_status_sync,
@@ -57,7 +58,9 @@ from db_ops import (
     load_video_phases_sync,
     update_video_phase_description_sync,
     update_phase_group_sync,
-    get_video_structure_group_id_of_video_sync
+    get_video_structure_group_id_of_video_sync,
+    bulk_upsert_group_best_phases_sync,
+    bulk_refresh_phase_insights_sync,
 )
 
 from video_structure_features import build_video_structure_features
@@ -596,17 +599,70 @@ def main():
         # =========================
         # STEP 8 – GROUP BEST PHASES
         # =========================
+        # if start_step <= 8:
+        #     update_video_status_sync(video_id, VideoStatus.STEP_8_UPDATE_BEST_PHASE)
+        #     print("=== STEP 8 – GROUP BEST PHASES ===")
+
+        #     # best_data = load_group_best_phases()
+        #     # best_data = update_group_best_phases(
+        #     #     phase_units=phase_units,
+        #     #     best_data=best_data,
+        #     #     video_id=video_id,
+        #     # )
+        #     # save_group_best_phases(best_data)
+
+        #     best_data = load_group_best_phases(ART_ROOT, video_id)
+
+        #     best_data = update_group_best_phases(
+        #         phase_units=phase_units,
+        #         best_data=best_data,
+        #         video_id=video_id,
+        #     )
+
+        #     save_group_best_phases(best_data, ART_ROOT, video_id)
+
+        #     for gid, g in best_data["groups"].items():
+        #         if not g["phases"]:
+        #             continue
+
+        #         gid = int(gid)
+        #         best = g["phases"][0]
+        #         m = best["metrics"]
+
+        #         new_best_video_id = best["video_id"]
+        #         new_best_phase_index = best["phase_index"]
+
+        #         old_video_id, old_phase_index = get_group_best_phase_sync(gid)
+
+        #         upsert_group_best_phase_sync(
+        #             group_id=gid,
+        #             video_id=new_best_video_id,
+        #             phase_index=new_best_phase_index,
+        #             score=best["score"],
+        #             view_velocity=m.get("view_velocity"),
+        #             like_velocity=m.get("like_velocity"),
+        #             like_per_viewer=m.get("like_per_viewer"),
+        #         )
+
+        #         if (old_video_id, old_phase_index) != (new_best_video_id, new_best_phase_index):
+        #             print(f"[INFO] Best phase changed for group {gid}: marking insights dirty")
+
+        #             mark_phase_insights_need_refresh_sync(
+        #                 group_id=gid,
+        #                 except_video_id=new_best_video_id,
+        #                 except_phase_index=new_best_phase_index,
+        #             )
+
+        #             clear_phase_insight_need_refresh_sync(
+        #                 video_id=new_best_video_id,
+        #                 phase_index=new_best_phase_index,
+        #             )
+        # else:
+        #     print("[SKIP] STEP 8")
+
         if start_step <= 8:
             update_video_status_sync(video_id, VideoStatus.STEP_8_UPDATE_BEST_PHASE)
-            print("=== STEP 8 – GROUP BEST PHASES ===")
-
-            # best_data = load_group_best_phases()
-            # best_data = update_group_best_phases(
-            #     phase_units=phase_units,
-            #     best_data=best_data,
-            #     video_id=video_id,
-            # )
-            # save_group_best_phases(best_data)
+            print("=== STEP 8 – GROUP BEST PHASES (BULK) ===")
 
             best_data = load_group_best_phases(ART_ROOT, video_id)
 
@@ -618,6 +674,9 @@ def main():
 
             save_group_best_phases(best_data, ART_ROOT, video_id)
 
+            # --------- Build bulk rows ---------
+            bulk_rows = []
+
             for gid, g in best_data["groups"].items():
                 if not g["phases"]:
                     continue
@@ -626,34 +685,21 @@ def main():
                 best = g["phases"][0]
                 m = best["metrics"]
 
-                new_best_video_id = best["video_id"]
-                new_best_phase_index = best["phase_index"]
+                bulk_rows.append({
+                    "group_id": gid,
+                    "video_id": best["video_id"],
+                    "phase_index": best["phase_index"],
+                    "score": best["score"],
+                    "view_velocity": m.get("view_velocity"),
+                    "like_velocity": m.get("like_velocity"),
+                    "like_per_viewer": m.get("like_per_viewer"),
+                })
 
-                old_video_id, old_phase_index = get_group_best_phase_sync(gid)
+            print(f"[STEP8] Bulk upsert {len(bulk_rows)} group best phases")
 
-                upsert_group_best_phase_sync(
-                    group_id=gid,
-                    video_id=new_best_video_id,
-                    phase_index=new_best_phase_index,
-                    score=best["score"],
-                    view_velocity=m.get("view_velocity"),
-                    like_velocity=m.get("like_velocity"),
-                    like_per_viewer=m.get("like_per_viewer"),
-                )
+            bulk_upsert_group_best_phases_sync(bulk_rows)
+            bulk_refresh_phase_insights_sync(bulk_rows)
 
-                if (old_video_id, old_phase_index) != (new_best_video_id, new_best_phase_index):
-                    print(f"[INFO] Best phase changed for group {gid}: marking insights dirty")
-
-                    mark_phase_insights_need_refresh_sync(
-                        group_id=gid,
-                        except_video_id=new_best_video_id,
-                        except_phase_index=new_best_phase_index,
-                    )
-
-                    clear_phase_insight_need_refresh_sync(
-                        video_id=new_best_video_id,
-                        phase_index=new_best_phase_index,
-                    )
         else:
             print("[SKIP] STEP 8")
 
