@@ -14,7 +14,7 @@ from azure.storage.blob import (
 CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 ACCOUNT_NAME = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
 CONTAINER_NAME = os.getenv("AZURE_BLOB_CONTAINER", "videos")
-SAS_EXP_MINUTES = int(os.getenv("AZURE_BLOB_SAS_EXP_MINUTES", "60"))
+SAS_EXP_MINUTES = int(os.getenv("AZURE_BLOB_SAS_EXP_MINUTES", "1440"))  # default 1 day
 SAS_DOWNLOAD_EXP_MINUTES = int(os.getenv("AZURE_BLOB_SAS_DOWNLOAD_MINUTES", "1440"))  # Default 24 hours
 
 
