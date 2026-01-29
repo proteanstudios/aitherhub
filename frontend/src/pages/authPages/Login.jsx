@@ -81,7 +81,7 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col items-center justify-center space-y-6">
-      <h2 className="pt-[50px] pb-[20px] font-cabin font-medium text-[30px] leading-[30px] h-[30px] text-center flex items-center justify-center text-black md:text-[40px] md:leading-[30px] md:h-[30px]">
+      <h2 className="pt-[25px] pb-[20px] font-cabin font-medium text-[30px] leading-[30px] h-[30px] text-center flex items-center justify-center text-black md:pt-[50px] md:text-[40px] md:leading-[30px] md:h-[30px]">
 {window.__t('login')}
       </h2>
 
@@ -168,7 +168,7 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
         type="submit"
         onClick={handleLogin} 
         disabled={isLoading}
-        className="mb-[50px]"
+        className="mb-[25px] md:mb-[50px]"
       >
         {isLoading ? window.__t('loggingIn') : window.__t('login')}
       </PrimaryButton>

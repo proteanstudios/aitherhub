@@ -31,6 +31,8 @@ export default function RegisterModal({ open, onClose, onSwitchToLogin }) {
                 transition-transform duration-150 ease-out
                 active:scale-[0.95]
                 focus:outline-none focus-visible:outline-none
+                [@media(max-height:700px)]:top-[10px]
+                [@media(max-height:700px)]:right-[10px]
               "
             >
               <img

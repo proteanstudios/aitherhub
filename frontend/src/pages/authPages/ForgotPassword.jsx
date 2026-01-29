@@ -89,7 +89,7 @@ export default function ForgotPassword({ onSuccess }) {
 
     return (
         <form onSubmit={handleSubmit} className="flex flex-col items-center justify-center space-y-6">
-            <h2 className="hidden md:block pt-[50px] pb-[20px] font-cabin font-medium text-[25px] leading-[30px] h-[30px] text-center flex items-center justify-center text-black">
+            <h2 className="hidden md:block pt-[25px] pb-[20px] font-cabin font-medium text-[25px] leading-[30px] h-[30px] text-center flex items-center justify-center text-black md:pt-[50px]">
 {window.__t('changePasswordTitle')}
             </h2>
 
