@@ -17,7 +17,7 @@ import ForgotPasswordModal from "./modals/ForgotPasswordModal";
 import AuthService from "../base/services/userService";
 import VideoService from "../base/services/videoService";
 
-export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAnalysis, refreshKey }) {
+export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAnalysis, refreshKey, selectedVideo }) {
   const sidebarRef = useRef(null);
   const dropdownRef = useRef(null);
 
@@ -26,6 +26,13 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
   const [videos, setVideos] = useState([]);
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState(null);
+
+  // Sync selectedVideoId when video is selected from outside (e.g., after upload)
+  useEffect(() => {
+    if (selectedVideo?.id) {
+      setSelectedVideoId(selectedVideo.id);
+    }
+  }, [selectedVideo?.id]);
 
   // ===== SP search =====
   const [searchValue, setSearchValue] = useState("");

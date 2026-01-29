@@ -467,8 +467,9 @@ export default function VideoDetail({ video }) {
     lastSentRef.current = { text: null, t: 0 };
     lastStatusChangeRef.current = Date.now();
 
-    // Reset smooth progress when video changes
+    // Reset smooth progress and processing status when video changes
     setSmoothProgress(0);
+    setProcessingStatus(null); // Clear progress bar when switching videos
     if (progressIntervalRef.current) {
       clearInterval(progressIntervalRef.current);
       progressIntervalRef.current = null;
@@ -596,6 +597,17 @@ export default function VideoDetail({ video }) {
       }
     };
   }, [video?.id, videoData?.status]);
+
+  // Clear progress bar if video is already DONE or ERROR (handles race conditions)
+  useEffect(() => {
+    if (videoData?.status === 'DONE' || videoData?.status === 'ERROR') {
+      setProcessingStatus(null);
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+    }
+  }, [videoData?.status]);
 
   // Render processing status UI
   const renderProcessingStatus = () => {

@@ -14,7 +14,7 @@ export default function RegisterModal({ open, onClose, onSwitchToLogin }) {
         <div className="flex min-h-full items-start justify-center p-0 w-full">
           <DialogPanel
             transition
-            className="relative mx-auto my-auto w-[92vw] max-w-[428px] rounded-xl md:mx-0 md:ml-[40px] md:w-[700px] md:h-[460px] md:max-w-none md:aspect-auto transform bg-white shadow-xl transition-all data-closed:translate-y-4 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in data-closed:sm:translate-y-0 data-closed:sm:scale-95"
+            className="relative mx-auto my-auto w-[92vw] max-w-[428px] rounded-xl md:mx-0 md:ml-[40px] md:w-[700px] md:h-[500] md:max-w-none md:aspect-auto transform bg-white shadow-xl transition-all data-closed:translate-y-4 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in data-closed:sm:translate-y-0 data-closed:sm:scale-95"
           >
            <button
               onClick={onClose}
