@@ -1,7 +1,7 @@
 import Sidebar from "../components/Sidebar";
 import MainContent from '../components/MainContent';
 import VideoDetail from '../components/VideoDetail';
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 
 const getUserFromStorage = () => {
   try {
@@ -17,7 +17,33 @@ export default function MainLayout() {
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [user, setUser] = useState(getUserFromStorage);
   const [refreshKey, setRefreshKey] = useState(0);
+  useEffect(() => {
+    let scrollY;
+    if (openSidebar) {
+      scrollY = window.scrollY;
 
+      Object.assign(document.body.style, {
+        position: "fixed",
+        top: `-${scrollY}px`,
+        left: "0",
+        right: "0",
+        width: "100%",
+        overflow: "hidden",
+      });
+
+      return () => {
+        Object.assign(document.body.style, {
+          position: "",
+          top: "",
+          left: "",
+          right: "",
+          width: "",
+          overflow: "",
+        });
+        window.scrollTo(0, scrollY);
+      };
+    }
+  }, [openSidebar]);
   const handleVideoSelect = useCallback((video) => {
     setSelectedVideo(video);
   }, []);

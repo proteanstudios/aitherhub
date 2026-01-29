@@ -74,7 +74,7 @@ export default function Header({
 
   return (
     <>
-      <header className="h-[75px] px-[13px] py-[22px] md:px-6 flex items-center justify-between">
+      <header className="h-[75px] px-[13px] py-[22px] md:px-5 flex items-center justify-between">
         <div className="flex items-center gap-[16px]">
           <img
             src={MenuIcon}
@@ -89,12 +89,12 @@ export default function Header({
 
         {/* RIGHT SIDE */}
         <div
-          className={`flex items-center gap-[10px] justify-center w-[200px] h-[35px] rounded-[50px] ${
+          className={`flex items-center gap-[10px] justify-center h-[35px] rounded-[50px] ${
             user?.isLoggedIn && "bg-white"
           }`}
         >
           {user?.isLoggedIn ? (
-            <div className="relative" ref={dropdownRef}>
+            <div className="relative px-2" ref={dropdownRef}>
               <span
                 className="font-cabin text-[14px] text-black cursor-pointer select-none max-w-[160px] truncate inline-block align-middle"
                 onClick={() => setOpenDropdown(!openDropdown)}
@@ -103,7 +103,7 @@ export default function Header({
               </span>
 
               {openDropdown && (
-                <div className="absolute right-[-48px] top-[40px] w-[196px] bg-white border rounded-md shadow-md z-50">
+                <div className="absolute right-0 top-[40px] w-[196px] bg-white border rounded-md shadow-md z-50">
                   <ul className="flex flex-col text-[16px] text-black">
                     <li className="px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2">
                       <img

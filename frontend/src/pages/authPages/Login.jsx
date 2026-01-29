@@ -68,7 +68,6 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
       const detail = err?.response?.data?.detail || err?.message || "";
       const errorMessage = mapServerErrorToJapanese(detail, 'login');
 
-      setErrors({ password: errorMessage });
       toast.error(errorMessage);
     }
   };

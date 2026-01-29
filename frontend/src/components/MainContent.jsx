@@ -1,6 +1,6 @@
 import { Header, Body, Footer } from "./main";
 import uploadIcon from "../assets/upload.png";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import UploadService from "../base/services/uploadService";
 import { toast } from "react-toastify";
 import LoginModal from "./modals/LoginModal";
@@ -14,13 +14,13 @@ export default function MainContent({
 }) {
   const isLoggedIn = Boolean(
     user &&
-      (user.token ||
-        user.accessToken ||
-        user.id ||
-        user.email ||
-        user.username ||
-        user.isAuthenticated ||
-        user.isLoggedIn)
+    (user.token ||
+      user.accessToken ||
+      user.id ||
+      user.email ||
+      user.username ||
+      user.isAuthenticated ||
+      user.isLoggedIn)
   );
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -28,11 +28,30 @@ export default function MainContent({
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("");
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const prevIsLoggedInRef = useRef(isLoggedIn);
 
   useEffect(() => {
     console.log("[MainContent] user", user);
     console.log("[MainContent] isLoggedIn", isLoggedIn);
   }, [user, isLoggedIn]);
+
+  // If token expires and user logs in again via modal, clear old upload result message.
+  useEffect(() => {
+    const prev = prevIsLoggedInRef.current;
+    // Logged in -> logged out: clear uploader state so stale file/message doesn't remain.
+    if (prev && !isLoggedIn) {
+      setSelectedFile(null);
+      setUploading(false);
+      setProgress(0);
+      setMessage("");
+      setMessageType("");
+    }
+    if (!prev && isLoggedIn) {
+      setMessage("");
+      setMessageType("");
+    }
+    prevIsLoggedInRef.current = isLoggedIn;
+  }, [isLoggedIn]);
 
   const handleFileSelect = (e) => {
     if (!isLoggedIn) {
@@ -82,7 +101,7 @@ export default function MainContent({
       setMessage(`✅ ${window.__t('uploadCompleteMessage')} ${video_id}`);
       toast.success(window.__t('uploadSuccessMessage'));
       setSelectedFile(null);
-      
+
       if (onUploadSuccess) {
         onUploadSuccess();
       }
@@ -136,15 +155,25 @@ export default function MainContent({
 
       <LoginModal
         open={showLoginModal}
-        onClose={() => setShowLoginModal(false)}
+        onClose={() => {
+          setShowLoginModal(false);
+          try {
+            const storedUser = localStorage.getItem("user");
+            if (storedUser && setUser) {
+              setUser(JSON.parse(storedUser));
+            }
+          } catch {
+            // ignore JSON/localStorage errors
+          }
+        }}
         onSwitchToRegister={() => setShowLoginModal(false)}
       />
 
       <Body>
         {children ?? (
           <>
-            <div className="relative w-full">
-              <h4 className="absolute top-[11px] md:top-[5px] w-full text-[26px] leading-[40px] font-semibold font-cabin text-center">
+            <div className="w-full">
+              <h4 className="w-full text-[26px] leading-[40px] font-semibold font-cabin text-center">
                 {window.__t('header').split('\n').map((line, idx, arr) => (
                   <span key={idx}>
                     {line}
@@ -152,8 +181,9 @@ export default function MainContent({
                   </span>
                 ))}
               </h4>
-
-              <h4 className="absolute top-[125px] md:top-[157px] w-full text-[28px] leading-[40px] font-semibold font-cabin text-center">
+            </div>
+            <div className="w-full mt-[70px] md:mt-[115px]">
+              <h4 className="w-full mb-[22px] text-[28px] leading-[40px] font-semibold font-cabin text-center">
                 {window.__t('uploadText').split('\n').map((line, idx, arr) => (
                   <span key={idx}>
                     {line}
@@ -161,10 +191,8 @@ export default function MainContent({
                   </span>
                 ))}
               </h4>
-            </div>
-            <div className="relative w-full">
               <div
-                className="absolute top-[273px] md:top-[260px] lg:top-[218px] left-1/2 -translate-x-1/2 w-[300px] h-[250px] md:w-[400px] md:h-[300px] border-5 border-gray-300 rounded-[20px] flex flex-col items-center justify-center text-center gap-4 transition-colors"
+                className="w-[300px] h-[250px] mx-auto md:w-[400px] md:h-[300px] border-5 border-gray-300 rounded-[20px] flex flex-col items-center justify-center text-center gap-4 transition-colors"
                 onDragOver={handleDragOver}
                 onDrop={handleDrop}
               >
@@ -243,7 +271,7 @@ export default function MainContent({
                         }
                       }}
                     >
-{window.__t('selectFileText')}
+                      {window.__t('selectFileText')}
                       <input
                         type="file"
                         accept="video/*"
@@ -266,11 +294,10 @@ export default function MainContent({
                 )}
                 {message && (
                   <p
-                    className={`text-xs text-center ${
-                      messageType === "success"
-                        ? "text-green-600"
-                        : "text-red-600"
-                    }`}
+                    className={`text-xs text-center ${messageType === "success"
+                      ? "text-green-600"
+                      : "text-red-600"
+                      }`}
                   >
                     {message}
                   </p>

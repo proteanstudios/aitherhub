@@ -103,7 +103,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
       const timer = setTimeout(() => {
         setShowBackButton(true);
       }, 300); // đúng duration sidebar
-  
+
       return () => clearTimeout(timer);
     } else {
       setShowBackButton(false);
@@ -127,7 +127,8 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
       <aside
         ref={sidebarRef}
         className={`fixed md:static top-0 left-0 z-50
-        w-[350px] md:w-[260px] h-screen bg-white
+        w-full md:min-w-[260px] bg-white md:h-screen
+        bottom-0
         flex flex-col 
         transition-transform duration-300 ease-in-out
         ${isOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0
@@ -135,9 +136,9 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
       >
         {/* ================= PC ================= */}
         <div className="hidden md:block space-y-3">
-        <img src={logo} className="w-[37px] h-[35px]" />
+          <img src={logo} className="w-[37px] h-[35px]" />
 
-          <div 
+          <div
             onClick={() => {
               if (onNewAnalysis) {
                 onNewAnalysis();
@@ -157,24 +158,37 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
 
         {/* ================= SP ================= */}
         <div className="md:hidden mt-[22px] px-4 flex-shrink-0">
-          <div className="flex justify-between items-center mb-[20px]">
+          <div className="flex justify-between items-center ml-[50px] mb-[20px]">
             <div className="relative w-[270px]">
-              <div className="p-[1px] rounded-[5px] bg-gradient-to-b from-[#4500FF] to-[#9B00FF]">
+              <div className="relative p-[1px] rounded-[5px] bg-linear-to-b from-[#4500FF] via-[#6A00FF] to-[#9B00FF]">
+                <img src={searchSp} className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
+                  placeholder="検索"
                   value={searchValue}
                   onChange={(e) => setSearchValue(e.target.value)}
                   onFocus={() => setIsFocus(true)}
                   onBlur={() => setIsFocus(false)}
-                  className="w-full h-[40px] rounded-[5px] bg-white pl-[12px] pr-3 outline-none"
+                  className="
+                    w-full h-[40px] rounded-[5px] bg-white pl-[35px] pr-3 outline-none
+
+                    placeholder:text-[#9B00FF]
+                    placeholder:font-bold
+                    placeholder:text-[14px]
+
+                    placeholder:transition-opacity
+                    placeholder:duration-100
+                    focus:placeholder:opacity-50
+                  "
                 />
+
               </div>
 
-              {showPlaceholder && (
+              {/* {showPlaceholder && (
                 <div className="pointer-events-none absolute inset-0 flex items-center gap-2 px-3 text-gray-400">
                   <img src={searchSp} className="w-4 h-4" />
                   <img src={textSearch} className="h-[14px]" />
                 </div>
-              )}
+              )} */}
             </div>
 
             <img src={searchMobile} className="w-[32px]" />
@@ -183,7 +197,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
           <div className="bg-gradient-to-b from-[#4500FF] to-[#9B00FF]">
             <div className="bg-white">
               <div className="flex items-center mb-5 mt-1">
-              <img src={logo} className="w-10 h-10 ml-2" />
+                <img src={logo} className="w-10 h-10 ml-2" />
                 <span className="ml-2 font-semibold text-[24px] bg-gradient-to-b from-[#4500FF] to-[#9B00FF] bg-clip-text text-transparent">
                   Liveboost AI
                 </span>
@@ -216,11 +230,12 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                       <span
                         key={video.id}
                         onClick={() => handleVideoClick(video)}
-                        className={`block font-semibold cursor-pointer transition-colors px-4 py-2 rounded-lg w-full text-left ${
-                          selectedVideoId === video.id
+                        className={`min-h-10 block font-semibold cursor-pointer transition-colors px-4 py-2 rounded-lg w-full text-left
+                        truncate
+                        ${selectedVideoId === video.id
                             ? "bg-purple-100 text-purple-700"
                             : "hover:text-gray-400 hover:bg-gray-100"
-                        }`}
+                          }`}
                       >
                         {video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`}
                       </span>
@@ -228,7 +243,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                   </div>
                 ) : (
                   <div className="text-center text-gray-400 text-sm py-4">
-{window.__t('noVideos')}
+                    {window.__t('noVideos')}
                   </div>
                 )}
               </div>
@@ -255,7 +270,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
             className="absolute bottom-[80px] left-[30px] w-[210px]
             bg-white rounded-[10px] border shadow-lg z-50"
           >
-            <li 
+            <li
               onClick={() => {
                 setOpenDropdown(false);
                 if (onClose) onClose();
@@ -263,7 +278,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
               className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer"
             >
               <img src={MyAccount} className="w-4 h-4" />
-{window.__t('myAccount')}
+              {window.__t('myAccount')}
             </li>
 
             <li
@@ -275,10 +290,10 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
               className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer"
             >
               <img src={PasswordIcon} className="w-4 h-4" />
-{window.__t('changePassword')}
+              {window.__t('changePassword')}
             </li>
 
-            <li 
+            <li
               onClick={() => {
                 setOpenDropdown(false);
                 if (onClose) onClose();
@@ -288,18 +303,21 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
               className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer"
             >
               <img src={Signout} className="w-4 h-4" />
-{window.__t('signOut')}
+              {window.__t('signOut')}
             </li>
           </ul>
         )}
       </aside>
       <button
-  onClick={onClose}
-  style={{ fontSize: "24px", borderRadius: "50%" }}
-  className={`md:hidden ml-[-10px] fixed top-[28px] left-[350px] z-[70] w-[32px] h-[32px] flex items-center justify-center font-bold bg-white rounded-full shadow-lg transition-all duration-200 ease-out ${showBackButton ? "opacity-100 translate-x-0 pointer-events-auto" : "opacity-0 translate-x-2 pointer-events-none"}`}
->
-  &lt;
-</button>
+        onClick={onClose}
+        style={{ fontSize: "24px", borderRadius: "50%" }}
+        className={`md:hidden ml-[-10px] fixed top-[28px] left-[25px] z-70 w-[32px] h-[32px] flex items-center justify-center font-bold bg-white rounded-full shadow-lg transition-all duration-200 ease-out ${showBackButton ? "opacity-100 translate-x-0 pointer-events-auto" : "opacity-0 translate-x-2 pointer-events-none"}`}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+        </svg>
+
+      </button>
 
 
       {/* ===== MODAL ===== */}

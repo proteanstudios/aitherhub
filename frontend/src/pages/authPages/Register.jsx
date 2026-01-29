@@ -9,11 +9,11 @@ export default function Register({ onSuccess }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [checkbox, setCheckbox] = useState(false);
-  const [errors, setErrors] = useState({ 
-    email: "", 
-    password: "", 
-    confirmPassword: "", 
-    checkbox: "" 
+  const [errors, setErrors] = useState({
+    email: "",
+    password: "",
+    confirmPassword: "",
+    checkbox: ""
   });
   const [isLoading, setIsLoading] = useState(false);
 
@@ -80,12 +80,11 @@ export default function Register({ onSuccess }) {
       if (onSuccess) onSuccess();
     } catch (err) {
       setIsLoading(false);
-      
+
       const detail = err?.response?.data?.detail || err?.message || "";
       const errorMessage = mapServerErrorToJapanese(detail, 'register');
 
       setErrors({ email: errorMessage });
-      toast.error(errorMessage);
     }
   };
 
@@ -99,7 +98,7 @@ export default function Register({ onSuccess }) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col items-center justify-center space-y-6">
       <h2 className=" pt-[20px] pb-[20px] font-cabin font-medium text-[25px] leading-[30px] h-[30px] text-center flex items-center justify-center text-black">
-{window.__t('register')}
+        {window.__t('register')}
       </h2>
 
       <div className="w-full space-y-4 md:space-y-0 md:grid md:grid-cols-[180px_1fr] md:gap-x-6 md:gap-y-6 text-left md:w-[500px]">
@@ -107,7 +106,7 @@ export default function Register({ onSuccess }) {
           <span className=""> {window.__t('emailAddress')} </span>
           <span className="hidden md:block text-[#646464] text-[12px] font-normal">
             {" "}
-{window.__t('passwordMinLength')} 
+            {window.__t('passwordMinLength')}
           </span>
         </label>
 
@@ -129,7 +128,7 @@ export default function Register({ onSuccess }) {
         </div>
 
         <label className="font-cabin font-bold text-[14px] text-black">
-{window.__t('password')}
+          {window.__t('password')}
           <span className="block text-[#646464] text-[12px] font-normal">
             ※半角英字8文字以上
           </span>
@@ -152,7 +151,7 @@ export default function Register({ onSuccess }) {
         </div>
 
         <label className="font-cabin font-bold text-[14px] text-black">
-{window.__t('reenterPassword')}
+          {window.__t('reenterPassword')}
           <span className="block text-[#646464] text-[12px] font-normal">
             ※半角英字8文字以上
           </span>
@@ -178,13 +177,13 @@ export default function Register({ onSuccess }) {
       <div className="flex flex-col items-start w-full space-y-3 md:w-[350px]">
         <div className="text-sm text-center text-gray-600">
           <span className="text-[#4500FF] underline cursor-pointer">
-{window.__t('termsOfService')}
+            {window.__t('termsOfService')}
           </span>{" "}
-{window.__t('and')}
+          {window.__t('and')}
           <span className="text-[#4500FF] underline cursor-pointer">
-{window.__t('privacyPolicy')}
+            {window.__t('privacyPolicy')}
           </span>{" "}
-{window.__t('pleaseConfirm')}
+          {window.__t('pleaseConfirm')}
         </div>
 
         <div className="flex flex-col items-start">
@@ -240,9 +239,9 @@ export default function Register({ onSuccess }) {
       </div>
 
       <div className="flex flex-col md:flex-row items-center gap-4 w-full mt-[5px] align-center md:justify-center md:gap-[30px] md:mt-0">
-        <PrimaryButton 
+        <PrimaryButton
           type="submit"
-          onClick={handleRegister} 
+          onClick={handleRegister}
           disabled={isLoading}
           rounded="rounded-[5px]"
         >

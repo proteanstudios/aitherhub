@@ -236,16 +236,21 @@ export default function VideoDetail({ video }) {
     const statusMap = {
       NEW: 0,
       uploaded: 0,
-      STEP_0_EXTRACT_FRAMES: 10,
-      STEP_1_DETECT_PHASES: 20,
-      STEP_2_EXTRACT_METRICS: 30,
-      STEP_3_TRANSCRIBE_AUDIO: 40,
-      STEP_4_IMAGE_CAPTION: 50,
-      STEP_5_BUILD_PHASE_UNITS: 60,
-      STEP_6_BUILD_PHASE_DESCRIPTION: 70,
-      STEP_7_GROUPING: 80,
-      STEP_8_UPDATE_BEST_PHASE: 90,
-      STEP_9_BUILD_REPORTS: 95,
+      STEP_0_EXTRACT_FRAMES: 5,
+      STEP_1_DETECT_PHASES: 10,
+      STEP_2_EXTRACT_METRICS: 20,
+      STEP_3_TRANSCRIBE_AUDIO: 30,
+      STEP_4_IMAGE_CAPTION: 40,
+      STEP_5_BUILD_PHASE_UNITS: 50,
+      STEP_6_BUILD_PHASE_DESCRIPTION: 60,
+      STEP_7_GROUPING: 65,
+      STEP_8_UPDATE_BEST_PHASE: 70,
+      STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES: 75,
+      STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP: 80,
+      STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS: 85,
+      STEP_12_UPDATE_VIDEO_STRUCTURE_BEST: 90,
+      STEP_13_BUILD_REPORTS: 95,
+      STEP_14_SPLIT_VIDEO: 98,
       DONE: 100,
       ERROR: -1,
     };
@@ -266,7 +271,12 @@ export default function VideoDetail({ video }) {
       STEP_6_BUILD_PHASE_DESCRIPTION: window.__t('statusStep6'),
       STEP_7_GROUPING: window.__t('statusStep7'),
       STEP_8_UPDATE_BEST_PHASE: window.__t('statusStep8'),
-      STEP_9_BUILD_REPORTS: window.__t('statusStep9'),
+      STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES: window.__t('statusStep9'),
+      STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP: window.__t('statusStep10'),
+      STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS: window.__t('statusStep11'),
+      STEP_12_UPDATE_VIDEO_STRUCTURE_BEST: window.__t('statusStep12'),
+      STEP_13_BUILD_REPORTS: window.__t('statusStep13'),
+      STEP_14_SPLIT_VIDEO: window.__t('statusStep14'),
       DONE: window.__t('statusDone'),
       ERROR: window.__t('statusError'),
     };
@@ -666,7 +676,7 @@ export default function VideoDetail({ video }) {
         ))}
       </h4>
       {/* Video Header */}
-      <div className="flex flex-col lg:ml-[65px] h-full">
+      <div className="flex flex-col overflow-hidden md:overflow-auto lg:ml-[65px] h-full">
         <div className="flex flex-col gap-2">
           <div className="inline-flex self-start items-center bg-white rounded-[50px] h-[41px] px-4">
             <div className="text-[14px] font-bold whitespace-nowrap bg-gradient-to-b from-[#542EBB] to-[#BA69EE] bg-clip-text text-transparent">
@@ -676,7 +686,7 @@ export default function VideoDetail({ video }) {
         </div>
 
         {/* SCROLL AREA */}
-        <div className="mb-[115px] flex-1 overflow-y-auto scrollbar-custom text-left md:mb-0">
+        <div className="flex-1 overflow-y-auto scrollbar-custom text-left md:mb-0">
           {/* Show processing status when video is being processed */}
           {renderProcessingStatus()}
 
