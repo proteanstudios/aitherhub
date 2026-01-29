@@ -245,7 +245,7 @@ def _normalize_blob_url(url: str) -> str:
 def _download_blob(blob_url: str, dest_path: str):
     os.makedirs(os.path.dirname(dest_path), exist_ok=True)
 
-    blob_url = _normalize_blob_url(blob_url)
+    # blob_url = _normalize_blob_url(blob_url)
 
     try:
         print(f"[DL] AzCopy download: {blob_url}")
