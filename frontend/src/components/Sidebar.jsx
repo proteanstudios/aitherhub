@@ -127,11 +127,12 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
       <aside
         ref={sidebarRef}
         className={`fixed md:static top-0 left-0 z-50
-        w-full md:w-[260px] h-screen bg-white
+        w-full md:w-[260px] bg-white
+        bottom-0
         flex flex-col 
         transition-transform duration-300 ease-in-out
         ${isOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0
-        md:overflow-y-auto md:scrollbar-custom md:py-4 md:pl-4 md:pr-0`}
+        overflow-y-auto md:overflow-y-auto md:scrollbar-custom md:py-4 md:pl-4 md:pr-0`}
       >
         {/* ================= PC ================= */}
         <div className="hidden md:block space-y-3">
