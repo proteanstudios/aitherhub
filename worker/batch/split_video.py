@@ -242,7 +242,7 @@ def cut_segment(input_path: str, out_path: str, start_sec: float, end_sec: float
         logger.warning("Invalid duration: start=%s end=%s", start_sec, end_sec)
         return False
 
-    tmp_path = out_path + ".tmp"
+    tmp_path = out_path + ".tmp.mp4"
 
     # Try fast stream-copy (-ss before -i)
     fast_cmd = [
