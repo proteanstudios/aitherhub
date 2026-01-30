@@ -13,7 +13,6 @@ import logging
 import os
 import subprocess
 import shutil
-import time
 from datetime import datetime
 from urllib.parse import urlparse, unquote
 from dotenv import load_dotenv
@@ -25,13 +24,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# Upload logs directory
-UPLOAD_LOG_DIR = os.path.join(os.path.dirname(__file__), "upload_logs")
-os.makedirs(UPLOAD_LOG_DIR, exist_ok=True)
-
-# ffmpeg logs
-FFMPEG_LOG_DIR = os.path.join(os.path.dirname(__file__), "ffmpeg_logs")
-os.makedirs(FFMPEG_LOG_DIR, exist_ok=True)
+# (No local log files) rely on central logger instead
 
 # Output directory for split video segments (local temp)
 SPLIT_VIDEO_DIR = os.path.join(os.path.dirname(__file__), "splitvideo")
@@ -40,13 +33,6 @@ SPLIT_VIDEO_DIR = os.path.join(os.path.dirname(__file__), "splitvideo")
 AZURE_STORAGE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 AZURE_BLOB_CONTAINER = os.getenv("AZURE_BLOB_CONTAINER", "videos")
 SAS_EXP_MINUTES = int(os.getenv("AZURE_BLOB_SAS_EXP_MINUTES", "60"))
-# Target segment height for scaling (ffmpeg). Default 360 if not set.
-try:
-    SEGMENT_HEIGHT = int(os.getenv("SPLIT_VIDEO_HEIGHT", "720"))
-    if SEGMENT_HEIGHT <= 0:
-        SEGMENT_HEIGHT = 720
-except Exception:
-    SEGMENT_HEIGHT = 720
 
 
 def _parse_account_from_conn_str(conn_str: str) -> dict:
@@ -151,45 +137,21 @@ def upload_to_blob(local_path: str, blob_name: str) -> str | None:
                         timeout=60*60
                     )
 
-                    # write azcopy output to upload log
-                    ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-                    safe_blob = blob_name.replace("/", "_").replace("%", "_")
-                    logname = f"azcopy_upload_{safe_blob}_{ts}.log"
-                    logpath = os.path.join(UPLOAD_LOG_DIR, logname)
-                    try:
-                        with open(logpath, "w", encoding="utf-8") as lf:
-                            lf.write("AZCOPY CMD: %s\n" % " ".join([azcopy_path, "copy", local_path, dest_url, "--overwrite=true"]))
-                            lf.write("RETURN CODE: %s\n\n" % proc.returncode)
-                            lf.write("STDOUT:\n")
-                            lf.write(proc.stdout or "<empty>\n")
-                            lf.write("\nSTDERR:\n")
-                            lf.write(proc.stderr or "<empty>\n")
-                    except Exception:
-                        logger.warning("Failed to write azcopy upload log to %s", logpath)
-
+                    # Log azcopy output (no local files)
+                    logger.debug("azcopy stdout: %s", proc.stdout)
+                    logger.debug("azcopy stderr: %s", proc.stderr)
                     if proc.returncode == 0:
-                        logger.info("AzCopy upload succeeded: %s (log=%s)", blob_name, logpath)
-                        logger.debug("azcopy stdout: %s", proc.stdout[:2000])
+                        logger.info("AzCopy upload succeeded: %s", blob_name)
                         return dest_url.split("?", 1)[0]
                     else:
-                        logger.warning("AzCopy failed (rc=%s) for %s (log=%s)", proc.returncode, blob_name, logpath)
-                        logger.warning("azcopy stdout: %s", proc.stdout)
-                        logger.warning("azcopy stderr: %s", proc.stderr)
+                        logger.warning("AzCopy failed (rc=%s) for %s", proc.returncode, blob_name)
                         # fall through to SDK fallback
                 except FileNotFoundError:
                     logger.info("azcopy not found at %s, falling back to SDK upload", azcopy_path)
                 except subprocess.TimeoutExpired as e:
                     logger.warning("azcopy timeout after %s seconds for %s", 60*60, blob_name)
                     # attempt to write partial output if available
-                    try:
-                        ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-                        safe_blob = blob_name.replace("/", "_").replace("%", "_")
-                        logname = f"azcopy_upload_timeout_{safe_blob}_{ts}.log"
-                        logpath = os.path.join(UPLOAD_LOG_DIR, logname)
-                        with open(logpath, "w", encoding="utf-8") as lf:
-                            lf.write(f"Timeout: {repr(e)}\n")
-                    except Exception:
-                        pass
+                    logger.warning("azcopy timeout for %s: %s", blob_name, repr(e))
                 except Exception as e:
                     logger.warning("azcopy upload attempt failed: %s, falling back to SDK", e)
             except FileNotFoundError:
@@ -266,40 +228,26 @@ def cut_segment(input_path: str, out_path: str, start_sec: float, end_sec: float
         tmp_path,
     ]
 
-    def _write_ffmpeg_log(prefix: str, cmd, proc_stdout: Optional[str], proc_stderr: Optional[str]):
-        ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        safe_name = out_path.replace(os.path.sep, "_").replace("%", "_")
-        name = f"{prefix}_{safe_name}_{ts}.log"
-        path = os.path.join(FFMPEG_LOG_DIR, name)
-        try:
-            with open(path, "w", encoding="utf-8") as lf:
-                lf.write("CMD: %s\n\n" % " ".join(cmd))
-                lf.write("STDOUT:\n")
-                lf.write(proc_stdout or "<empty>\n")
-                lf.write("\nSTDERR:\n")
-                lf.write(proc_stderr or "<empty>\n")
-        except Exception:
-            logger.warning("Failed to write ffmpeg log to %s", path)
+    # No per-invocation ffmpeg log files; rely on logger
 
     try:
         proc = subprocess.run(fast_cmd, check=True, capture_output=True, text=True)
         os.replace(tmp_path, out_path)
         return True
     except FileNotFoundError:
-        print(f"[STEP14] ffmpeg not found when running: {' '.join(fast_cmd)}")
-        logger.exception("ffmpeg not found")
+        logger.exception("ffmpeg not found when running: %s", ' '.join(fast_cmd))
         return False
     except subprocess.CalledProcessError as e:
-        _write_ffmpeg_log("fast_copy", fast_cmd, getattr(e, 'stdout', ''), getattr(e, 'stderr', ''))
-        print(f"[STEP14] fast copy failed rc={getattr(e, 'returncode', '?')} stderr: {getattr(e,'stderr','')[:1000]}")
+        logger.debug("ffmpeg fast copy stdout: %s", getattr(e, 'stdout', ''))
+        logger.debug("ffmpeg fast copy stderr: %s", getattr(e, 'stderr', ''))
 
     try:
         proc2 = subprocess.run(slow_cmd, check=True, capture_output=True, text=True)
         os.replace(tmp_path, out_path)
         return True
     except subprocess.CalledProcessError as e2:
-        _write_ffmpeg_log("slow_copy", slow_cmd, getattr(e2, 'stdout', ''), getattr(e2, 'stderr', ''))
-        print(f"[STEP14] slow copy failed rc={getattr(e2, 'returncode', '?')} stderr: {getattr(e2,'stderr','')[:1000]}")
+        logger.debug("ffmpeg slow copy stdout: %s", getattr(e2, 'stdout', ''))
+        logger.debug("ffmpeg slow copy stderr: %s", getattr(e2, 'stderr', ''))
         if os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
