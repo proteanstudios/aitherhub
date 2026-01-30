@@ -12,6 +12,9 @@ from typing import Optional
 import logging
 import os
 import subprocess
+import shutil
+import time
+from datetime import datetime
 from urllib.parse import urlparse, unquote
 from dotenv import load_dotenv
 
@@ -21,6 +24,10 @@ from db_ops import load_video_phases_sync
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+# Upload logs directory
+UPLOAD_LOG_DIR = os.path.join(os.path.dirname(__file__), "upload_logs")
+os.makedirs(UPLOAD_LOG_DIR, exist_ok=True)
 
 # Output directory for split video segments (local temp)
 SPLIT_VIDEO_DIR = os.path.join(os.path.dirname(__file__), "splitvideo")
@@ -122,29 +129,65 @@ def upload_to_blob(local_path: str, blob_name: str) -> str | None:
                     container_name=AZURE_BLOB_CONTAINER,
                     blob_name=blob_name,
                     account_key=account_key,
-                    permission=BlobSasPermissions(write=True, create=True),
+                    permission=BlobSasPermissions(read=True, write=True, create=True),
                     expiry=expiry,
                 )
 
                 dest_url = f"https://{account_name}.blob.core.windows.net/{AZURE_BLOB_CONTAINER}/{blob_name}?{sas}"
 
-                azcopy_path = "/usr/local/bin/azcopy"
-                logger.info("Uploading with azcopy to %s", dest_url)
-                proc = subprocess.run(
-                    [azcopy_path, "copy", local_path, dest_url, "--overwrite=true"],
-                    capture_output=True,
-                    text=True,
-                )
+                # Detect azcopy binary (allow override via AZCOPY_PATH)
+                azcopy_path = os.getenv("AZCOPY_PATH") or shutil.which("azcopy") or "/usr/local/bin/azcopy"
+                logger.info("Uploading with azcopy to %s (binary=%s)", dest_url, azcopy_path)
 
-                if proc.returncode == 0:
-                    logger.info("AzCopy upload succeeded: %s", blob_name)
-                    logger.debug("azcopy stdout: %s", proc.stdout[:2000])
-                    return dest_url.split("?", 1)[0]
-                else:
-                    logger.warning("AzCopy failed (rc=%s) for %s", proc.returncode, blob_name)
-                    logger.warning("azcopy stdout: %s", proc.stdout)
-                    logger.warning("azcopy stderr: %s", proc.stderr)
-                    # fall through to SDK fallback
+                try:
+                    proc = subprocess.run(
+                        [azcopy_path, "copy", local_path, dest_url, "--overwrite=true"],
+                        capture_output=True,
+                        text=True,
+                        timeout=60*60
+                    )
+
+                    # write azcopy output to upload log
+                    ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+                    safe_blob = blob_name.replace("/", "_").replace("%", "_")
+                    logname = f"azcopy_upload_{safe_blob}_{ts}.log"
+                    logpath = os.path.join(UPLOAD_LOG_DIR, logname)
+                    try:
+                        with open(logpath, "w", encoding="utf-8") as lf:
+                            lf.write("AZCOPY CMD: %s\n" % " ".join([azcopy_path, "copy", local_path, dest_url, "--overwrite=true"]))
+                            lf.write("RETURN CODE: %s\n\n" % proc.returncode)
+                            lf.write("STDOUT:\n")
+                            lf.write(proc.stdout or "<empty>\n")
+                            lf.write("\nSTDERR:\n")
+                            lf.write(proc.stderr or "<empty>\n")
+                    except Exception:
+                        logger.warning("Failed to write azcopy upload log to %s", logpath)
+
+                    if proc.returncode == 0:
+                        logger.info("AzCopy upload succeeded: %s (log=%s)", blob_name, logpath)
+                        logger.debug("azcopy stdout: %s", proc.stdout[:2000])
+                        return dest_url.split("?", 1)[0]
+                    else:
+                        logger.warning("AzCopy failed (rc=%s) for %s (log=%s)", proc.returncode, blob_name, logpath)
+                        logger.warning("azcopy stdout: %s", proc.stdout)
+                        logger.warning("azcopy stderr: %s", proc.stderr)
+                        # fall through to SDK fallback
+                except FileNotFoundError:
+                    logger.info("azcopy not found at %s, falling back to SDK upload", azcopy_path)
+                except subprocess.TimeoutExpired as e:
+                    logger.warning("azcopy timeout after %s seconds for %s", 60*60, blob_name)
+                    # attempt to write partial output if available
+                    try:
+                        ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+                        safe_blob = blob_name.replace("/", "_").replace("%", "_")
+                        logname = f"azcopy_upload_timeout_{safe_blob}_{ts}.log"
+                        logpath = os.path.join(UPLOAD_LOG_DIR, logname)
+                        with open(logpath, "w", encoding="utf-8") as lf:
+                            lf.write(f"Timeout: {repr(e)}\n")
+                    except Exception:
+                        pass
+                except Exception as e:
+                    logger.warning("azcopy upload attempt failed: %s, falling back to SDK", e)
             except FileNotFoundError:
                 logger.info("azcopy not found, falling back to SDK upload")
             except subprocess.CalledProcessError as e:
