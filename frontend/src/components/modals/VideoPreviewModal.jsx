@@ -293,7 +293,7 @@ export default function VideoPreviewModal({ open, onClose, videoUrl, timeStart =
                     </div>
                     <button
                       onClick={handleManualPlay}
-                      className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                      className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-[background-color] flex items-center gap-2"
                     >
                       <span>▶️</span>
                       再生する

@@ -142,6 +142,26 @@ export default function VideoDetail({ video }) {
     }
   };
 
+  // Detect old Safari iOS (<=16) - remarkGfm causes blank screen on these versions
+  const isOldSafariIOS = (() => {
+    if (typeof window === "undefined") return false;
+    const ua = navigator.userAgent;
+    // Check if it's Safari (not Chrome, not Android)
+    const isSafariBrowser = /^((?!chrome|android).)*safari/i.test(ua);
+    if (!isSafariBrowser) return false;
+
+    // Extract iOS version from user agent
+    // iOS Safari UA contains "Version/X.Y.Z" or "OS X_Y" patterns
+    const iosVersionMatch = ua.match(/OS (\d+)_/);
+    if (iosVersionMatch) {
+      const majorVersion = parseInt(iosVersionMatch[1], 10);
+      // Safari iOS 16 and below have issues with remarkGfm
+      return majorVersion <= 16;
+    }
+
+    return false;
+  })();
+
   const formatTime = (seconds) => {
     if (seconds == null || isNaN(seconds)) return "";
     const mins = Math.floor(seconds / 60);
@@ -691,7 +711,7 @@ export default function VideoDetail({ video }) {
       <div className="flex flex-col overflow-hidden md:overflow-auto lg:ml-[65px] h-full">
         <div className="flex flex-col gap-2">
           <div className="inline-flex self-start items-center bg-white rounded-[50px] h-[41px] px-4">
-            <div className="text-[14px] font-bold whitespace-nowrap bg-gradient-to-b from-[#542EBB] to-[#BA69EE] bg-clip-text text-transparent">
+            <div className="text-[14px] font-bold whitespace-nowrap bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))] text-transparent bg-clip-text">
               {videoData?.title || video.original_filename}
             </div>
           </div>
@@ -729,7 +749,7 @@ export default function VideoDetail({ video }) {
                     `}
                   >
                     <div
-                      className={`flex items-center gap-1 text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 transition-colors ${previewLoading ? "opacity-60 pointer-events-none" : ""
+                      className={`flex items-center gap-1 text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 ${previewLoading ? "opacity-60 pointer-events-none" : ""
                         }`}
                       onClick={() => handlePhasePreview(it)}
                       title={window.__t('clickToPreview')}
@@ -763,7 +783,7 @@ export default function VideoDetail({ video }) {
 
                     <div className="text-sm text-left text-gray-100">
                       <div className="markdown">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        <ReactMarkdown remarkPlugins={isOldSafariIOS ? [] : [remarkGfm]}>
                           {it.phase_description || window.__t('noDescription')}
                         </ReactMarkdown>
                       </div>
@@ -783,7 +803,7 @@ export default function VideoDetail({ video }) {
                         `}
                         >
                           <div
-                            className={`flex items-center gap-1 text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 transition-colors ${previewLoading ? "opacity-60 pointer-events-none" : ""
+                            className={`flex items-center gap-1 text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 ${previewLoading ? "opacity-60 pointer-events-none" : ""
                               }`}
                             onClick={() => handlePhasePreview(it)}
                             title={window.__t('clickToPreview')}
@@ -816,7 +836,7 @@ export default function VideoDetail({ video }) {
 
                           <div className="text-sm text-left text-gray-100">
                             <div className="markdown">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              <ReactMarkdown remarkPlugins={isOldSafariIOS ? [] : [remarkGfm]}>
                                 {it.insight || window.__t('noInsight')}
                               </ReactMarkdown>
                             </div>
@@ -842,7 +862,7 @@ export default function VideoDetail({ video }) {
 
                         <div className="text-sm text-left text-gray-100">
                           <div className="markdown">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            <ReactMarkdown remarkPlugins={isOldSafariIOS ? [] : [remarkGfm]}>
                               {r.content || ""}
                             </ReactMarkdown>
                           </div>
@@ -870,7 +890,7 @@ export default function VideoDetail({ video }) {
                       <div className="text-xs text-gray-400 font-mono">{window.__t('botLabel')}</div>
                       <div className="min-w-0 text-sm text-gray-100">
                         <div className="markdown">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          <ReactMarkdown remarkPlugins={isOldSafariIOS ? [] : [remarkGfm]}>
                             {item.answer || ""}
                           </ReactMarkdown>
                         </div>

@@ -67,7 +67,7 @@ export default function PrimaryButton({
         <span
           className={`
             absolute inset-0
-            bg-gradient-to-b from-[#4500FF] to-[#9B00FF]
+            bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))]
             transition-opacity duration-300 ease-out
             group-hover:opacity-0
             ${disabled ? "opacity-50" : ""}

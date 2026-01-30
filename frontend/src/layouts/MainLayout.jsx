@@ -102,7 +102,8 @@ export default function MainLayout() {
           <Sidebar {...sidebarProps} />
         </div>
         
-        <main className="w-full md:w-4/5 bg-gradient-to-b from-[#4500FF] to-[#9B00FF] text-white">
+        <main className="w-full md:w-4/5 bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))]
+ text-white">
           <MainContent {...mainContentProps}>
             {selectedVideo && <VideoDetail video={selectedVideo} />}
           </MainContent>

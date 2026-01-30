@@ -180,7 +180,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                   onFocus={() => setIsFocus(true)}
                   onBlur={() => setIsFocus(false)}
                   className="
-                    w-full h-[40px] rounded-[5px] bg-white pl-[35px] pr-3 outline-none
+                    w-full h-[40px] rounded-[5px] bg-white text-black pl-[35px] pr-3 outline-none
 
                     placeholder:text-[#9B00FF]
                     placeholder:font-bold
@@ -205,18 +205,18 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
             <img src={searchMobile} onClick={() => { setSelectedVideoId(null); if (onVideoSelect) onVideoSelect(null); if (onNewAnalysis) onNewAnalysis(); }} className="w-[32px] cursor-pointer" />
           </div>
 
-          <div className="bg-gradient-to-b from-[#4500FF] to-[#9B00FF]">
+          <div className="bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))]">
             <div className="bg-white">
               <div className="flex items-center mb-5 mt-1">
                 <img src={logo} className="w-10 h-10 ml-2" />
-                <span className="ml-2 font-semibold text-[24px] bg-gradient-to-b from-[#4500FF] to-[#9B00FF] bg-clip-text text-transparent">
+                <span className="ml-2 font-semibold text-[24px] bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))] bg-clip-text text-transparent">
                   Liveboost AI
                 </span>
               </div>
 
               <div className="flex items-center">
                 <img src={library} className="w-[29px] h-[22px] ml-2" />
-                <span className="ml-4 font-semibold text-[24px] bg-gradient-to-b from-[#4500FF] to-[#9B00FF] bg-clip-text text-transparent">
+                <span className="ml-4 font-semibold text-[24px] bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))] bg-clip-text text-transparent">
                   ライブラリ
                 </span>
               </div>
@@ -241,7 +241,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                       <span
                         key={video.id}
                         onClick={() => handleVideoClick(video)}
-                        className={`min-h-10 block font-semibold cursor-pointer transition-colors px-4 py-2 rounded-lg w-full text-left
+                        className={`min-h-10 block font-semibold cursor-pointer text-black px-4 py-2 rounded-lg w-full text-left
                         truncate
                         ${selectedVideoId === video.id
                             ? "bg-purple-100 text-purple-700"
@@ -266,7 +266,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                 md:hidden rounded-[50px] border border-[#B5B5B5]
                 flex items-center justify-center shadow cursor-pointer flex-shrink-0"
               >
-                <span className="font-bold text-[18px] max-w-[160px] truncate inline-block align-middle">
+                <span className="font-bold text-[18px] max-w-[160px] truncate inline-block align-middle text-black">
                   {effectiveUser.email}
                 </span>
               </div>
@@ -279,7 +279,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
           <ul
             ref={dropdownRef}
             className="absolute bottom-[80px] left-[30px] w-[210px]
-            bg-white rounded-[10px] border shadow-lg z-50 overflow-hidden"
+            bg-white text-black rounded-[10px] border shadow-lg z-50 overflow-hidden"
           >
             <li
               onClick={() => {
