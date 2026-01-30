@@ -10,7 +10,7 @@ export default function LoginModal({ open, onClose, onSwitchToRegister }) {
         className="fixed inset-0 bg-black/40 transition-opacity data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in"
       />
 
-      <div className="fixed inset-0 z-50 flex justify-center">
+      <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto">
         <div className="flex min-h-full items-start justify-center p-0">
           <DialogPanel
             transition
@@ -31,6 +31,8 @@ export default function LoginModal({ open, onClose, onSwitchToRegister }) {
                 transition-transform duration-150 ease-out
                 active:scale-[0.95]
                 focus:outline-none focus-visible:outline-none
+                [@media(max-height:550px)]:top-[10px]
+                [@media(max-height:550px)]:right-[10px]
               "
             >
               <img

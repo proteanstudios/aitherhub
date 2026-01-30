@@ -79,14 +79,16 @@ export default function MainLayout() {
     onVideoSelect: handleVideoSelect,
     onNewAnalysis: handleNewAnalysis,
     refreshKey,
-  }), [openSidebar, handleCloseSidebar, user, handleVideoSelect, handleNewAnalysis, refreshKey]);
+    selectedVideo,
+  }), [openSidebar, handleCloseSidebar, user, handleVideoSelect, handleNewAnalysis, refreshKey, selectedVideo]);
 
   const mainContentProps = useMemo(() => ({
     onOpenSidebar: handleOpenSidebar,
     user,
     setUser: handleUserChange,
     onUploadSuccess: handleUploadSuccess,
-  }), [handleOpenSidebar, user, handleUserChange, handleUploadSuccess]);
+    onVideoSelect: handleVideoSelect,
+  }), [handleOpenSidebar, user, handleUserChange, handleUploadSuccess, handleVideoSelect]);
 
   return (
     <div className="min-h-screen bg-gray-100 flex justify-center">

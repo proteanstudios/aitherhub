@@ -17,7 +17,8 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
   };
 
   const validateEmail = (email) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    // Regex handles: no whitespace, no multiple @, no period immediately after @
+    const emailRegex = /^[^\s@]+@[^.]+(\.[^\s@]+)+$/;
     return emailRegex.test(email);
   };
 
@@ -64,10 +65,24 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
       if (onSuccess) onSuccess();
     } catch (err) {
       setIsLoading(false);
-      
-      const detail = err?.response?.data?.detail || err?.message || "";
-      const errorMessage = mapServerErrorToJapanese(detail, 'login');
 
+      // Handle error detail - it can be a string or an array from FastAPI
+      let detail = err?.response?.data?.detail || err?.message || "";
+
+      // If detail is an array (FastAPI validation error), extract the message
+      if (Array.isArray(detail) && detail.length > 0) {
+        detail = detail[0]?.msg || detail[0]?.message || JSON.stringify(detail);
+      }
+
+      // Check if it's an email validation error and show it inline
+      const lowerDetail = detail.toLowerCase();
+      if (lowerDetail.includes("email") && (lowerDetail.includes("not valid") || lowerDetail.includes("invalid") || lowerDetail.includes("invalid"))) {
+        setErrors({ email: VALIDATION_MESSAGES.EMAIL_INVALID_FORMAT });
+        toast.error(VALIDATION_MESSAGES.EMAIL_INVALID_FORMAT);
+        return;
+      }
+
+      const errorMessage = mapServerErrorToJapanese(detail, 'login');
       toast.error(errorMessage);
     }
   };

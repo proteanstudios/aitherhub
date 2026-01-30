@@ -24,7 +24,8 @@ export default function ForgotPassword({ onSuccess }) {
     };
 
     const validateEmail = (email) => {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        // Regex handles: no whitespace, no multiple @, no period immediately after @
+        const emailRegex = /^[^\s@]+@[^.]+(\.[^\s@]+)+$/;
         return emailRegex.test(email);
     };
     
@@ -71,10 +72,16 @@ export default function ForgotPassword({ onSuccess }) {
         } catch (err) {
             // Only enable button again on failure
             setIsLoading(false);
-            
-            const detail = err?.response?.data?.detail || err?.message || "";
-            const errorMessage = mapServerErrorToJapanese(detail, 'changePassword');
 
+            // Handle error detail - it can be a string or an array from FastAPI
+            let detail = err?.response?.data?.detail || err?.message || "";
+
+            // If detail is an array (FastAPI validation error), extract the message
+            if (Array.isArray(detail) && detail.length > 0) {
+                detail = detail[0]?.msg || detail[0]?.message || JSON.stringify(detail);
+            }
+
+            const errorMessage = mapServerErrorToJapanese(detail, 'changePassword');
             setErrors({ currentPassword: errorMessage });
             toast.error(errorMessage);
         }
