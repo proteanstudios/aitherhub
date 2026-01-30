@@ -97,7 +97,7 @@ def parse_blob_url(blob_url: str) -> dict:
     }
 
 
-def upload_to_blob(local_path: str, blob_name: str) -> str | None:
+def upload_to_blob(local_path: str, blob_name: str) -> Optional[str]:
     """Upload a local file to Azure blob storage using Azure SDK.
     
     Args:
@@ -263,7 +263,7 @@ def cut_segment(input_path: str, out_path: str, start_sec: float, end_sec: float
         return False
 
 
-def split_video_into_segments(video_id: str, video_url: str, video_path: str | None = None) -> Optional[list]:
+def split_video_into_segments(video_id: str, video_url: str, video_path: Optional[str] = None) -> Optional[list]:
     """Split the given video into segments based on analysis/report.
 
     Args:
@@ -293,15 +293,22 @@ def split_video_into_segments(video_id: str, video_url: str, video_path: str | N
     # Load all video_phases rows for this video_id from the DB.
     try:
         phases = load_video_phases_sync(video_id)
-        
         logger.info("Loaded %d video_phases for video_id=%s", len(phases), video_id)
+        print(f"[STEP14] Loaded {len(phases)} video_phases for video_id={video_id}")
+        if len(phases) > 0:
+            # show first few phase indices for quick debug
+            sample = [p.get("phase_index") for p in phases[:5]]
+            print(f"[STEP14] sample phase indices: {sample}")
     except Exception as e:
         logger.exception("Failed to load video_phases for %s: %s", video_id, e)
         return None
 
     # Check if we have a local video file to work with
-    if not video_path or not os.path.exists(video_path):
+    exists = bool(video_path and os.path.exists(video_path))
+    print(f"[STEP14] video_path={video_path!r} exists={exists}")
+    if not exists:
         logger.error("No valid video_path provided or file not found: %s", video_path)
+        print(f"[STEP14] Aborting split: missing video file: {video_path}")
         return None
 
     # Parse blob URL to get the parent path for uploading segments
@@ -310,50 +317,69 @@ def split_video_into_segments(video_id: str, video_url: str, video_path: str | N
 
     # Cut each phase into a separate video segment
     segments = []
+    print(f"[STEP14] Beginning loop over {len(phases)} phases")
     for phase in phases:
-        time_start = phase.get("time_start")
-        time_end = phase.get("time_end")
+        try:
+            time_start = phase.get("time_start")
+            time_end = phase.get("time_end")
 
-        if time_start is None or time_end is None:
-            logger.warning("Skipping phase %s: missing time_start or time_end", phase.get("phase_index"))
-            continue
+            if time_start is None or time_end is None:
+                logger.warning("Skipping phase %s: missing time_start or time_end", phase.get("phase_index"))
+                print(f"[STEP14] Skipping phase {phase.get('phase_index')}: missing times")
+                continue
 
-        # Convert to float (seconds)
-        start_sec = float(time_start)
-        end_sec = float(time_end)
+            # Convert to float (seconds)
+            start_sec = float(time_start)
+            end_sec = float(time_end)
 
-        # Build output filename: {time_start}_{time_end}.mp4
-        out_filename = f"{time_start}_{time_end}.mp4"
-        out_path = os.path.join(out_dir, out_filename)
+            # Build output filename: {time_start}_{time_end}.mp4
+            out_filename = f"{time_start}_{time_end}.mp4"
+            out_path = os.path.join(out_dir, out_filename)
 
-        logger.info("Cutting segment: %s -> %s (%.2fs - %.2fs)", video_path, out_path, start_sec, end_sec)
+            logger.info("Cutting segment: %s -> %s (%.2fs - %.2fs)", video_path, out_path, start_sec, end_sec)
+            print(f"[STEP14] Cutting segment {out_filename}: {start_sec:.2f}s -> {end_sec:.2f}s")
 
-        success = cut_segment(video_path, out_path, start_sec, end_sec)
-        if success:
-            # Build blob destination path: {parent_path}/reportvideo/{filename}
-            if blob_info["parent_path"]:
-                dest_blob_name = f"{blob_info['parent_path']}/reportvideo/{out_filename}"
+            success = cut_segment(video_path, out_path, start_sec, end_sec)
+            if success:
+                size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
+                print(f"[STEP14] Cut success: {out_path} (size={size})")
+
+                # Build blob destination path: {parent_path}/reportvideo/{filename}
+                if blob_info["parent_path"]:
+                    dest_blob_name = f"{blob_info['parent_path']}/reportvideo/{out_filename}"
+                else:
+                    dest_blob_name = f"reportvideo/{out_filename}"
+
+                logger.info("Uploading segment to blob: %s", dest_blob_name)
+                print(f"[STEP14] Uploading {out_filename} -> {dest_blob_name}")
+                try:
+                    blob_url = upload_to_blob(out_path, dest_blob_name)
+                except Exception as e:
+                    blob_url = None
+                    print(f"[STEP14] upload_to_blob raised: {e}")
+
+                segments.append({
+                    "phase_index": phase.get("phase_index"),
+                    "time_start": time_start,
+                    "time_end": time_end,
+                    "output_path": out_path,
+                    "blob_url": blob_url,
+                    "uploaded": blob_url is not None,
+                })
+
+                if blob_url:
+                    logger.info("Segment uploaded: %s", dest_blob_name)
+                    print(f"[STEP14] Uploaded: {dest_blob_name} -> {blob_url}")
+                else:
+                    logger.warning("Failed to upload segment: %s", out_filename)
+                    print(f"[STEP14] Upload failed for {out_filename}")
             else:
-                dest_blob_name = f"reportvideo/{out_filename}"
+                logger.warning("Failed to cut segment for phase %s", phase.get("phase_index"))
+                print(f"[STEP14] Cut failed for phase {phase.get('phase_index')}")
 
-            logger.info("Uploading segment to blob: %s", dest_blob_name)
-            blob_url = upload_to_blob(out_path, dest_blob_name)
-
-            segments.append({
-                "phase_index": phase.get("phase_index"),
-                "time_start": time_start,
-                "time_end": time_end,
-                "output_path": out_path,
-                "blob_url": blob_url,
-                "uploaded": blob_url is not None,
-            })
-
-            if blob_url:
-                logger.info("Segment uploaded: %s", dest_blob_name)
-            else:
-                logger.warning("Failed to upload segment: %s", out_filename)
-        else:
-            logger.warning("Failed to cut segment for phase %s", phase.get("phase_index"))
+        except Exception as e:
+            print(f"[STEP14] Exception processing phase {phase.get('phase_index')}: {e}")
+            logger.exception("Exception in splitting phase %s: %s", phase.get("phase_index"), e)
 
     logger.info("Split complete: %d/%d segments created", len(segments), len(phases))
 
