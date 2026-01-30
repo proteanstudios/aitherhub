@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 UPLOAD_LOG_DIR = os.path.join(os.path.dirname(__file__), "upload_logs")
 os.makedirs(UPLOAD_LOG_DIR, exist_ok=True)
 
+# ffmpeg logs
+FFMPEG_LOG_DIR = os.path.join(os.path.dirname(__file__), "ffmpeg_logs")
+os.makedirs(FFMPEG_LOG_DIR, exist_ok=True)
+
 # Output directory for split video segments (local temp)
 SPLIT_VIDEO_DIR = os.path.join(os.path.dirname(__file__), "splitvideo")
 
@@ -242,15 +246,70 @@ def cut_segment(input_path: str, out_path: str, start_sec: float, end_sec: float
 
     # Use stream copy only (no re-encoding) for fastest cut.
     # Note: accuracy is keyframe-aligned when using copy.
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-ss", str(start_sec),
-        "-i", input_path,
-        "-t", str(duration),
-        "-c", "copy",
-        tmp_path,
-    ]
+        # Try fast stream-copy (-ss before -i)
+        fast_cmd = [
+            "ffmpeg",
+            "-y",
+            "-ss", str(start_sec),
+            "-i", input_path,
+            "-t", str(duration),
+            "-c", "copy",
+            tmp_path,
+        ]
+
+        # Fallback: place -ss after -i (slower but sometimes more compatible)
+        slow_cmd = [
+            "ffmpeg",
+            "-y",
+            "-i", input_path,
+            "-ss", str(start_sec),
+            "-t", str(duration),
+            "-c", "copy",
+            tmp_path,
+        ]
+
+        def _write_ffmpeg_log(prefix: str, cmd, proc_stdout: str | None, proc_stderr: str | None):
+            ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+            safe_name = out_path.replace(os.path.sep, "_").replace("%", "_")
+            name = f"{prefix}_{safe_name}_{ts}.log"
+            path = os.path.join(FFMPEG_LOG_DIR, name)
+            try:
+                with open(path, "w", encoding="utf-8") as lf:
+                    lf.write("CMD: %s\n\n" % " ".join(cmd))
+                    lf.write("STDOUT:\n")
+                    lf.write(proc_stdout or "<empty>\n")
+                    lf.write("\nSTDERR:\n")
+                    lf.write(proc_stderr or "<empty>\n")
+            except Exception:
+                logger.warning("Failed to write ffmpeg log to %s", path)
+
+        try:
+            proc = subprocess.run(fast_cmd, check=True, capture_output=True, text=True)
+            os.replace(tmp_path, out_path)
+            return True
+        except FileNotFoundError:
+            print(f"[STEP14] ffmpeg not found when running: {' '.join(fast_cmd)}")
+            logger.exception("ffmpeg not found")
+            return False
+        except subprocess.CalledProcessError as e:
+            # write fast attempt log
+            _write_ffmpeg_log("fast_copy", fast_cmd, getattr(e, 'stdout', ''), getattr(e, 'stderr', ''))
+            print(f"[STEP14] fast copy failed rc={getattr(e, 'returncode', '?')} stderr: {getattr(e,'stderr','')[:1000]}")
+
+        # Try slow copy
+        try:
+            proc2 = subprocess.run(slow_cmd, check=True, capture_output=True, text=True)
+            os.replace(tmp_path, out_path)
+            return True
+        except subprocess.CalledProcessError as e2:
+            _write_ffmpeg_log("slow_copy", slow_cmd, getattr(e2, 'stdout', ''), getattr(e2, 'stderr', ''))
+            print(f"[STEP14] slow copy failed rc={getattr(e2, 'returncode', '?')} stderr: {getattr(e2,'stderr','')[:1000]}")
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+            return False
 
     try:
         proc = subprocess.run(cmd, check=True, capture_output=True, text=True)
