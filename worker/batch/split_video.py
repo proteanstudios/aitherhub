@@ -28,6 +28,26 @@ SPLIT_VIDEO_DIR = os.path.join(os.path.dirname(__file__), "splitvideo")
 # Azure Storage config
 AZURE_STORAGE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 AZURE_BLOB_CONTAINER = os.getenv("AZURE_BLOB_CONTAINER", "videos")
+SAS_EXP_MINUTES = int(os.getenv("AZURE_BLOB_SAS_EXP_MINUTES", "60"))
+# Target segment height for scaling (ffmpeg). Default 360 if not set.
+try:
+    SEGMENT_HEIGHT = int(os.getenv("SPLIT_VIDEO_HEIGHT", "720"))
+    if SEGMENT_HEIGHT <= 0:
+        SEGMENT_HEIGHT = 720
+except Exception:
+    SEGMENT_HEIGHT = 720
+
+
+def _parse_account_from_conn_str(conn_str: str) -> dict:
+    """Extract AccountName and AccountKey from connection string."""
+    parts = conn_str.split(";")
+    out = {"AccountName": None, "AccountKey": None}
+    for p in parts:
+        if p.startswith("AccountName="):
+            out["AccountName"] = p.split("=", 1)[1]
+        if p.startswith("AccountKey="):
+            out["AccountKey"] = p.split("=", 1)[1]
+    return out
 
 
 def parse_blob_url(blob_url: str) -> dict:
@@ -84,6 +104,58 @@ def upload_to_blob(local_path: str, blob_name: str) -> str | None:
         logger.error("AZURE_STORAGE_CONNECTION_STRING not set")
         return None
 
+    # Try azcopy first for faster upload if available
+    try:
+        conn = _parse_account_from_conn_str(AZURE_STORAGE_CONNECTION_STRING)
+        account_name = conn.get("AccountName")
+        account_key = conn.get("AccountKey")
+
+        if account_name and account_key:
+            try:
+                # generate a short-lived blob SAS for destination
+                from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+                from datetime import datetime, timedelta
+
+                expiry = datetime.utcnow() + timedelta(minutes=SAS_EXP_MINUTES)
+                sas = generate_blob_sas(
+                    account_name=account_name,
+                    container_name=AZURE_BLOB_CONTAINER,
+                    blob_name=blob_name,
+                    account_key=account_key,
+                    permission=BlobSasPermissions(write=True, create=True),
+                    expiry=expiry,
+                )
+
+                dest_url = f"https://{account_name}.blob.core.windows.net/{AZURE_BLOB_CONTAINER}/{blob_name}?{sas}"
+
+                azcopy_path = "/usr/local/bin/azcopy"
+                logger.info("Uploading with azcopy to %s", dest_url)
+                proc = subprocess.run(
+                    [azcopy_path, "copy", local_path, dest_url, "--overwrite=true"],
+                    capture_output=True,
+                    text=True,
+                )
+
+                if proc.returncode == 0:
+                    logger.info("AzCopy upload succeeded: %s", blob_name)
+                    logger.debug("azcopy stdout: %s", proc.stdout[:2000])
+                    return dest_url.split("?", 1)[0]
+                else:
+                    logger.warning("AzCopy failed (rc=%s) for %s", proc.returncode, blob_name)
+                    logger.warning("azcopy stdout: %s", proc.stdout)
+                    logger.warning("azcopy stderr: %s", proc.stderr)
+                    # fall through to SDK fallback
+            except FileNotFoundError:
+                logger.info("azcopy not found, falling back to SDK upload")
+            except subprocess.CalledProcessError as e:
+                logger.warning("azcopy failed: %s, falling back to SDK", getattr(e, 'stderr', e))
+            except Exception as e:
+                logger.warning("azcopy upload attempt failed: %s, falling back to SDK", e)
+
+    except Exception:
+        logger.debug("Failed to attempt azcopy path, will use SDK upload")
+
+    # Fallback: SDK upload (same as previous behavior)
     try:
         from azure.storage.blob import BlobServiceClient, ContentSettings
 
@@ -97,10 +169,10 @@ def upload_to_blob(local_path: str, blob_name: str) -> str | None:
                 content_settings=ContentSettings(content_type="video/mp4")
             )
 
-        logger.info("Uploaded blob: %s", blob_name)
+        logger.info("Uploaded blob (SDK): %s", blob_name)
         return blob_client.url
     except Exception as e:
-        logger.error("Upload failed: %s", e)
+        logger.error("Upload failed (SDK): %s", e)
         return None
 
 
@@ -131,7 +203,7 @@ def cut_segment(input_path: str, out_path: str, start_sec: float, end_sec: float
         "-i", input_path,
         "-ss", str(start_sec),
         "-t", str(duration),
-        "-vf", "scale=-2:360",
+        "-vf", f"scale=-2:{SEGMENT_HEIGHT}",
         "-c:v", "libx264",
         "-crf", str(crf),
         "-preset", preset,
