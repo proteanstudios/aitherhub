@@ -77,5 +77,7 @@
   "reenterNewPassword": "新しいパスワードを再入力",
   "processing": "処理中...",
   "privacyPolicy": "プライバシーポリシー",
-  "accountId": "アカウントID"
+  "accountId": "アカウントID",
+  "authTokenNotFound": "認証トークンが見つかりません。再度ログインしてください。",
+  "sessionExpired": "セッションの有効期限が切れました。再度ログインしてください。"
 }

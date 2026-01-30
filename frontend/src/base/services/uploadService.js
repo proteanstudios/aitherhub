@@ -78,11 +78,11 @@ class UploadService extends BaseApiService {
     // Verify token is valid before making authenticated request
     const token = TokenManager.getToken();
     if (!token) {
-      throw new Error('Authentication token not found. Please log in again.');
+      throw new Error(window.__t('authTokenNotFound'));
     }
-    
+
     if (TokenManager.isTokenExpired(token)) {
-      throw new Error('Your session has expired. Please log in again.');
+      throw new Error(window.__t('sessionExpired'));
     }
 
     return await this.post(URL_CONSTANTS.UPLOAD_COMPLETE, {

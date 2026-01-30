@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import logo from "../assets/logo/logo.svg";
 import write from "../assets/icons/write.png";
-import searchIcon from "../assets/icons/search.svg";
+import searchIcon from "../assets/icons/searchBlack.png";
 import searchMobile from "../assets/icons/searchmobile.png";
 import textSearch from "../assets/icons/text.png";
 import searchSp from "../assets/icons/searchSp.png";
@@ -147,6 +147,10 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
 
           <div
             onClick={() => {
+              setSelectedVideoId(null);
+              if (onVideoSelect) {
+                onVideoSelect(null);
+              }
               if (onNewAnalysis) {
                 onNewAnalysis();
               }
@@ -165,8 +169,8 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
 
         {/* ================= SP ================= */}
         <div className="md:hidden mt-[22px] px-4 flex-shrink-0">
-          <div className="flex justify-between items-center ml-[50px] mb-[20px]">
-            <div className="relative w-[270px]">
+          <div className="flex justify-between items-center ml-[50px] mb-[20px] gap-2">
+            <div className="relative w-full max-w-[270px]">
               <div className="relative p-[1px] rounded-[5px] bg-linear-to-b from-[#4500FF] via-[#6A00FF] to-[#9B00FF]">
                 <img src={searchSp} className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
@@ -198,7 +202,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
               )} */}
             </div>
 
-            <img src={searchMobile} className="w-[32px]" />
+            <img src={searchMobile} onClick={() => { setSelectedVideoId(null); if (onVideoSelect) onVideoSelect(null); if (onNewAnalysis) onNewAnalysis(); }} className="w-[32px] cursor-pointer" />
           </div>
 
           <div className="bg-gradient-to-b from-[#4500FF] to-[#9B00FF]">
@@ -275,7 +279,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
           <ul
             ref={dropdownRef}
             className="absolute bottom-[80px] left-[30px] w-[210px]
-            bg-white rounded-[10px] border shadow-lg z-50"
+            bg-white rounded-[10px] border shadow-lg z-50 overflow-hidden"
           >
             <li
               onClick={() => {
@@ -321,7 +325,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
         className={`md:hidden ml-[-10px] fixed top-[28px] left-[25px] z-70 w-[32px] h-[32px] flex items-center justify-center font-bold bg-white rounded-full shadow-lg transition-all duration-200 ease-out ${showBackButton ? "opacity-100 translate-x-0 pointer-events-auto" : "opacity-0 translate-x-2 pointer-events-none"}`}
       >
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" stroke="#4500FF" />
         </svg>
 
       </button>

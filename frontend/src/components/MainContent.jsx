@@ -112,8 +112,6 @@ export default function MainContent({
       }
     } catch (error) {
       const errorMsg = error?.message || window.__t('uploadFailedMessage');
-      setMessageType("error");
-      setMessage(`❌ ${errorMsg}`);
       toast.error(errorMsg);
     } finally {
       setUploading(false);
@@ -187,7 +185,7 @@ export default function MainContent({
                 ))}
               </h4>
             </div>
-            <div className="w-full mt-[70px] md:mt-[115px]">
+            <div className="w-full mt-[70px] md:mt-[115px] [@media(max-height:650px)]:mt-[20px]">
               <h4 className="w-full mb-[22px] text-[28px] leading-[40px] font-semibold font-cabin text-center">
                 {window.__t('uploadText').split('\n').map((line, idx, arr) => (
                   <span key={idx}>
