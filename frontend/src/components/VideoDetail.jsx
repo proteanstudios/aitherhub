@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import MarkdownWithTables from "./markdown/MarkdownWithTables";
 import ChatInput from "./ChatInput";
 import VideoPreviewModal from "./modals/VideoPreviewModal";
 import VideoService from "../base/services/videoService";
@@ -143,7 +143,7 @@ export default function VideoDetail({ video }) {
     }
   };
 
-  // Detect old Safari iOS (<=16) - remarkGfm causes blank screen on these versions
+  // Detect old Safari iOS (<=16) - remark-gfm table parsing can crash/blank-screen on these versions.
   const isOldSafariIOS = (() => {
     if (typeof window === "undefined") return false;
     const ua = navigator.userAgent;
@@ -156,12 +156,14 @@ export default function VideoDetail({ video }) {
     const iosVersionMatch = ua.match(/OS (\d+)_/);
     if (iosVersionMatch) {
       const majorVersion = parseInt(iosVersionMatch[1], 10);
-      // Safari iOS 16 and below have issues with remarkGfm
+      // Safari iOS 16 and below have issues with remark-gfm in some table-heavy/inline-table content.
       return majorVersion <= 16;
     }
 
     return false;
   })();
+
+  // Markdown table rendering is handled by <MarkdownWithTables /> to keep this file lighter.
 
   const formatTime = (seconds) => {
     if (seconds == null || isNaN(seconds)) return "";
@@ -644,6 +646,8 @@ export default function VideoDetail({ video }) {
     };
   }, [video?.id, videoData?.status]);
 
+  // console.log(normalizeMarkdownTable(chatMessages[7].answer || ""));
+
   // Clear progress bar if video is already DONE or ERROR (handles race conditions)
   useEffect(() => {
     if (videoData?.status === 'DONE' || videoData?.status === 'ERROR') {
@@ -809,9 +813,11 @@ export default function VideoDetail({ video }) {
 
                     <div className="text-sm text-left text-gray-100">
                       <div className="markdown">
-                        <ReactMarkdown remarkPlugins={isOldSafariIOS ? [] : [remarkGfm]}>
-                          {it.phase_description || window.__t('noDescription')}
-                        </ReactMarkdown>
+                        <MarkdownWithTables
+                          markdown={it.phase_description || window.__t('noDescription')}
+                          isOldSafariIOS={isOldSafariIOS}
+                          keyPrefix={`r1-${it.phase_index ?? index}`}
+                        />
                       </div>
                     </div>
                   </div>
@@ -828,9 +834,7 @@ export default function VideoDetail({ video }) {
                         return (
                           <div
                             key={`r2-${keyId}`}
-                            className={`grid grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md ${previewLoading ? "opacity-60 pointer-events-none" : ""}`}
-                            onClick={() => handlePhasePreview(it)}
-                            title={window.__t('clickToPreview')}
+                            className={`grid grid-cols-1 md:grid-cols-[150px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md ${previewLoading ? "opacity-60 pointer-events-none" : ""}`}
                           >
                             <div
                               className={`flex items-center gap-1 text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 transition-colors ${previewLoading ? "opacity-60 pointer-events-none" : ""}`}
@@ -864,12 +868,14 @@ export default function VideoDetail({ video }) {
                             </div>
 
                             <div className="text-sm text-left text-gray-100 relative min-w-0">
-                              <div className={`${isOpen ? '' : 'truncate'} pr-10`}>
+                              <div className={`${isOpen ? '' : 'truncate'} pr-0 md:pr-10`}>
                                 {isOpen ? (
                                   <div id={`r2-content-${keyId}`} className="markdown">
-                                    <ReactMarkdown remarkPlugins={isOldSafariIOS ? [] : [remarkGfm]}>
-                                      {it.insight || it.phase_description || window.__t('noInsight')}
-                                    </ReactMarkdown>
+                                    <MarkdownWithTables
+                                      markdown={it.insight || it.phase_description || window.__t('noInsight')}
+                                      isOldSafariIOS={isOldSafariIOS}
+                                      keyPrefix={`r2-${keyId}`}
+                                    />
                                   </div>
                                 ) : (
                                   <div className="truncate text-gray-200">
@@ -880,7 +886,7 @@ export default function VideoDetail({ video }) {
 
                               <button
                                 onClick={(e) => { e.stopPropagation(); setExpandedR2((prev) => ({ ...prev, [keyId]: !prev[keyId] })); }}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-purple-400 p-1 rounded z-10 cursor-pointer"
+                                className="absolute right-3 top-[-25px] -translate-y-1/2 text-gray-400 hover:text-purple-400 p-1 rounded z-10 cursor-pointer md:top-2.5"
                                 aria-expanded={isOpen}
                                 aria-controls={`r2-content-${keyId}`}
                                 aria-label={isOpen ? window.__t('collapse') : window.__t('expand')}
@@ -903,18 +909,20 @@ export default function VideoDetail({ video }) {
                     {videoData.report3.map((r, i) => (
                       <div
                         key={`r3-${i}`}
-                        className={`grid min-w-0 grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md
+                        className={`grid min-w-0 grid-cols-1 md:grid-cols-[100px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md
                         }`}
                       >
-                        <div className="text-sm text-gray-400 font-mono whitespace-normal break-words break-all">
+                        <p className="text-sm text-gray-400 font-mono whitespace-normal mt-0 break-words break-all md:mt-3">
                           {r.title ? r.title : <span className="text-gray-500">-</span>}
-                        </div>
+                        </p>
 
                         <div className="text-sm text-left text-gray-100">
                           <div className="markdown">
-                            <ReactMarkdown remarkPlugins={isOldSafariIOS ? [] : [remarkGfm]}>
-                              {r.content || ""}
-                            </ReactMarkdown>
+                            <MarkdownWithTables
+                              markdown={r.content || ""}
+                              isOldSafariIOS={isOldSafariIOS}
+                              keyPrefix={`r3-${i}`}
+                            />
                           </div>
                         </div>
                       </div>
@@ -931,18 +939,20 @@ export default function VideoDetail({ video }) {
               <div className="flex flex-col gap-4">
                 {chatMessages.map((item) => (
                   <div key={item.id || `${item.question}-${item.created_at || ''}`} className="flex flex-col gap-2">
-                    <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md">
+                    <div className="grid grid-cols-1 md:grid-cols-[100px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md">
                       <div className="text-xs text-gray-400 font-mono">{window.__t('userLabel')}</div>
                       <div className="min-w-0 text-sm text-gray-100 whitespace-pre-wrap break-words">{item.question}</div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md">
+                    <div className="grid grid-cols-1 md:grid-cols-[100px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md">
                       <div className="text-xs text-gray-400 font-mono">{window.__t('botLabel')}</div>
                       <div className="min-w-0 text-sm text-gray-100">
                         <div className="markdown">
-                          <ReactMarkdown remarkPlugins={isOldSafariIOS ? [] : [remarkGfm]}>
-                            {item.answer || ""}
-                          </ReactMarkdown>
+                          <MarkdownWithTables
+                            markdown={item.answer || ""}
+                            isOldSafariIOS={isOldSafariIOS}
+                            keyPrefix={`chat-${item.id || item.created_at || ""}`}
+                          />
                         </div>
                       </div>
                     </div>

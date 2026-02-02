@@ -31,8 +31,8 @@ export default function LoginModal({ open, onClose, onSwitchToRegister }) {
                 transition-transform duration-150 ease-out
                 active:scale-[0.95]
                 focus:outline-none focus-visible:outline-none
-                [@media(max-height:550px)]:top-[10px]
-                [@media(max-height:550px)]:right-[10px]
+                [@media(max-height:620px)]:top-[10px]
+                [@media(max-height:620px)]:right-[10px]
               "
             >
               <img

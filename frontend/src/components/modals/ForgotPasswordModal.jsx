@@ -42,7 +42,7 @@ export default function ForgotPasswordModal({ open, onClose }) {
               />
             </button>
 
-            <div className="p-6 w-full h-full bg-white rounded-[10px]">
+            <div className="p-6 [@media(max-height:650px)]:pt-14 w-full h-full bg-white rounded-[10px]">
               <ForgotPassword onSuccess={onClose} />
             </div>
           </DialogPanel>

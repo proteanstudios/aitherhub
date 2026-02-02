@@ -99,7 +99,6 @@ export default function MainContent({
       );
 
       setMessageType("success");
-      setMessage(`✅ ${window.__t('uploadCompleteMessage')} ${video_id}`);
       toast.success(window.__t('uploadSuccessMessage'));
       setSelectedFile(null);
 
