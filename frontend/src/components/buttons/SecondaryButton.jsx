@@ -71,7 +71,7 @@ export default function SecondaryButton({
           group-hover:bg-transparent
         `}
       >
-        <span className={`font-cabin font-semibold text-[20px] bg-gradient-to-b from-[#4500FF] to-[#9B00FF] bg-clip-text text-transparent group-hover:text-white transition-colors duration-300 ease-out ${isActive ? "text-white" : ""}`}>
+        <span className={`font-cabin font-semibold text-[20px] bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))] bg-clip-text text-transparent group-hover:text-white text-black duration-300 ease-out ${isActive ? "text-white" : ""}`}>
           {children}
         </span>
       </span>

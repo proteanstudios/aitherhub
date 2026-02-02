@@ -195,7 +195,7 @@ export default function MainContent({
                 ))}
               </h4>
               <div
-                className="w-[300px] h-[250px] mx-auto md:w-[400px] md:h-[300px] border-5 border-gray-300 rounded-[20px] flex flex-col items-center justify-center text-center gap-4 transition-colors"
+                className="w-[300px] h-[250px] mx-auto md:w-[400px] md:h-[300px] border-5 border-gray-300 rounded-[20px] flex flex-col items-center justify-center text-center gap-4"
                 onDragOver={handleDragOver}
                 onDrop={handleDrop}
               >
