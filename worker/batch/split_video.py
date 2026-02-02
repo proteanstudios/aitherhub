@@ -214,6 +214,7 @@ def cut_segment(input_path: str, out_path: str, start_sec: float, end_sec: float
         "-i", input_path,
         "-t", str(duration),
         "-c", "copy",
+        "-movflags", "+faststart",
         tmp_path,
     ]
 
@@ -225,6 +226,7 @@ def cut_segment(input_path: str, out_path: str, start_sec: float, end_sec: float
         "-ss", str(start_sec),
         "-t", str(duration),
         "-c", "copy",
+        "-movflags", "+faststart",
         tmp_path,
     ]
 
