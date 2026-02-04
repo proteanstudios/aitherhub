@@ -25,6 +25,7 @@ class GenerateUploadURLRequest(BaseModel):
 class GenerateUploadURLResponse(BaseModel):
     """Response schema for upload URL generation"""
     video_id: str
+    upload_id: str
     upload_url: str
     blob_url: str
     expires_at: datetime
@@ -33,6 +34,7 @@ class GenerateUploadURLResponse(BaseModel):
         schema_extra = {
             "example": {
                 "video_id": "550e8400-e29b-41d4-a716-446655440000",
+                "upload_id": "550e8400-e29b-41d4-a716-446655440001",
                 "upload_url": "https://tien.blob.core.windows.net/videos/user@example.com/550e8400-e29b-41d4-a716-446655440000/550e8400.mp4?se=...&sp=cw&sv=...",
                 "blob_url": "https://tien.blob.core.windows.net/videos/user@example.com/550e8400-e29b-41d4-a716-446655440000/550e8400.mp4",
                 "expires_at": "2025-12-30T10:30:00+00:00"
@@ -79,13 +81,15 @@ class UploadCompleteRequest(BaseModel):
     email: str
     video_id: str
     filename: str
+    upload_id: Optional[str] = None
 
     class Config:
         schema_extra = {
             "example": {
                 "email": "user@example.com",
                 "video_id": "550e8400-e29b-41d4-a716-446655440000",
-                "filename": "my_video.mp4"
+                "filename": "my_video.mp4",
+                "upload_id": "550e8400-e29b-41d4-a716-446655440001"
             }
         }
 

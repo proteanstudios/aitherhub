@@ -79,5 +79,11 @@
   "privacyPolicy": "プライバシーポリシー",
   "accountId": "アカウントID",
   "authTokenNotFound": "認証トークンが見つかりません。再度ログインしてください。",
-  "sessionExpired": "セッションの有効期限が切れました。再度ログインしてください。"
+  "sessionExpired": "セッションの有効期限が切れました。再度ログインしてください。",
+  "resumeUploadSelectFile": "前回のアップロードが中断されました。続行するには、同じファイルを再度選択してください。",
+  "resumeButton": "再読み込み",
+  "skipButton": "スキップ",
+  "resumeUploadDesc": "アップロードが完了していません。続行しますか？",
+  "resumeUploadTitle": "再開可能なアップロードが見つかりました",
+  "uploadResumeCleared": "アップロード再開情報を削除しました"
 }

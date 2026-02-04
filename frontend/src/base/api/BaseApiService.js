@@ -76,4 +76,9 @@ export default class BaseApiService {
     const res = await this.client.get(url, config);
     return res.data;
   }
+
+  async delete(url, config = {}) {
+    const res = await this.client.delete(url, config);
+    return res.data;
+  }
 }

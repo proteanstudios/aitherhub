@@ -25,11 +25,15 @@ export default function MainContent({
   );
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [processingResume, setProcessingResume] = useState(false);
+  const [checkingResume, setCheckingResume] = useState(false);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("");
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [resumeUploadId, setResumeUploadId] = useState(null);
   const prevIsLoggedInRef = useRef(isLoggedIn);
+  const resumeFileInputRef = useRef(null);
 
   useEffect(() => {
     console.log("[MainContent] user", user);
@@ -54,6 +58,32 @@ export default function MainContent({
     prevIsLoggedInRef.current = isLoggedIn;
   }, [isLoggedIn]);
 
+  const checkForResumableUpload = async () => {
+    if (!user?.id) return;
+    setCheckingResume(true);
+    try {
+      const result = await UploadService.checkUploadResume(user.id);
+      if (result?.upload_resume && result?.upload_id) {
+        setResumeUploadId(result.upload_id);
+      } else {
+        setResumeUploadId(null);
+      }
+    } catch (error) {
+      console.error("Failed to check upload resume:", error);
+      setResumeUploadId(null);
+    } finally {
+      setCheckingResume(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isLoggedIn && user?.id) {
+      checkForResumableUpload();
+    } else {
+      setResumeUploadId(null);
+    }
+  }, [isLoggedIn, user?.id]);
+
   const handleFileSelect = (e) => {
     if (!isLoggedIn) {
       setShowLoginModal(true);
@@ -70,8 +100,134 @@ export default function MainContent({
     }
 
     setSelectedFile(file);
+    setResumeUploadId(null);
     setMessage("");
     setProgress(0);
+  };
+
+  const handleResumeUpload = async () => {
+    if (!resumeUploadId || processingResume) return;
+    // Prevent multiple clicks while opening picker
+    setProcessingResume(true);
+    try {
+      // Trigger file input click to open file picker
+      resumeFileInputRef.current?.click();
+    } finally {
+      // keep processingResume true until user selects file; clear after small delay
+      // (the real processing state is handled in handleResumeFileSelect)
+      setTimeout(() => setProcessingResume(false), 300);
+    }
+  };
+
+  const handleSkipResume = async () => {
+    if (!resumeUploadId || !user?.id || processingResume) return;
+    setProcessingResume(true);
+    try {
+      // Clear upload record from backend
+      await UploadService.clearUserUploads(user.id);
+
+      // Clear upload metadata from IndexedDB
+      await UploadService.clearUploadMetadata(resumeUploadId);
+
+      // Clear UI state
+      setResumeUploadId(null);
+
+      toast.info(window.__t('uploadResumeCleared') || 'Upload resume cleared');
+    } catch (error) {
+      console.error('Failed to clear resume:', error);
+      // Still clear UI state even if backend call fails
+      setResumeUploadId(null);
+    } finally {
+      setProcessingResume(false);
+    }
+  };
+
+  const handleResumeFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !resumeUploadId || uploading || processingResume) return;
+
+    setProcessingResume(true);
+    setUploading(true);
+    setMessage("");
+    setProgress(0);
+
+    try {
+      // Get metadata from IndexedDB
+      const metadata = await UploadService.getUploadMetadata(resumeUploadId);
+      if (!metadata) {
+        throw new Error('Upload metadata not found. Please start a new upload.');
+      }
+
+      // Validate that the selected file is the same as the original file
+      if (file.name !== metadata.fileName) {
+        throw new Error(`選択したファイルが一致しません。再度ファイルを選択してください。`);
+      }
+
+      if (file.size !== metadata.fileSize) {
+        throw new Error(`選択したファイルが一致しません。再度ファイルを選択してください。`);
+      }
+      
+      const blockIds = metadata.blockIds || [];
+      const uploadedBlockIds = metadata.uploadedBlocks || [];
+      const maxUploadedIndex = uploadedBlockIds.length > 0 
+        ? Math.max(...uploadedBlockIds.map(id => {
+            // Decode base64 block ID to get original index
+            const decoded = atob(id);
+            return parseInt(decoded, 10);
+          }))
+        : -1;
+      const startFrom = maxUploadedIndex + 1;
+
+      // Resume upload from where it left off
+      await UploadService.uploadToAzure(
+        file,
+        metadata.uploadUrl,
+        resumeUploadId,
+        (percentage) => {
+          setProgress(percentage);
+        },
+        startFrom // Pass startFrom index to resume from
+      );
+
+      // Use the video_id from metadata (created during initial upload)
+      const video_id = metadata.videoId;
+      if (!video_id) {
+        throw new Error('Video ID not found in metadata. Please start a new upload.');
+      }
+
+      // Notify backend of completion
+      await UploadService.uploadComplete(
+        user.email,
+        video_id,
+        file.name,
+        resumeUploadId
+      );
+
+      // Clear upload metadata from IndexedDB
+      await UploadService.clearUploadMetadata(resumeUploadId);
+
+      setMessageType("success");
+      toast.success(window.__t('uploadSuccessMessage'));
+      setSelectedFile(null);
+      setResumeUploadId(null);
+
+      if (onUploadSuccess) {
+        onUploadSuccess();
+      }
+      if (onVideoSelect) {
+        onVideoSelect({ id: video_id });
+      }
+    } catch (error) {
+      const errorMsg = error?.message || window.__t('uploadFailedMessage');
+      toast.error(errorMsg);
+    } finally {
+      setUploading(false);
+      setProcessingResume(false);
+      // Reset file input
+      if (resumeFileInputRef.current) {
+        resumeFileInputRef.current.value = '';
+      }
+    }
   };
 
   const handleUpload = async () => {
@@ -84,6 +240,8 @@ export default function MainContent({
       toast.error(window.__t('selectFileFirstError'));
       return;
     }
+
+    if (uploading) return;
 
     setUploading(true);
     setMessage("");
@@ -101,6 +259,7 @@ export default function MainContent({
       setMessageType("success");
       toast.success(window.__t('uploadSuccessMessage'));
       setSelectedFile(null);
+      setResumeUploadId(null);
 
       // Navigate to video detail after successful upload
       if (onUploadSuccess) {
@@ -230,6 +389,7 @@ export default function MainContent({
                     <div className="flex gap-2">
                       <button
                         onClick={handleUpload}
+                        disabled={uploading}
                         className="w-[143px] h-[41px] flex items-center justify-center bg-white text-[#7D01FF] border border-[#7D01FF] rounded-[30px] leading-[28px] font-semibold"
                       >
                         {window.__t('uploadButton')}
@@ -239,6 +399,34 @@ export default function MainContent({
                         className="w-[143px] h-[41px] bg-gray-300 text-gray-700 rounded-[30px] text-sm"
                       >
                         {window.__t('cancelButton')}
+                      </button>
+                    </div>
+                  </>
+                ) : resumeUploadId ? (
+                  <>
+                    <div className="text-4xl">⏸️</div>
+                    <div>
+                      <p className="text-sm font-semibold">
+                        {window.__t('resumeUploadTitle') || 'Resumable Upload Found'}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {window.__t('resumeUploadDesc') || 'You have an incomplete upload. Continue uploading?'}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleResumeUpload}
+                        disabled={uploading || processingResume}
+                        className="w-[143px] h-[41px] flex items-center justify-center bg-white text-[#7D01FF] border border-[#7D01FF] rounded-[30px] leading-[28px] font-semibold"
+                      >
+                        {window.__t('resumeButton') || 'Resume'}
+                      </button>
+                      <button
+                        onClick={handleSkipResume}
+                        disabled={uploading || processingResume}
+                        className="w-[143px] h-[41px] bg-gray-300 text-gray-700 rounded-[30px] text-sm"
+                      >
+                        {window.__t('skipButton') || 'Skip'}
                       </button>
                     </div>
                   </>
@@ -267,9 +455,9 @@ export default function MainContent({
                         select-none
                       "
                       onMouseDown={(e) => {
-                        if (!isLoggedIn) {
+                        if (!isLoggedIn || checkingResume) {
                           e.preventDefault();
-                          setShowLoginModal(true);
+                          if (!isLoggedIn) setShowLoginModal(true);
                         }
                       }}
                     >
@@ -277,14 +465,14 @@ export default function MainContent({
                       <input
                         type="file"
                         accept="video/*"
-                        disabled={!isLoggedIn}
+                        disabled={!isLoggedIn || checkingResume}
                         onMouseDown={(e) => {
-                          if (!isLoggedIn) {
+                          if (!isLoggedIn || checkingResume) {
                             e.preventDefault();
                           }
                         }}
                         onClick={(e) => {
-                          if (!isLoggedIn) {
+                          if (!isLoggedIn || checkingResume) {
                             e.preventDefault();
                           }
                         }}
@@ -308,6 +496,14 @@ export default function MainContent({
             </div>
           </>
         )}
+        {/* Hidden file input for resume functionality */}
+        <input
+          ref={resumeFileInputRef}
+          type="file"
+          accept="video/*"
+          onChange={handleResumeFileSelect}
+          className="hidden"
+        />
       </Body>
 
       <div className={children ? "md:hidden" : ""}>
