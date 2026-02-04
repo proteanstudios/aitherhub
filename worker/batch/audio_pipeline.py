@@ -19,7 +19,7 @@ AUDIO_OUT_ROOT = "audio"
 AUDIO_TEXT_ROOT = "audio_text"
 
 FFMPEG_BIN = env("FFMPEG_PATH", "ffmpeg")
-CHUNK_SECONDS = 900
+CHUNK_SECONDS = 600
 
 WHISPER_ENDPOINT = env("WHISPER_ENDPOINT")
 AZURE_KEY = env("AZURE_OPENAI_KEY")
@@ -32,33 +32,61 @@ SLEEP_BETWEEN_REQUESTS = 2
 # STEP 3.1 – EXTRACT AUDIO
 # =========================
 
+# def extract_audio_chunks(video_path: str, out_dir: str) -> str:
+#     """
+#     Extract audio chunks into out_dir.
+#     out_dir should be: Z:\\work\\<video_id>\\audio
+#     """
+#     os.makedirs(out_dir, exist_ok=True)
+
+#     chunk_pattern = os.path.join(out_dir, "chunk_%03d.mp3")
+
+#     subprocess.run(
+#         [
+#             FFMPEG_BIN, "-y",
+#             "-i", video_path,
+#             "-vn",
+#             "-f", "segment",
+#             "-segment_time", str(CHUNK_SECONDS),
+#             "-reset_timestamps", "1",
+#             "-ac", "1",
+#             "-ar", "16000",
+#             "-ab", "64k",
+#             "-codec:a", "libmp3lame",
+#             chunk_pattern
+#         ],
+#         stdout=subprocess.DEVNULL,
+#         stderr=subprocess.DEVNULL
+#     )
+
+
+#     return out_dir
+
 def extract_audio_chunks(video_path: str, out_dir: str) -> str:
     """
     Extract audio chunks into out_dir.
-    out_dir should be: Z:\\work\\<video_id>\\audio
+    WAV, mono, 16kHz – safe for Whisper
     """
     os.makedirs(out_dir, exist_ok=True)
 
-    chunk_pattern = os.path.join(out_dir, "chunk_%03d.mp3")
+    chunk_pattern = os.path.join(out_dir, "chunk_%03d.wav")
 
     subprocess.run(
         [
             FFMPEG_BIN, "-y",
             "-i", video_path,
+            "-map", "0:a:0",          # <<< QUAN TRỌNG: chọn audio stream đầu
             "-vn",
             "-f", "segment",
             "-segment_time", str(CHUNK_SECONDS),
             "-reset_timestamps", "1",
             "-ac", "1",
             "-ar", "16000",
-            "-ab", "64k",
-            "-codec:a", "libmp3lame",
             chunk_pattern
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
-
 
     return out_dir
 
@@ -75,12 +103,12 @@ def transcribe_audio_chunks(audio_dir: str, text_dir: str):
 
     files = sorted([
         f for f in os.listdir(audio_dir)
-        if f.startswith("chunk_") and f.endswith(".mp3")
+        if f.startswith("chunk_") and f.endswith(".wav")
     ])
 
     for f in files:
         audio_path = os.path.join(audio_dir, f)
-        txt_path = os.path.join(text_dir, f.replace(".mp3", ".txt"))
+        txt_path = os.path.join(text_dir, f.replace(".wav", ".txt"))
 
         print(f"[AZURE Whisper] {audio_path}")
 
@@ -99,7 +127,7 @@ def transcribe_audio_chunks(audio_dir: str, text_dir: str):
                     headers={"api-key": AZURE_KEY},
 
                     files={
-                        "file": (f, audio_data, "audio/mpeg"),
+                        "file": (f, audio_data, "audio/wav"),
                         "response_format": (None, "verbose_json"),
                         "timestamp_granularities[]": (None, "word"),
                         "timestamp_granularities[]": (None, "segment"),
