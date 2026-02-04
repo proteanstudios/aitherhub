@@ -419,6 +419,7 @@ export default function VideoDetail({ video }) {
             time_start: it.time_start,
             time_end: it.time_end,
             insight: it.insight ?? it.phase_description ?? "",
+            video_clip_url: it.video_clip_url, // Include video_clip_url for preview
           }));
         }
         setVideoData({
@@ -609,6 +610,7 @@ export default function VideoDetail({ video }) {
               time_start: it.time_start,
               time_end: it.time_end,
               insight: it.insight ?? it.phase_description ?? "",
+              video_clip_url: it.video_clip_url, // Include video_clip_url for preview
             }));
           }
           setVideoData({
