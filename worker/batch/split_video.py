@@ -12,6 +12,8 @@ from typing import Optional
 import logging
 import os
 import subprocess
+import shutil
+from datetime import datetime
 from urllib.parse import urlparse, unquote
 from dotenv import load_dotenv
 
@@ -22,12 +24,27 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# (No local log files) rely on central logger instead
+
 # Output directory for split video segments (local temp)
 SPLIT_VIDEO_DIR = os.path.join(os.path.dirname(__file__), "splitvideo")
 
 # Azure Storage config
 AZURE_STORAGE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 AZURE_BLOB_CONTAINER = os.getenv("AZURE_BLOB_CONTAINER", "videos")
+SAS_EXP_MINUTES = int(os.getenv("AZURE_BLOB_SAS_EXP_MINUTES", "60"))
+
+
+def _parse_account_from_conn_str(conn_str: str) -> dict:
+    """Extract AccountName and AccountKey from connection string."""
+    parts = conn_str.split(";")
+    out = {"AccountName": None, "AccountKey": None}
+    for p in parts:
+        if p.startswith("AccountName="):
+            out["AccountName"] = p.split("=", 1)[1]
+        if p.startswith("AccountKey="):
+            out["AccountKey"] = p.split("=", 1)[1]
+    return out
 
 
 def parse_blob_url(blob_url: str) -> dict:
@@ -84,6 +101,70 @@ def upload_to_blob(local_path: str, blob_name: str) -> str | None:
         logger.error("AZURE_STORAGE_CONNECTION_STRING not set")
         return None
 
+    # Try azcopy first for faster upload if available
+    try:
+        conn = _parse_account_from_conn_str(AZURE_STORAGE_CONNECTION_STRING)
+        account_name = conn.get("AccountName")
+        account_key = conn.get("AccountKey")
+
+        if account_name and account_key:
+            try:
+                # generate a short-lived blob SAS for destination
+                from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+                from datetime import datetime, timedelta
+
+                expiry = datetime.utcnow() + timedelta(minutes=SAS_EXP_MINUTES)
+                sas = generate_blob_sas(
+                    account_name=account_name,
+                    container_name=AZURE_BLOB_CONTAINER,
+                    blob_name=blob_name,
+                    account_key=account_key,
+                    permission=BlobSasPermissions(read=True, write=True, create=True),
+                    expiry=expiry,
+                )
+
+                dest_url = f"https://{account_name}.blob.core.windows.net/{AZURE_BLOB_CONTAINER}/{blob_name}?{sas}"
+
+                # Detect azcopy binary (allow override via AZCOPY_PATH)
+                azcopy_path = os.getenv("AZCOPY_PATH") or shutil.which("azcopy") or "/usr/local/bin/azcopy"
+                logger.info("Uploading with azcopy to %s (binary=%s)", dest_url, azcopy_path)
+
+                try:
+                    proc = subprocess.run(
+                        [azcopy_path, "copy", local_path, dest_url, "--overwrite=true"],
+                        capture_output=True,
+                        text=True,
+                        timeout=60*60
+                    )
+
+                    # Log azcopy output (no local files)
+                    logger.debug("azcopy stdout: %s", proc.stdout)
+                    logger.debug("azcopy stderr: %s", proc.stderr)
+                    if proc.returncode == 0:
+                        logger.info("AzCopy upload succeeded: %s", blob_name)
+                        return dest_url.split("?", 1)[0]
+                    else:
+                        logger.warning("AzCopy failed (rc=%s) for %s", proc.returncode, blob_name)
+                        # fall through to SDK fallback
+                except FileNotFoundError:
+                    logger.info("azcopy not found at %s, falling back to SDK upload", azcopy_path)
+                except subprocess.TimeoutExpired as e:
+                    logger.warning("azcopy timeout after %s seconds for %s", 60*60, blob_name)
+                    # attempt to write partial output if available
+                    logger.warning("azcopy timeout for %s: %s", blob_name, repr(e))
+                except Exception as e:
+                    logger.warning("azcopy upload attempt failed: %s, falling back to SDK", e)
+            except FileNotFoundError:
+                logger.info("azcopy not found, falling back to SDK upload")
+            except subprocess.CalledProcessError as e:
+                logger.warning("azcopy failed: %s, falling back to SDK", getattr(e, 'stderr', e))
+            except Exception as e:
+                logger.warning("azcopy upload attempt failed: %s, falling back to SDK", e)
+
+    except Exception:
+        logger.debug("Failed to attempt azcopy path, will use SDK upload")
+
+    # Fallback: SDK upload (same as previous behavior)
     try:
         from azure.storage.blob import BlobServiceClient, ContentSettings
 
@@ -97,10 +178,10 @@ def upload_to_blob(local_path: str, blob_name: str) -> str | None:
                 content_settings=ContentSettings(content_type="video/mp4")
             )
 
-        logger.info("Uploaded blob: %s", blob_name)
+        logger.info("Uploaded blob (SDK): %s", blob_name)
         return blob_client.url
     except Exception as e:
-        logger.error("Upload failed: %s", e)
+        logger.error("Upload failed (SDK): %s", e)
         return None
 
 
@@ -123,32 +204,57 @@ def cut_segment(input_path: str, out_path: str, start_sec: float, end_sec: float
         logger.warning("Invalid duration: start=%s end=%s", start_sec, end_sec)
         return False
 
-    tmp_path = out_path + ".tmp"
+    tmp_path = out_path + ".tmp.mp4"
 
-    cmd = [
+    # Try fast stream-copy (-ss before -i)
+    fast_cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss", str(start_sec),
+        "-i", input_path,
+        "-t", str(duration),
+        "-c", "copy",
+        "-movflags", "+faststart",
+        tmp_path,
+    ]
+
+    # Fallback: place -ss after -i (slower but sometimes more compatible)
+    slow_cmd = [
         "ffmpeg",
         "-y",
         "-i", input_path,
         "-ss", str(start_sec),
         "-t", str(duration),
-        "-vf", "scale=-2:360",
-        "-c:v", "libx264",
-        "-crf", str(crf),
-        "-preset", preset,
-        "-c:a", "aac",
-        "-b:a", "128k",
-        "-f", "mp4",
+        "-c", "copy",
+        "-movflags", "+faststart",
         tmp_path,
     ]
 
+    # No per-invocation ffmpeg log files; rely on logger
+
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        proc = subprocess.run(fast_cmd, check=True, capture_output=True, text=True)
         os.replace(tmp_path, out_path)
         return True
+    except FileNotFoundError:
+        logger.exception("ffmpeg not found when running: %s", ' '.join(fast_cmd))
+        return False
     except subprocess.CalledProcessError as e:
-        logger.error("ffmpeg failed: %s\nstderr: %s", e, e.stderr)
+        logger.debug("ffmpeg fast copy stdout: %s", getattr(e, 'stdout', ''))
+        logger.debug("ffmpeg fast copy stderr: %s", getattr(e, 'stderr', ''))
+
+    try:
+        proc2 = subprocess.run(slow_cmd, check=True, capture_output=True, text=True)
+        os.replace(tmp_path, out_path)
+        return True
+    except subprocess.CalledProcessError as e2:
+        logger.debug("ffmpeg slow copy stdout: %s", getattr(e2, 'stdout', ''))
+        logger.debug("ffmpeg slow copy stderr: %s", getattr(e2, 'stderr', ''))
         if os.path.exists(tmp_path):
-            os.remove(tmp_path)
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
         return False
 
 

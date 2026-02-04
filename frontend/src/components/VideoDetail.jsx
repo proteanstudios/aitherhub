@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import MarkdownWithTables from "./markdown/MarkdownWithTables";
 import ChatInput from "./ChatInput";
 import VideoPreviewModal from "./modals/VideoPreviewModal";
 import VideoService from "../base/services/videoService";
@@ -90,6 +90,7 @@ export default function VideoDetail({ video }) {
   const [processingStatus, setProcessingStatus] = useState(null);
   const [previewData, setPreviewData] = useState(null); // { url, timeStart, timeEnd }
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [expandedR2, setExpandedR2] = useState({});
   const answerRef = useRef("");
   const streamCancelRef = useRef(null);
   const lastSentRef = useRef({ text: null, t: 0 });
@@ -141,6 +142,28 @@ export default function VideoDetail({ video }) {
       }
     }
   };
+
+  // Detect old Safari iOS (<=16) - remark-gfm table parsing can crash/blank-screen on these versions.
+  const isOldSafariIOS = (() => {
+    if (typeof window === "undefined") return false;
+    const ua = navigator.userAgent;
+    // Check if it's Safari (not Chrome, not Android)
+    const isSafariBrowser = /^((?!chrome|android).)*safari/i.test(ua);
+    if (!isSafariBrowser) return false;
+
+    // Extract iOS version from user agent
+    // iOS Safari UA contains "Version/X.Y.Z" or "OS X_Y" patterns
+    const iosVersionMatch = ua.match(/OS (\d+)_/);
+    if (iosVersionMatch) {
+      const majorVersion = parseInt(iosVersionMatch[1], 10);
+      // Safari iOS 16 and below have issues with remark-gfm in some table-heavy/inline-table content.
+      return majorVersion <= 16;
+    }
+
+    return false;
+  })();
+
+  // Markdown table rendering is handled by <MarkdownWithTables /> to keep this file lighter.
 
   const formatTime = (seconds) => {
     if (seconds == null || isNaN(seconds)) return "";
@@ -236,16 +259,21 @@ export default function VideoDetail({ video }) {
     const statusMap = {
       NEW: 0,
       uploaded: 0,
-      STEP_0_EXTRACT_FRAMES: 10,
-      STEP_1_DETECT_PHASES: 20,
-      STEP_2_EXTRACT_METRICS: 30,
-      STEP_3_TRANSCRIBE_AUDIO: 40,
-      STEP_4_IMAGE_CAPTION: 50,
-      STEP_5_BUILD_PHASE_UNITS: 60,
-      STEP_6_BUILD_PHASE_DESCRIPTION: 70,
-      STEP_7_GROUPING: 80,
-      STEP_8_UPDATE_BEST_PHASE: 90,
-      STEP_9_BUILD_REPORTS: 95,
+      STEP_0_EXTRACT_FRAMES: 5,
+      STEP_1_DETECT_PHASES: 10,
+      STEP_2_EXTRACT_METRICS: 20,
+      STEP_3_TRANSCRIBE_AUDIO: 30,
+      STEP_4_IMAGE_CAPTION: 40,
+      STEP_5_BUILD_PHASE_UNITS: 50,
+      STEP_6_BUILD_PHASE_DESCRIPTION: 60,
+      STEP_7_GROUPING: 65,
+      STEP_8_UPDATE_BEST_PHASE: 70,
+      STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES: 75,
+      STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP: 80,
+      STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS: 85,
+      STEP_12_UPDATE_VIDEO_STRUCTURE_BEST: 90,
+      STEP_13_BUILD_REPORTS: 95,
+      STEP_14_SPLIT_VIDEO: 98,
       DONE: 100,
       ERROR: -1,
     };
@@ -266,7 +294,12 @@ export default function VideoDetail({ video }) {
       STEP_6_BUILD_PHASE_DESCRIPTION: window.__t('statusStep6'),
       STEP_7_GROUPING: window.__t('statusStep7'),
       STEP_8_UPDATE_BEST_PHASE: window.__t('statusStep8'),
-      STEP_9_BUILD_REPORTS: window.__t('statusStep9'),
+      STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES: window.__t('statusStep9'),
+      STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP: window.__t('statusStep10'),
+      STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS: window.__t('statusStep11'),
+      STEP_12_UPDATE_VIDEO_STRUCTURE_BEST: window.__t('statusStep12'),
+      STEP_13_BUILD_REPORTS: window.__t('statusStep13'),
+      STEP_14_SPLIT_VIDEO: window.__t('statusStep14'),
       DONE: window.__t('statusDone'),
       ERROR: window.__t('statusError'),
     };
@@ -386,6 +419,7 @@ export default function VideoDetail({ video }) {
             time_start: it.time_start,
             time_end: it.time_end,
             insight: it.insight ?? it.phase_description ?? "",
+            video_clip_url: it.video_clip_url, // Include video_clip_url for preview
           }));
         }
         setVideoData({
@@ -398,6 +432,31 @@ export default function VideoDetail({ video }) {
           report3: Array.isArray(data.report3) ? data.report3 : (data.report3 ? [data.report3] : []),
         });
 
+        // initialize collapsed state for report2 (closed by default)
+        try {
+          const map = {};
+          const list = Array.isArray(r2) ? r2 : [];
+          list.forEach((it, i) => {
+            const key = it.phase_index ?? i;
+            map[key] = false;
+          });
+          setExpandedR2(map);
+        } catch (e) {
+          setExpandedR2({});
+        }
+
+        // initialize collapsed state for report2 (closed by default)
+        try {
+          const map = {};
+          const list = Array.isArray(r2) ? r2 : [];
+          list.forEach((it, i) => {
+            const key = it.phase_index ?? i;
+            map[key] = false;
+          });
+          setExpandedR2(map);
+        } catch (e) {
+          setExpandedR2({});
+        }
         // Set initial processing status if not done
         if (data.status && data.status !== 'DONE' && data.status !== 'ERROR') {
           setProcessingStatus({
@@ -457,8 +516,9 @@ export default function VideoDetail({ video }) {
     lastSentRef.current = { text: null, t: 0 };
     lastStatusChangeRef.current = Date.now();
 
-    // Reset smooth progress when video changes
+    // Reset smooth progress and processing status when video changes
     setSmoothProgress(0);
+    setProcessingStatus(null); // Clear progress bar when switching videos
     if (progressIntervalRef.current) {
       clearInterval(progressIntervalRef.current);
       progressIntervalRef.current = null;
@@ -550,6 +610,7 @@ export default function VideoDetail({ video }) {
               time_start: it.time_start,
               time_end: it.time_end,
               insight: it.insight ?? it.phase_description ?? "",
+              video_clip_url: it.video_clip_url, // Include video_clip_url for preview
             }));
           }
           setVideoData({
@@ -586,6 +647,19 @@ export default function VideoDetail({ video }) {
       }
     };
   }, [video?.id, videoData?.status]);
+
+  // console.log(normalizeMarkdownTable(chatMessages[7].answer || ""));
+
+  // Clear progress bar if video is already DONE or ERROR (handles race conditions)
+  useEffect(() => {
+    if (videoData?.status === 'DONE' || videoData?.status === 'ERROR') {
+      setProcessingStatus(null);
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+    }
+  }, [videoData?.status]);
 
   // Render processing status UI
   const renderProcessingStatus = () => {
@@ -666,17 +740,17 @@ export default function VideoDetail({ video }) {
         ))}
       </h4>
       {/* Video Header */}
-      <div className="flex flex-col lg:ml-[65px] h-full">
+      <div className="flex flex-col overflow-hidden md:overflow-auto lg:ml-[65px] h-full">
         <div className="flex flex-col gap-2">
           <div className="inline-flex self-start items-center bg-white rounded-[50px] h-[41px] px-4">
-            <div className="text-[14px] font-bold whitespace-nowrap bg-gradient-to-b from-[#542EBB] to-[#BA69EE] bg-clip-text text-transparent">
+            <div className="text-[14px] font-bold whitespace-nowrap bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))] text-transparent bg-clip-text">
               {videoData?.title || video.original_filename}
             </div>
           </div>
         </div>
 
         {/* SCROLL AREA */}
-        <div className="mb-[115px] flex-1 overflow-y-auto scrollbar-custom text-left md:mb-0">
+        <div className="flex-1 overflow-y-auto scrollbar-custom text-left md:mb-0">
           {/* Show processing status when video is being processed */}
           {renderProcessingStatus()}
 
@@ -707,7 +781,7 @@ export default function VideoDetail({ video }) {
                     `}
                   >
                     <div
-                      className={`flex items-center gap-1 text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 transition-colors ${previewLoading ? "opacity-60 pointer-events-none" : ""
+                      className={`flex items-center gap-1 text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 ${previewLoading ? "opacity-60 pointer-events-none" : ""
                         }`}
                       onClick={() => handlePhasePreview(it)}
                       title={window.__t('clickToPreview')}
@@ -741,9 +815,11 @@ export default function VideoDetail({ video }) {
 
                     <div className="text-sm text-left text-gray-100">
                       <div className="markdown">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {it.phase_description || window.__t('noDescription')}
-                        </ReactMarkdown>
+                        <MarkdownWithTables
+                          markdown={it.phase_description || window.__t('noDescription')}
+                          isOldSafariIOS={isOldSafariIOS}
+                          keyPrefix={`r1-${it.phase_index ?? index}`}
+                        />
                       </div>
                     </div>
                   </div>
@@ -754,53 +830,81 @@ export default function VideoDetail({ video }) {
                   <div className="mt-2">
                     <div className="text-lg font-semibold mb-2">{window.__t('report2Title') || 'Report 2'}</div>
                     <div className="flex flex-col gap-3">
-                      {(videoData.reports_2 || videoData.reports_1).map((it, idx) => (
-                        <div
-                          key={`r2-${it.phase_index ?? idx}`}
-                          className={`grid grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md""}
-                        `}
-                        >
+                      {(videoData.reports_2 || videoData.reports_1).map((it, idx) => {
+                        const keyId = it.phase_index ?? idx;
+                        const isOpen = !!expandedR2[keyId];
+                        return (
                           <div
-                            className={`flex items-center gap-1 text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 transition-colors ${previewLoading ? "opacity-60 pointer-events-none" : ""
-                              }`}
-                            onClick={() => handlePhasePreview(it)}
-                            title={window.__t('clickToPreview')}
+                            key={`r2-${keyId}`}
+                            className={`grid grid-cols-1 md:grid-cols-[150px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md ${previewLoading ? "opacity-60 pointer-events-none" : ""}`}
                           >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              strokeWidth="1.5"
-                              stroke="currentColor"
-                              className="size-6 mt-[-2px]"
+                            <div
+                              className={`flex items-center gap-1 text-sm text-gray-400 font-mono whitespace-nowrap w-fit cursor-pointer hover:text-purple-400 transition-colors ${previewLoading ? "opacity-60 pointer-events-none" : ""}`}
+                              onClick={() => handlePhasePreview(it)}
+                              title={window.__t('clickToPreview')}
                             >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z"
-                              />
-                            </svg>
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                strokeWidth="1.5"
+                                stroke="currentColor"
+                                className="size-6 mt-[-2px]"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z"
+                                />
+                              </svg>
 
-                            {it.time_start != null || it.time_end != null ? (
-                              <>
-                                {formatTime(it.time_start)}
-                                {" – "}
-                                {formatTime(it.time_end)}
-                              </>
-                            ) : (
-                              <span className="text-gray-500">-</span>
-                            )}
-                          </div>
+                              {it.time_start != null || it.time_end != null ? (
+                                <>
+                                  {formatTime(it.time_start)}
+                                  {" – "}
+                                  {formatTime(it.time_end)}
+                                </>
+                              ) : (
+                                <span className="text-gray-500">-</span>
+                              )}
+                            </div>
 
-                          <div className="text-sm text-left text-gray-100">
-                            <div className="markdown">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                {it.insight || window.__t('noInsight')}
-                              </ReactMarkdown>
+                            <div className="text-sm text-left text-gray-100 relative min-w-0">
+                              <div className={`${isOpen ? '' : 'truncate'} pr-0 md:pr-10`}>
+                                {isOpen ? (
+                                  <div id={`r2-content-${keyId}`} className="markdown">
+                                    <MarkdownWithTables
+                                      markdown={it.insight || it.phase_description || window.__t('noInsight')}
+                                      isOldSafariIOS={isOldSafariIOS}
+                                      keyPrefix={`r2-${keyId}`}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="truncate text-gray-200">
+                                    <MarkdownWithTables
+                                      markdown={(it.insight || it.phase_description || '').split('\n')[0] || <span className="text-gray-500">-</span>}
+                                      isOldSafariIOS={isOldSafariIOS}
+                                      keyPrefix={`r2-${keyId}`}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setExpandedR2((prev) => ({ ...prev, [keyId]: !prev[keyId] })); }}
+                                className="absolute right-3 top-[-25px] -translate-y-1/2 text-gray-400 hover:text-purple-400 p-1 rounded z-10 cursor-pointer md:top-2.5"
+                                aria-expanded={isOpen}
+                                aria-controls={`r2-content-${keyId}`}
+                                aria-label={isOpen ? window.__t('collapse') : window.__t('expand')}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className={`w-5 h-5 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </button>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -811,18 +915,20 @@ export default function VideoDetail({ video }) {
                     {videoData.report3.map((r, i) => (
                       <div
                         key={`r3-${i}`}
-                        className={`grid min-w-0 grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md
+                        className={`grid min-w-0 grid-cols-1 md:grid-cols-[100px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md
                         }`}
                       >
-                        <div className="text-sm text-gray-400 font-mono whitespace-normal break-words break-all">
+                        <p className="text-sm text-gray-400 font-mono whitespace-normal mt-0 break-words break-all md:mt-3">
                           {r.title ? r.title : <span className="text-gray-500">-</span>}
-                        </div>
+                        </p>
 
                         <div className="text-sm text-left text-gray-100">
                           <div className="markdown">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {r.content || ""}
-                            </ReactMarkdown>
+                            <MarkdownWithTables
+                              markdown={r.content || ""}
+                              isOldSafariIOS={isOldSafariIOS}
+                              keyPrefix={`r3-${i}`}
+                            />
                           </div>
                         </div>
                       </div>
@@ -839,18 +945,20 @@ export default function VideoDetail({ video }) {
               <div className="flex flex-col gap-4">
                 {chatMessages.map((item) => (
                   <div key={item.id || `${item.question}-${item.created_at || ''}`} className="flex flex-col gap-2">
-                    <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md">
+                    <div className="grid grid-cols-1 md:grid-cols-[100px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md">
                       <div className="text-xs text-gray-400 font-mono">{window.__t('userLabel')}</div>
                       <div className="min-w-0 text-sm text-gray-100 whitespace-pre-wrap break-words">{item.question}</div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md">
+                    <div className="grid grid-cols-1 md:grid-cols-[100px_1fr] gap-3 items-start p-3 bg-white/5 rounded-md">
                       <div className="text-xs text-gray-400 font-mono">{window.__t('botLabel')}</div>
                       <div className="min-w-0 text-sm text-gray-100">
                         <div className="markdown">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {item.answer || ""}
-                          </ReactMarkdown>
+                          <MarkdownWithTables
+                            markdown={item.answer || ""}
+                            isOldSafariIOS={isOldSafariIOS}
+                            keyPrefix={`chat-${item.id || item.created_at || ""}`}
+                          />
                         </div>
                       </div>
                     </div>

@@ -1,8 +1,9 @@
 # app/models/orm/upload.py
 from datetime import datetime
-from sqlalchemy import Integer
-
-from sqlalchemy import ForeignKey, DateTime
+import uuid
+from sqlalchemy import Integer, Text, ForeignKey
+from sqlalchemy import DateTime as SADateTime
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.orm.base import Base, UUIDMixin
@@ -11,15 +12,9 @@ from app.models.orm.base import Base, UUIDMixin
 class Upload(Base, UUIDMixin):
     __tablename__ = "uploads"
 
-    video_id: Mapped[str] = mapped_column(ForeignKey("videos.id"))
+    # Optional association to a user who initiated the upload
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
-    total_chunks: Mapped[int] = mapped_column(Integer)
-    uploaded_chunks: Mapped[int] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column()
+    # Upload URL for resumable upload
+    upload_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True
-    )

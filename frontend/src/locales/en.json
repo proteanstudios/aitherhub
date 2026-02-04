@@ -21,7 +21,12 @@
   "statusStep6": "Generating phase descriptions...",
   "statusStep7": "Grouping...",
   "statusStep8": "Updating best phase...",
-  "statusStep9": "Building reports...",
+  "statusStep9": "Building video structure features...",
+  "statusStep10": "Assigning video structure group...",
+  "statusStep11": "Updating video structure group stats...",
+  "statusStep12": "Updating video structure best...",
+  "statusStep13": "Building reports...",
+  "statusStep14": "Splitting video...",
   "statusDone": "Analysis completed",
   "statusError": "An error occurred",
   "statusProcessing": "Processing...",
@@ -72,5 +77,7 @@
   "reenterNewPassword": "Re-enter new password",
   "processing": "Processing...",
   "privacyPolicy": "Privacy Policy",
-  "accountId": "Account ID"
+  "accountId": "Account ID",
+  "authTokenNotFound": "Authentication token not found. Please log in again.",
+  "sessionExpired": "Your session has expired. Please log in again."
 }

@@ -6,7 +6,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import text, select
 from loguru import logger
 
 from app.schema.video_schema import (
@@ -22,6 +22,8 @@ from app.services.video_service import VideoService
 from app.repository.video_repository import VideoRepository
 from app.core.dependencies import get_db, get_current_user
 from app.utils.video_progress import calculate_progress, get_status_message
+from app.core.container import Container
+from app.models.orm.upload import Upload
 
 router = APIRouter(
     prefix="/videos",
@@ -33,10 +35,14 @@ video_service = VideoService()
 
 
 @router.post("/generate-upload-url", response_model=GenerateUploadURLResponse)
-async def generate_upload_url(payload: GenerateUploadURLRequest):
+async def generate_upload_url(
+    payload: GenerateUploadURLRequest,
+    db: AsyncSession = Depends(get_db),
+):
     try:
         result = await video_service.generate_upload_url(
             email=payload.email,
+            db=db,
             video_id=payload.video_id,
             filename=payload.filename,
         )
@@ -80,12 +86,77 @@ async def upload_complete(
             email=payload.email,
             video_id=payload.video_id,
             original_filename=payload.filename,
+            db=db,
+            upload_id=payload.upload_id,
         )
         return UploadCompleteResponse(**result)
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to complete upload: {exc}")
+
+
+@router.get("/uploads/check/{user_id}")
+async def check_upload_resume(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """Check if user has an in-progress upload to resume."""
+    try:
+        if current_user and current_user.get("id") != user_id:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+        result = await db.execute(
+            select(Upload)
+            .where(Upload.user_id == user_id)
+            .order_by(Upload.id.desc())
+            .limit(1)
+        )
+        upload = result.scalar_one_or_none()
+
+        if upload:
+            return {"upload_resume": True, "upload_id": str(upload.id)}
+        return {"upload_resume": False}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to check upload resume: {exc}")
+
+
+@router.delete("/uploads/clear/{user_id}")
+async def clear_user_uploads(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """Clear all in-progress uploads for a user."""
+    try:
+        if current_user and current_user.get("id") != user_id:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+        # Delete all upload records for this user
+        result = await db.execute(
+            select(Upload).where(Upload.user_id == user_id)
+        )
+        uploads = result.scalars().all()
+        deleted_count = len(uploads)
+
+        for upload in uploads:
+            await db.delete(upload)
+
+        await db.commit()
+
+        return {
+            "status": "success",
+            "message": f"Deleted {deleted_count} upload record(s) for user {user_id}",
+            "deleted_count": deleted_count,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to clear uploads: {exc}")
 
 
 

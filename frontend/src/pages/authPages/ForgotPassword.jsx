@@ -24,7 +24,8 @@ export default function ForgotPassword({ onSuccess }) {
     };
 
     const validateEmail = (email) => {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        // Regex handles: no whitespace, no multiple @, no period immediately after @
+        const emailRegex = /^[^\s@]+@[^.]+(\.[^\s@]+)+$/;
         return emailRegex.test(email);
     };
     
@@ -71,10 +72,16 @@ export default function ForgotPassword({ onSuccess }) {
         } catch (err) {
             // Only enable button again on failure
             setIsLoading(false);
-            
-            const detail = err?.response?.data?.detail || err?.message || "";
-            const errorMessage = mapServerErrorToJapanese(detail, 'changePassword');
 
+            // Handle error detail - it can be a string or an array from FastAPI
+            let detail = err?.response?.data?.detail || err?.message || "";
+
+            // If detail is an array (FastAPI validation error), extract the message
+            if (Array.isArray(detail) && detail.length > 0) {
+                detail = detail[0]?.msg || detail[0]?.message || JSON.stringify(detail);
+            }
+
+            const errorMessage = mapServerErrorToJapanese(detail, 'changePassword');
             setErrors({ currentPassword: errorMessage });
             toast.error(errorMessage);
         }
@@ -89,7 +96,7 @@ export default function ForgotPassword({ onSuccess }) {
 
     return (
         <form onSubmit={handleSubmit} className="flex flex-col items-center justify-center space-y-6">
-            <h2 className="hidden md:block pt-[50px] pb-[20px] font-cabin font-medium text-[25px] leading-[30px] h-[30px] text-center flex items-center justify-center text-black">
+            <h2 className="hidden md:block pt-[25px] pb-[20px] font-cabin font-medium text-[25px] leading-[30px] h-[30px] text-center flex items-center justify-center text-black md:pt-[50px]">
 {window.__t('changePasswordTitle')}
             </h2>
 

@@ -21,7 +21,12 @@
   "statusStep6": "フェーズ説明生成中...",
   "statusStep7": "グルーピング中...",
   "statusStep8": "ベストフェーズ更新中...",
-  "statusStep9": "レポート生成中...",
+  "statusStep9": "ビデオ構造特徴構築中...",
+  "statusStep10": "ビデオ構造グループ割り当て中...",
+  "statusStep11": "ビデオ構造グループ統計更新中...",
+  "statusStep12": "ビデオ構造ベスト更新中...",
+  "statusStep13": "レポート生成中...",
+  "statusStep14": "ビデオ分割中...",
   "statusDone": "解析完了",
   "statusError": "エラーが発生しました",
   "statusProcessing": "処理中...",
@@ -72,5 +77,13 @@
   "reenterNewPassword": "新しいパスワードを再入力",
   "processing": "処理中...",
   "privacyPolicy": "プライバシーポリシー",
-  "accountId": "アカウントID"
+  "accountId": "アカウントID",
+  "authTokenNotFound": "認証トークンが見つかりません。再度ログインしてください。",
+  "sessionExpired": "セッションの有効期限が切れました。再度ログインしてください。",
+  "resumeUploadSelectFile": "前回のアップロードが中断されました。続行するには、同じファイルを再度選択してください。",
+  "resumeButton": "再読み込み",
+  "skipButton": "スキップ",
+  "resumeUploadDesc": "アップロードが完了していません。続行しますか？",
+  "resumeUploadTitle": "再開可能なアップロードが見つかりました",
+  "uploadResumeCleared": "アップロード再開情報を削除しました"
 }
