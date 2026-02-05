@@ -2,11 +2,15 @@ import json
 import os
 import time
 import random
+import asyncio
+from functools import partial
 
-from openai import AzureOpenAI
+from openai import AzureOpenAI, RateLimitError, APIError, APITimeoutError
 from decouple import config
 from best_phase_pipeline import extract_attention_metrics
 
+
+MAX_CONCURRENCY = 8
 
 # ======================================================
 # ENV / CLIENT
@@ -26,8 +30,6 @@ client = AzureOpenAI(
     azure_endpoint=AZURE_OPENAI_ENDPOINT,
     api_version=GPT5_API_VERSION
 )
-
-MAX_RETRY = 5
 
 
 # =========================================================
@@ -151,6 +153,84 @@ def build_report_1_timeline(phase_units):
 # ======================================================
 # REPORT 2 – PHASE INSIGHTS (RAW)
 # ======================================================
+def gpt_rewrite_report_2(item):
+    payload = json.dumps(item, ensure_ascii=False)
+
+    resp = client.responses.create(
+        model=GPT5_MODEL,
+        input=[
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "You are analyzing a livestream phase."
+                    }
+                ]
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": PROMPT_REPORT_2.format(data=payload)
+                    }
+                ]
+            }
+        ],
+        max_output_tokens=2048
+    )
+
+    return resp.output_text.strip() if resp.output_text else ""
+
+async def gpt_rewrite_report_2_async(
+    item,
+    sem: asyncio.Semaphore,
+    max_retry: int = 5,
+):
+    async with sem:
+        loop = asyncio.get_event_loop()
+
+        for attempt in range(max_retry):
+            try:
+                text = await loop.run_in_executor(
+                    None,
+                    partial(gpt_rewrite_report_2, item)
+                )
+
+                if text and not is_gpt_report_2_invalid(text):
+                    return text
+
+            except (RateLimitError, APITimeoutError, APIError):
+                sleep = (2 ** attempt) + random.uniform(0.5, 1.5)
+                await asyncio.sleep(sleep)
+
+            except Exception:
+                return None
+
+        return None
+
+async def process_one_report2_task(
+    item,
+    sem,
+    results,
+):
+    text = await gpt_rewrite_report_2_async(item, sem)
+
+    if not text:
+        text = (
+            "このフェーズについては、"
+            "現在の比較データから明確な改善ポイントを特定することができません。"
+            "今後、追加の配信データが蓄積され次第、"
+            "より具体的な改善提案が可能になります。"
+        )
+
+    results[item["phase_index"]] = {
+        "phase_index": item["phase_index"],
+        "group_id": item["group_id"],
+        "insight": text
+    }
+
 
 def build_report_2_phase_insights_raw(phase_units, best_data):
     """
@@ -196,26 +276,6 @@ def build_report_2_phase_insights_raw(phase_units, best_data):
     return out
 
 
-# ======================================================
-# REPORT 2 – GPT REWRITE (PROMPT GỐC)
-# ======================================================
-
-# PROMPT_REPORT_2 = """
-# You are analyzing a livestream phase.
-
-# You are given:
-# - The phase description
-# - Metric comparison results against the best historical phase of the same type
-
-# Rules:
-# - Do NOT calculate metrics
-# - Do NOT invent data
-# - Only explain what can be improved
-# - Be concrete and actionable
-
-# Write 2–4 bullet points.
-# """.strip()
-
 def is_gpt_report_2_invalid(text: str) -> bool:
     if not text:
         return True
@@ -247,13 +307,21 @@ def is_gpt_report_2_invalid(text: str) -> bool:
 # 以下は、あるフェーズの説明と、
 # 同タイプの過去ベストフェーズとの指標比較結果です。
 
+# このフェーズについて：
+
+# - 「最も優先して改善すべきポイント」を最大2つだけ選んでください
+# - 重要度・インパクトが最も高いものに限定してください
+# - 全ての問題点を網羅しようとしないでください
+
 # ルール：
 # - 指標を再計算しない
 # - データを捏造しない
 # - 改善できる点のみを述べる
 # - 抽象的な表現を避け、具体的に書く
+# - 各項目は「すぐ行動できるレベル」の内容にする
 
-# 2〜4個の箇条書きで出力してください。
+# 出力：
+# - 最大2つまでの箇条書き
 
 # 入力：
 # {data}
@@ -268,137 +336,61 @@ PROMPT_REPORT_2 = """
 
 このフェーズについて：
 
-- 「最も優先して改善すべきポイント」を最大2つだけ選んでください
+- 最も優先して改善すべき「構造的な問題（WHY）」を最大2つだけ選んでください
 - 重要度・インパクトが最も高いものに限定してください
 - 全ての問題点を網羅しようとしないでください
 
-ルール：
+出力ルール：
+- 各箇条書きは必ず「分析（なぜ失速しているか）」から書き始める
+- 行動提案（HOW）は分析の後に、1文だけ補足として書く
+- 「〜してください」「〜を入れるべき」から書き始めない
+
+制約：
 - 指標を再計算しない
 - データを捏造しない
-- 改善できる点のみを述べる
-- 抽象的な表現を避け、具体的に書く
-- 各項目は「すぐ行動できるレベル」の内容にする
+- 抽象的な表現を避け、構造・行動・比較を具体的に書く
+- ベストフェーズとの違いが分かるように述べる
 
-出力：
+出力形式：
 - 最大2つまでの箇条書き
+- 1項目＝最大3文まで
 
 入力：
 {data}
+
 """.strip()
 
-
-
-# def rewrite_report_2_with_gpt(raw_items):
-#     out = []
-
-#     for item in raw_items:
-#         payload = json.dumps(item, ensure_ascii=False)
-#         insight = None
-
-#         for attempt in range(1, MAX_RETRY + 1):
-#             resp = client.responses.create(
-#                 model=GPT5_MODEL,
-#                 input=[
-#                     {
-#                         "role": "system",
-#                         "content": [
-#                             {
-#                                 "type": "input_text",
-#                                 "text": "You are analyzing a livestream phase."
-#                             }
-#                         ]
-#                     },
-#                     {
-#                         "role": "user",
-#                         "content": [
-#                             {
-#                                 "type": "input_text",
-#                                 "text": PROMPT_REPORT_2 + "\n\nINPUT:\n" + payload
-#                             }
-#                         ]
-#                     }
-#                 ],
-#                 max_output_tokens=2048
-#             )
-
-#             text = resp.output_text.strip() if resp.output_text else ""
-#             if text:
-#                 insight = text
-#                 break
-
-#             time.sleep(2 * attempt)
-
-#         if not insight:
-#             insight = "- No clear improvement points could be identified from the current data."
-
-#         out.append({
-#             "phase_index": item["phase_index"],
-#             "group_id": item["group_id"],
-#             "insight": insight
-#         })
-
-#     return out
-
 def rewrite_report_2_with_gpt(raw_items):
-    out = []
+    results = {}
 
-    for item in raw_items:
-        payload = json.dumps(item, ensure_ascii=False)
-        insight_text = None
+    async def runner():
+        sem = asyncio.Semaphore(MAX_CONCURRENCY)
+        tasks = []
 
-        for attempt in range(1, MAX_RETRY + 1):
-            resp = client.responses.create(
-                model=GPT5_MODEL,
-                input=[
-                    {
-                        "role": "system",
-                        "content": [
-                            {
-                                "type": "input_text",
-                                "text": "You are analyzing a livestream phase."
-                            }
-                        ]
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "input_text",
-                                "text": PROMPT_REPORT_2.format(data=payload)
-                            }
-                        ]
-                    }
-                ],
-                max_output_tokens=2048
+        for item in raw_items:
+            tasks.append(
+                process_one_report2_task(
+                    item,
+                    sem,
+                    results
+                )
             )
 
-            text = resp.output_text.strip() if resp.output_text else ""
+        await asyncio.gather(*tasks)
 
-            # ===== DEMO CORE CHECK =====
-            if not is_gpt_report_2_invalid(text):
-                insight_text = text
-                break
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
 
-            # retry + backoff nhẹ (giống demo)
-            wait = 2 * attempt + random.uniform(0.5, 1.5)
-            time.sleep(wait)
+    if loop and loop.is_running():
+        fut = asyncio.run_coroutine_threadsafe(runner(), loop)
+        fut.result()
+    else:
+        asyncio.run(runner())
 
-        # ===== HARD FALLBACK (JP – PRODUCT SAFE) =====
-        if not insight_text:
-            insight_text = (
-                "このフェーズについては、"
-                "現在の比較データから明確な改善ポイントを特定することができません。"
-                "今後、追加の配信データが蓄積され次第、"
-                "より具体的な改善提案が可能になります。"
-            )
+    return [results[k] for k in sorted(results)]
 
-        out.append({
-            "phase_index": item["phase_index"],
-            "group_id": item["group_id"],
-            "insight": insight_text
-        })
-
-    return out
 
 # ======================================================
 # REPORT 3 – VIDEO INSIGHTS (RAW)
@@ -443,62 +435,6 @@ def build_report_3_video_insights_raw(phase_units):
     }
 
 
-# ======================================================
-# REPORT 3 – GPT REWRITE (PROMPT GỐC)
-# ======================================================
-
-# PROMPT_REPORT_3 = """
-# Bạn đang phân tích HIỆU QUẢ TỔNG THỂ của một video livestream bán hàng.
-
-# YÊU CẦU BẮT BUỘC:
-# - Viết bằng TIẾNG VIỆT
-# - KHÔNG nhắc đến group_id
-# - KHÔNG bịa số liệu
-# - Mỗi insight là MỘT object riêng
-
-# FORMAT OUTPUT JSON (BẮT BUỘC):
-# {
-#   "video_insights": [
-#     {
-#       "title": "string ngắn gọn",
-#       "content": "mô tả insight vài câu"
-#     }
-#   ]
-# }
-# """.strip()
-
-# PROMPT_REPORT_3 = """
-# Bạn đang phân tích HIỆU QUẢ TỔNG THỂ của một video livestream bán hàng.
-
-# Bạn được cung cấp:
-# - Dữ liệu tổng hợp hiệu quả theo từng nhóm phase
-# - KHÔNG có dữ liệu time-series chi tiết
-
-# NHIỆM VỤ:
-# - Phân tích cấu trúc video
-# - Chỉ ra điểm mạnh, điểm yếu
-# - Đưa ra gợi ý cải thiện ở mức tổng thể
-
-# YÊU CẦU BẮT BUỘC:
-# - Viết bằng TIẾNG VIỆT
-# - KHÔNG nhắc đến group_id
-# - KHÔNG bịa số liệu
-# - Mỗi insight là MỘT object riêng
-
-# FORMAT OUTPUT JSON (BẮT BUỘC):
-# {
-#   "video_insights": [
-#     {
-#       "title": "string ngắn gọn",
-#       "content": "mô tả insight vài câu"
-#     }
-#   ]
-# }
-
-# INPUT DATA:
-# {data}
-# """
-
 PROMPT_REPORT_3 = """
 あなたはライブコマース動画全体の【構造と総合的なパフォーマンス】を分析する専門家です。
 
@@ -535,51 +471,6 @@ PROMPT_REPORT_3 = """
 """.strip()
 
 
-
-# def rewrite_report_3_with_gpt(raw_video_insight):
-#     payload = json.dumps(raw_video_insight, ensure_ascii=False)
-
-#     resp = client.responses.create(
-#         model=GPT5_MODEL,
-#         input=[
-#             {
-#                 "role": "system",
-#                 "content": [
-#                     {
-#                         "type": "input_text",
-#                         "text": "Bạn đang phân tích hiệu quả tổng thể của một video livestream bán hàng."
-#                     }
-#                 ]
-#             },
-#             {
-#                 "role": "user",
-#                 "content": [
-#                     {
-#                         "type": "input_text",
-#                         "text": PROMPT_REPORT_3 + "\n\nINPUT:\n" + payload
-#                     }
-#                 ]
-#             }
-#         ],
-#         max_output_tokens=2048
-#     )
-
-#     try:
-#         parsed = json.loads(resp.output_text)
-#         if "video_insights" in parsed:
-#             return parsed
-#     except Exception:
-#         pass
-
-#     return {
-#         "video_insights": [
-#             {
-#                 "title": "Không thể phân tích",
-#                 "content": "GPT không trả về đúng định dạng mong muốn."
-#             }
-#         ]
-#     }
-
 def safe_json_load(text):
     if not text:
         return None
@@ -601,149 +492,86 @@ def safe_json_load(text):
     except json.JSONDecodeError:
         return None
 
-def rewrite_report_3_with_gpt(raw_video_insight):
-    payload = json.dumps(raw_video_insight, ensure_ascii=False)
+# def rewrite_report_3_with_gpt(raw_video_insight):
+#     payload = json.dumps(raw_video_insight, ensure_ascii=False)
 
-    # Style demo: inject data qua placeholder
+#     # Style demo: inject data qua placeholder
+#     prompt = PROMPT_REPORT_3.replace("{data}", payload)
+
+#     resp = client.responses.create(
+#         model=GPT5_MODEL,
+#         input=[
+#             {
+#                 "role": "user",
+#                 "content": [
+#                     {
+#                         "type": "input_text",
+#                         "text": prompt
+#                     }
+#                 ]
+#             }
+#         ],
+#         max_output_tokens=2048
+#     )
+
+#     parsed = safe_json_load(resp.output_text)
+
+#     if parsed and "video_insights" in parsed:
+#         return parsed
+
+#     # Fallback cứng để không làm gãy pipeline
+#     return {
+#         "video_insights": [
+#             {
+#                 "title": "Không thể phân tích",
+#                 "content": "GPT không trả về đúng định dạng mong muốn."
+#             }
+#         ]
+#     }
+
+def rewrite_report_3_with_gpt(raw_video_insight, max_retry: int = 5):
+    payload = json.dumps(raw_video_insight, ensure_ascii=False)
     prompt = PROMPT_REPORT_3.replace("{data}", payload)
 
-    resp = client.responses.create(
-        model=GPT5_MODEL,
-        input=[
-            {
-                "role": "user",
-                "content": [
+    for attempt in range(max_retry):
+        try:
+            resp = client.responses.create(
+                model=GPT5_MODEL,
+                input=[
                     {
-                        "type": "input_text",
-                        "text": prompt
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": prompt
+                            }
+                        ]
                     }
-                ]
-            }
-        ],
-        max_output_tokens=2048
-    )
+                ],
+                max_output_tokens=2048
+            )
 
-    parsed = safe_json_load(resp.output_text)
+            parsed = safe_json_load(resp.output_text)
+            if parsed and "video_insights" in parsed:
+                return parsed
 
-    if parsed and "video_insights" in parsed:
-        return parsed
+        except (RateLimitError, APITimeoutError, APIError):
+            sleep = (2 ** attempt) + random.uniform(0.5, 1.5)
+            time.sleep(sleep)
 
-    # Fallback cứng để không làm gãy pipeline
+        except Exception:
+            break
+
     return {
         "video_insights": [
             {
-                "title": "Không thể phân tích",
-                "content": "GPT không trả về đúng định dạng mong muốn."
+                "title": "分析できませんでした",
+                "content": "GPT が期待された形式で結果を返しませんでした。"
             }
         ]
     }
 
 
-# def build_report_3_structure_vs_benchmark_raw(
-#     current_features: dict,
-#     best_features: dict,
-#     group_stats: dict | None = None,
-# ):
-#     """
-#     Deterministic, rule-based.
-#     Compare current video structure vs benchmark video structure.
-#     Output: JSON-like dict, language-agnostic.
-#     """
-
-#     def pct(a, b):
-#         if not b:
-#             return None
-#         return (a - b) / b
-
-#     result = {
-#         "type": "video_structure_vs_benchmark",
-#         "metrics": {},
-#         "judgements": [],
-#         "problems": [],
-#         "suggestions": [],
-#     }
-
-#     # ---------- Pacing ----------
-#     cur_avg = current_features.get("avg_phase_duration", 0)
-#     best_avg = best_features.get("avg_phase_duration", 0)
-
-#     if best_avg > 0:
-#         delta = pct(cur_avg, best_avg)
-#         result["metrics"]["avg_phase_duration"] = {
-#             "current": cur_avg,
-#             "benchmark": best_avg,
-#             "delta_ratio": delta,
-#         }
-
-#         if delta is not None and delta > 0.25:
-#             result["judgements"].append("pacing_slower_than_benchmark")
-#             result["problems"].append("average_phase_duration_too_long")
-#             result["suggestions"].append("shorten_each_phase_to_increase_pacing")
-#         elif delta is not None and delta < -0.25:
-#             result["judgements"].append("pacing_faster_than_benchmark")
-#         else:
-#             result["judgements"].append("pacing_similar_to_benchmark")
-
-#     # ---------- Switch rate ----------
-#     cur_switch = current_features.get("phase_switch_rate", 0)
-#     best_switch = best_features.get("phase_switch_rate", 0)
-
-#     if best_switch > 0:
-#         delta = pct(cur_switch, best_switch)
-#         result["metrics"]["phase_switch_rate"] = {
-#             "current": cur_switch,
-#             "benchmark": best_switch,
-#             "delta_ratio": delta,
-#         }
-
-#         if delta is not None and delta < -0.3:
-#             result["problems"].append("phase_switch_too_infrequent")
-#             result["suggestions"].append("increase_phase_switch_frequency")
-
-#     # ---------- Structure balance ----------
-#     for key in ["early_ratio", "mid_ratio", "late_ratio"]:
-#         cur_v = current_features.get(key)
-#         best_v = best_features.get(key)
-#         if cur_v is None or best_v is None:
-#             continue
-
-#         delta = pct(cur_v, best_v)
-#         result["metrics"][key] = {
-#             "current": cur_v,
-#             "benchmark": best_v,
-#             "delta_ratio": delta,
-#         }
-
-#         if delta is not None and abs(delta) > 0.3:
-#             result["problems"].append(f"{key}_distribution_deviates_from_benchmark")
-#             result["suggestions"].append(f"adjust_{key}_distribution_toward_benchmark")
-
-#     # ---------- Complexity ----------
-#     cur_n_phase = current_features.get("num_phases", 0)
-#     best_n_phase = best_features.get("num_phases", 0)
-
-#     if best_n_phase > 0:
-#         delta = pct(cur_n_phase, best_n_phase)
-#         result["metrics"]["num_phases"] = {
-#             "current": cur_n_phase,
-#             "benchmark": best_n_phase,
-#             "delta_ratio": delta,
-#         }
-
-#         if delta is not None and delta < -0.3:
-#             result["problems"].append("too_few_phases_compared_to_benchmark")
-#             result["suggestions"].append("increase_number_of_phases_or_segments")
-#         elif delta is not None and delta > 0.5:
-#             result["problems"].append("too_many_phases_compared_to_benchmark")
-#             result["suggestions"].append("merge_or_simplify_phases")
-
-#     # ---------- Overall judgement ----------
-#     if result["problems"]:
-#         result["overall"] = "structure_quality_worse_than_benchmark"
-#     else:
-#         result["overall"] = "structure_quality_similar_or_better_than_benchmark"
-
-#     return result
 
 def build_report_3_structure_vs_benchmark_raw(
     current_features: dict,
@@ -849,36 +677,6 @@ def build_report_3_structure_vs_benchmark_raw(
     return result
 
 
-# PROMPT_REPORT_3_STRUCTURE = """
-# あなたはライブコマース動画の「構造品質」を分析する専門家です。
-
-# 以下は：
-# - 現在の動画と、同じ構造グループ内のベンチマーク動画の「構造比較RAWデータ」です。
-
-# あなたのタスク：
-# - RAWデータの内容のみを使って、動画制作者向けの実用的なフィードバックレポートを書いてください。
-# - テンポ、構成バランス、複雑さ、全体の流れに注目してください。
-# - 改善点がある場合は、必ず具体的な改善アドバイスを含めてください。
-
-# ルール：
-# - 数値を捏造しない
-# - 入力にない事実を推測しない
-# - 内部システムやIDの話をしない
-# - 出力は必ず JSON 形式
-
-# 出力形式：
-# {
-#   "video_insights": [
-#     {
-#       "title": "短いタイトル",
-#       "content": "数文の説明"
-#     }
-#   ]
-# }
-
-# 入力RAWデータ：
-# {data}
-# """.strip()
 
 PROMPT_REPORT_3_STRUCTURE = """
 あなたはライブコマース動画の【構成・脚本・テンポ設計】を改善するプロのディレクターです。
