@@ -17,7 +17,7 @@ import ForgotPasswordModal from "./modals/ForgotPasswordModal";
 import AuthService from "../base/services/userService";
 import VideoService from "../base/services/videoService";
 
-export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAnalysis, onShowFeedback, refreshKey, selectedVideo }) {
+export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAnalysis, onShowFeedback, refreshKey, selectedVideo, showFeedback }) {
   const sidebarRef = useRef(null);
   const dropdownRef = useRef(null);
 
@@ -160,11 +160,15 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                   onNewAnalysis();
                 }
               }}
-              className="flex items-center gap-2 p-2 px-4 border border-gray-200 rounded-md cursor-pointer hover:bg-gray-100 transition-all duration-200 ease-out"
+              className={`flex items-center gap-2 p-2 px-4 border rounded-md cursor-pointer transition-all duration-200 ease-out ${!showFeedback && !selectedVideo
+                  ? "border-purple-300 bg-purple-50 text-purple-700"
+                  : "border-gray-200 hover:bg-gray-100"
+                }`}
             >
               {/* <img src={write} className="w-[30px] h-[30px]" /> */}
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#213547" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil-icon lucide-pencil transition-colors duration-200 ease-out"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /><path d="m15 5 4 4" /></svg>
-              <span className="text-sm text-[#020817] transition-colors duration-200 ease-out">{window.__t('newAnalysis')}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={!showFeedback && !selectedVideo ? "#7c3aed" : "#213547"} stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil-icon lucide-pencil transition-colors duration-200 ease-out"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /><path d="m15 5 4 4" /></svg>
+              <span className={`text-sm transition-colors duration-200 ease-out ${!showFeedback && !selectedVideo ? "text-purple-700 font-medium" : "text-[#020817]"
+                }`}>{window.__t('newAnalysis')}</span>
             </div>
             <div className="flex items-center gap-2 p-2 px-4 mt-2 border border-gray-200 rounded-md cursor-pointer hover:text-gray-400 hover:bg-gray-100 transition-all duration-200 ease-out">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#213547" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search-icon lucide-search transition-colors duration-200 ease-out"><path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" /></svg>
@@ -185,10 +189,14 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                   }
                 }
               }}
-              className="flex items-center gap-2 p-2 px-4 mt-2 rounded-md cursor-pointer hover:bg-gray-100 transition-all duration-200 ease-out"
+              className={`flex items-center gap-2 p-2 px-4 mt-2 border rounded-md cursor-pointer transition-all duration-200 ease-out ${showFeedback
+                  ? "border-purple-300 bg-purple-50 text-purple-700"
+                  : "border-gray-200 hover:bg-gray-100"
+                }`}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#99a1af" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-message-square-icon lucide-message-square transition-colors duration-200 ease-out"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" /></svg>
-              <span className="text-sm text-gray-400 transition-colors duration-200 ease-out">{window.__t('feedback')}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={showFeedback ? "#7c3aed" : "#213547"} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-message-square-icon lucide-message-square transition-colors duration-200 ease-out"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" /></svg>
+              <span className={`text-sm transition-colors duration-200 ease-out ${showFeedback ? "text-purple-700 font-medium" : "text-[#020817]"
+                }`}>{window.__t('feedback')}</span>
             </div>
           </div>
         </div>
