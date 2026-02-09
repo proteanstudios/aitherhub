@@ -267,7 +267,7 @@ async def get_all_phase_groups(user_id: int):
             size
         FROM phase_groups
         WHERE user_id = :user_id
-           OR user_id IS NULL
+           
         ORDER BY id ASC
     """)
 
@@ -489,7 +489,7 @@ async def bulk_refresh_phase_insights(
             SELECT DISTINCT (x->>'group_id')::int
             FROM jsonb_array_elements(CAST(:rows AS jsonb)) x
         )
-          AND (pi.user_id = :user_id OR pi.user_id IS NULL)
+          AND (pi.user_id = :user_id)
     """)
 
     # 2) Clear needs_refresh for the best phases themselves (scoped by user)
@@ -508,7 +508,7 @@ async def bulk_refresh_phase_insights(
         )
         WHERE pi.video_id = x.video_id
           AND pi.phase_index = x.phase_index
-          AND (pi.user_id = :user_id OR pi.user_id IS NULL)
+          AND (pi.user_id = :user_id)
     """)
 
     async with AsyncSessionLocal() as session:
@@ -610,7 +610,7 @@ async def upsert_phase_insight(
             updated_at = now()
         WHERE video_id = :video_id
           AND phase_index = :phase_index
-          AND (user_id = :user_id OR user_id IS NULL)
+          AND (user_id = :user_id )
     """)
 
     sql_insert = text("""
@@ -750,7 +750,7 @@ async def load_video_phases(
             group_id
         FROM video_phases
         WHERE video_id = :video_id
-          AND (user_id = :user_id OR user_id IS NULL)
+          AND (user_id = :user_id )
         ORDER BY phase_index ASC
     """)
 
@@ -840,7 +840,7 @@ async def upsert_video_structure_features(
             late_ratio = :late_ratio,
             structure_embedding = :structure_embedding
         WHERE video_id = :video_id
-          AND (user_id = :user_id OR user_id IS NULL)
+          AND (user_id = :user_id )
     """)
 
     sql_insert = text("""
@@ -926,7 +926,7 @@ async def get_video_structure_features(
             structure_embedding
         FROM video_structure_features
         WHERE video_id = :video_id
-          AND (user_id = :user_id OR user_id IS NULL)
+          AND (user_id = :user_id )
         ORDER BY user_id DESC NULLS LAST
         LIMIT 1
     """)
@@ -955,7 +955,7 @@ async def get_all_video_structure_groups(user_id: int):
     sql = text("""
         SELECT *
         FROM video_structure_groups
-        WHERE user_id = :user_id OR user_id IS NULL
+        WHERE user_id = :user_id 
         ORDER BY id
     """)
     async with AsyncSessionLocal() as session:
@@ -1056,7 +1056,7 @@ async def update_video_structure_group(
             video_count = :video_count,
             updated_at = now()
         WHERE id = :group_id
-          AND (user_id = :user_id OR user_id IS NULL)
+          AND (user_id = :user_id )
     """)
     async with AsyncSessionLocal() as session:
         await session.execute(sql, {
@@ -1093,7 +1093,7 @@ async def upsert_video_structure_group_member(
             group_id = :group_id,
             distance = :distance
         WHERE video_id = :video_id
-          AND (user_id = :user_id OR user_id IS NULL)
+          AND (user_id = :user_id )
     """)
 
     sql_insert = text("""
@@ -1153,7 +1153,7 @@ async def get_video_structure_group_members_by_group(
         SELECT video_id
         FROM video_structure_group_members
         WHERE group_id = :group_id
-          AND (user_id = :user_id OR user_id IS NULL)
+          AND (user_id = :user_id )
     """)
     async with AsyncSessionLocal() as session:
         r = await session.execute(sql, {
@@ -1182,7 +1182,7 @@ async def get_video_structure_group_id_of_video(
         SELECT group_id
         FROM video_structure_group_members
         WHERE video_id = :video_id
-          AND (user_id = :user_id OR user_id IS NULL)
+          AND (user_id = :user_id )
         ORDER BY user_id DESC NULLS LAST
         LIMIT 1
     """)
@@ -1246,7 +1246,7 @@ async def get_video_structure_group_best_video(
             score
         FROM video_structure_group_best_videos
         WHERE group_id = :group_id
-          AND (user_id = :user_id OR user_id IS NULL)
+          AND (user_id = :user_id )
         ORDER BY user_id DESC NULLS LAST, score DESC
         LIMIT 1
     """)
@@ -1277,15 +1277,17 @@ async def upsert_video_structure_group_best_video(
     group_id: str,
     video_id: str,
     score: float,
+    metrics: dict,
 ):
     sql_update = text("""
         UPDATE video_structure_group_best_videos
         SET
             video_id = :video_id,
             score = :score,
+            metrics = :metrics,
             updated_at = now()
         WHERE group_id = :group_id
-          AND (user_id = :user_id OR user_id IS NULL)
+          AND (user_id = :user_id)
     """)
 
     sql_insert = text("""
@@ -1294,14 +1296,16 @@ async def upsert_video_structure_group_best_video(
             user_id,
             group_id,
             video_id,
-            score
+            score,
+            metrics
         )
         VALUES (
             gen_random_uuid(),
             :user_id,
             :group_id,
             :video_id,
-            :score
+            :score,
+            :metrics
         )
     """)
 
@@ -1311,14 +1315,18 @@ async def upsert_video_structure_group_best_video(
             "group_id": group_id,
             "video_id": video_id,
             "score": score,
+            "metrics": json.dumps(metrics),
         })
+
         if r.rowcount == 0:
             await session.execute(sql_insert, {
                 "user_id": user_id,
                 "group_id": group_id,
                 "video_id": video_id,
                 "score": score,
+                "metrics": json.dumps(metrics),
             })
+
         await session.commit()
 
 
@@ -1345,9 +1353,9 @@ async def mark_video_insights_need_refresh_by_structure_group(
             FROM video_structure_group_members vsgm
             WHERE vsgm.group_id = :group_id
               AND vsgm.video_id != :except_video_id
-              AND (vsgm.user_id = :user_id OR vsgm.user_id IS NULL)
+              AND (vsgm.user_id = :user_id)
         )
-          AND (vi.user_id = :user_id OR vi.user_id IS NULL)
+          AND (vi.user_id = :user_id)
     """)
 
     async with AsyncSessionLocal() as session:
@@ -1403,7 +1411,7 @@ async def get_video_structure_group_stats(
             video_count
         FROM video_structure_groups
         WHERE id = :group_id
-          AND (user_id = :user_id OR user_id IS NULL)
+          AND (user_id = :user_id )
         LIMIT 1
     """)
 

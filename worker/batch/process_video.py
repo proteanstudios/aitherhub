@@ -277,15 +277,15 @@ def fire_split_async(args, video_id, video_path, phase_source):
     url = args.blob_url if getattr(args, "blob_url", None) else video_path
 
      # ===== debug =====
-    if video_id == "2ce39f1d-6489-4fc7-79b7-796ba56a2439":
-        url = (
-            "https://kyogokuvideos.blob.core.windows.net/"
-            "videos/"
-            "abc@gmail.com/"
-            "2ce39f1d-6489-4fc7-79b7-796ba56a2439/"
-            "source.mp4"
-        )
-        logger.warning("[TEMP] Force blob_url = %s", url)
+    # if video_id == "2ce59f1d-6589-4fc7-79b7-796ba56a2439":
+    #     url = (
+    #         "https://kyogokuvideos.blob.core.windows.net/"
+    #         "videos/"
+    #         "abc@gmail.com/"
+    #         "2ce59f1d-6589-4fc7-79b7-796ba56a2439/"
+    #         "source.mp4"
+    #     )
+    #     logger.warning("[TEMP] Force blob_url = %s", url)
     # # ===== END TEMP =====
 
 
@@ -732,22 +732,22 @@ def main():
         # =========================
         # CLEANUP – CLEAR uploadedvideo
         # =========================
-        # try:
-        #     upload_dir = "uploadedvideo"
-        #     if os.path.exists(upload_dir):
-        #         print(f"[CLEANUP] Clear all files in {upload_dir}/")
+        try:
+            upload_dir = "uploadedvideo"
+            if os.path.exists(upload_dir):
+                print(f"[CLEANUP] Clear all files in {upload_dir}/")
 
-        #         for name in os.listdir(upload_dir):
-        #             path = os.path.join(upload_dir, name)
-        #             try:
-        #                 if os.path.isfile(path) or os.path.islink(path):
-        #                     os.remove(path)
-        #                 elif os.path.isdir(path):
-        #                     shutil.rmtree(path)
-        #             except Exception as e:
-        #                 print(f"[WARN] Could not remove {path}: {e}")
-        # except Exception as e:
-        #     print(f"[WARN] Cleanup uploadedvideo failed: {e}")
+                for name in os.listdir(upload_dir):
+                    path = os.path.join(upload_dir, name)
+                    try:
+                        if os.path.isfile(path) or os.path.islink(path):
+                            os.remove(path)
+                        elif os.path.isdir(path):
+                            shutil.rmtree(path)
+                    except Exception as e:
+                        print(f"[WARN] Could not remove {path}: {e}")
+        except Exception as e:
+            print(f"[WARN] Cleanup uploadedvideo failed: {e}")
 
 
     except Exception:
