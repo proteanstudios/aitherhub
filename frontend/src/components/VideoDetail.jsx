@@ -190,6 +190,9 @@ export default function VideoDetail({ video, onClearUploadPlaceholder }) {
     // Set flag immediately to prevent any duplicate calls
     uploadStartedRef.current = true;
 
+    // Set global uploading flag
+    localStorage.setItem('isUploading', 'true');
+
     setIsUploading(true);
     setUploadProgress(0);
 
@@ -215,14 +218,20 @@ export default function VideoDetail({ video, onClearUploadPlaceholder }) {
         onClearUploadPlaceholder();
       }
 
+      // Remove global uploading flag
+      localStorage.removeItem('isUploading');
+
       // Set smoothProgress from uploadProgress to continue smoothly (20%)
       // This ensures progress bar doesn't jump when SSE stream starts
-      setSmoothProgress(uploadProgress);
+      // setSmoothProgress(uploadProgress);
 
-      setIsUploading(false);
+      // setIsUploading(false);
     } catch (error) {
       console.error('Upload failed:', error);
       isUploadModeRef.current = false;
+      
+      // Remove global uploading flag on error
+      localStorage.removeItem('isUploading');
       uploadStartedRef.current = false;
       uploadCompletedRef.current = false; // Reset to allow retry
       setIsUploading(false);
@@ -690,8 +699,7 @@ export default function VideoDetail({ video, onClearUploadPlaceholder }) {
   useEffect(() => {
     console.log('[VideoDetail] useEffect [video?.id] triggered, videoId:', video?.id, 'uploadCompletedRef:', uploadCompletedRef.current);
 
-    // Only reset state when video ID actually changes (not just when upload completes)
-    // This prevents progress bar from resetting after upload complete
+    // Clean up streams when video changes
     if (streamCancelRef.current) {
       try {
         if (typeof streamCancelRef.current.cancel === "function") streamCancelRef.current.cancel();
@@ -702,6 +710,14 @@ export default function VideoDetail({ video, onClearUploadPlaceholder }) {
     answerRef.current = "";
     lastSentRef.current = { text: null, t: 0 };
     lastStatusChangeRef.current = Date.now();
+
+    // Reset upload states ONLY when switching to video WITHOUT uploadUrl
+    // If video has uploadUrl, it means we're in upload mode and should keep upload UI
+    if (!video?.uploadUrl) {
+      console.log('[VideoDetail] Resetting upload states - no uploadUrl on video');
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
 
     // Skip reset if upload đã hoàn thành cho video hiện tại
     if (uploadCompletedRef.current) {
@@ -873,6 +889,7 @@ export default function VideoDetail({ video, onClearUploadPlaceholder }) {
 
   // Define all processing steps in order
   const processingSteps = [
+    { key: 'UPLOADING', label: 'ファイルをアップロードしています...' },
     { key: 'STEP_0_EXTRACT_FRAMES', label: window.__t('statusStep0') || 'Extract Frames' },
     { key: 'STEP_1_DETECT_PHASES', label: window.__t('statusStep1') || 'Detect Phases' },
     { key: 'STEP_2_EXTRACT_METRICS', label: window.__t('statusStep2') || 'Extract Metrics' },
@@ -890,10 +907,29 @@ export default function VideoDetail({ video, onClearUploadPlaceholder }) {
     { key: 'STEP_14_SPLIT_VIDEO', label: window.__t('statusStep14') || 'Split Video' },
   ];
 
+  const processingSteps2 = [
+    { key: 'UPLOADING', label: 'ファイルをアップロードしています...' },
+    { key: 'STEP_0_EXTRACT_FRAMES', label: window.__t('statusStep0') || 'Extract Frames' },
+    { key: 'STEP_1_DETECT_PHASES', label: window.__t('statusStep1') || 'Detect Phases' },
+    { key: 'STEP_2_EXTRACT_METRICS', label: window.__t('statusStep2') || 'Extract Metrics' },
+    { key: 'STEP_3_TRANSCRIBE_AUDIO', label: window.__t('statusStep3') || 'Transcribe Audio' }
+  ];
+
   // Get step status: 'completed', 'current', 'pending', or null (for upload phase)
   const getStepStatus = (stepKey, currentStatus) => {
     const currentIndex = processingSteps.findIndex(s => s.key === currentStatus);
     const stepIndex = processingSteps.findIndex(s => s.key === stepKey);
+    if (stepIndex == 0) return 'completed'; // Always mark upload step as completed
+    if (currentStatus === 'ERROR') return 'error';
+    if (stepIndex < currentIndex) return 'completed';
+    if (stepIndex === currentIndex) return 'current';
+    // if (currentStatus == 'uploaded') return 'completed';
+    return 'pending';
+  };
+
+  const getStepStatus2 = (stepKey, currentStatus) => {
+    const currentIndex = processingSteps2.findIndex(s => s.key === currentStatus);
+    const stepIndex = processingSteps2.findIndex(s => s.key === stepKey);
 
     if (currentStatus === 'ERROR') return 'error';
     if (stepIndex < currentIndex) return 'completed';
@@ -981,18 +1017,35 @@ export default function VideoDetail({ video, onClearUploadPlaceholder }) {
 
           {/* Upload step */}
           <div className="mb-4 space-y-2">
-            <div className="flex items-center gap-3">
-              {renderStepIcon('current')}
-              <span className="text-sm text-purple-300 font-medium">
-                {window.__t('uploadProgressMessage') || 'ファイルをアップロードしています...'}
-              </span>
-            </div>
+            {processingSteps2.map((step) => {
+              const stepStatus = getStepStatus2(step.key, 'UPLOADING');
+              const isActive = stepStatus === 'current';
+              const isCompleted = stepStatus === 'completed';
+
+              return (
+                <div
+                  key={step.key}
+                  className={`flex items-center gap-3 transition-all duration-300 ${
+                    isActive ? 'opacity-100' : isCompleted ? 'opacity-60' : 'opacity-40'
+                  }`}
+                >
+                  {renderStepIcon(stepStatus)}
+                  <span className={`text-sm ${
+                    isActive ? 'text-white font-medium' :
+                    isCompleted ? 'text-gray-300' :
+                    'text-gray-400'
+                  }`}>
+                    {step.label}
+                  </span>
+                </div>
+              );
+            })}
           </div>
 
           {/* Progress bar */}
           <div className="w-full bg-gray-700 rounded-full h-2">
             <div
-              className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full transition-all duration-300"
+              className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-300"
               style={{ width: `${uploadProgress}%` }}
             />
           </div>

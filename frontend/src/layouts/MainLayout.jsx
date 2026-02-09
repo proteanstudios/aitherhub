@@ -76,12 +76,12 @@ export default function MainLayout() {
   const handleClearUploadPlaceholder = useCallback(() => {
     // Clear selectedVideo upload data but keep the video selected
     // This prevents VideoDetail from detecting upload mode on next render
-    setSelectedVideo(prev => {
-      if (!prev) return prev;
-      // Only clear upload fields, keep the video selected
-      const { uploadFile, uploadUrl, uploadId, userEmail, ...cleanVideo } = prev;
-      return Object.keys(cleanVideo).length > 0 ? cleanVideo : prev;
-    });
+    // setSelectedVideo(prev => {
+    //   if (!prev) return prev;
+    //   // Only clear upload fields, keep the video selected
+    //   const { uploadFile, uploadUrl, uploadId, userEmail, ...cleanVideo } = prev;
+    //   return Object.keys(cleanVideo).length > 0 ? cleanVideo : prev;
+    // });
     // Refresh sidebar to show real video (triggers re-fetch)
     // This happens AFTER clearing selectedVideo to avoid race conditions
     setTimeout(() => {

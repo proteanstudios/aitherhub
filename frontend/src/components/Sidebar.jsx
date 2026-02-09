@@ -219,6 +219,16 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
           <div className="mt-[28px]">
             <div
               onClick={() => {
+                // Check localStorage if upload is in progress
+                const isUploadingFromStorage = localStorage.getItem('isUploading') === 'true';
+                if (isUploadingFromStorage && selectedVideo) {
+                  // Re-select current video to trigger renderProcessingStatus (show upload UI)
+                  if (onVideoSelect) {
+                    onVideoSelect(selectedVideo);
+                  }
+                  return;
+                }
+                
                 setSelectedVideoId(null);
                 if (onVideoSelect) {
                   onVideoSelect(null);
@@ -281,7 +291,19 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
               )} */}
             </div>
 
-            <img src={searchMobile} onClick={() => { setSelectedVideoId(null); if (onVideoSelect) onVideoSelect(null); if (onNewAnalysis) onNewAnalysis(); }} className="w-[32px] cursor-pointer" />
+            <img src={searchMobile} onClick={() => { 
+              // Check localStorage if upload is in progress
+              const isUploadingFromStorage = localStorage.getItem('isUploading') === 'true';
+              if (isUploadingFromStorage && selectedVideo) {
+                // Re-select current video to show upload UI
+                if (onVideoSelect) onVideoSelect(selectedVideo);
+                return;
+              }
+              
+              setSelectedVideoId(null); 
+              if (onVideoSelect) onVideoSelect(null); 
+              if (onNewAnalysis) onNewAnalysis(); 
+            }} className="w-[32px] cursor-pointer" />
           </div>
 
           <div className="bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))]">
