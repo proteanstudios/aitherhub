@@ -11,4 +11,5 @@ export const URL_CONSTANTS = {
   UPLOADS_CLEAR: "/api/v1/videos/uploads/clear",
   GET_USER_VIDEOS: "/api/v1/videos/user",
   GET_VIDEO: "/api/v1/videos",
+  FEEDBACK_SUBMIT: "/api/v1/feedback",
 };

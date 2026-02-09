@@ -17,7 +17,7 @@ import ForgotPasswordModal from "./modals/ForgotPasswordModal";
 import AuthService from "../base/services/userService";
 import VideoService from "../base/services/videoService";
 
-export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAnalysis, refreshKey, selectedVideo }) {
+export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAnalysis, onShowFeedback, refreshKey, selectedVideo }) {
   const sidebarRef = useRef(null);
   const dropdownRef = useRef(null);
 
@@ -170,10 +170,24 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#213547" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search-icon lucide-search transition-colors duration-200 ease-out"><path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" /></svg>
               <input type="text" placeholder={window.__t('searchChat')} className="w-full outline-none text-sm text-[#213547] transition-colors duration-200 ease-out placeholder:text-[#020817] focus:placeholder:text-gray-400" />
             </div>
-            <div className="flex items-center gap-2 p-2 px-4 mt-2 rounded-md cursor-pointer hover:bg-gray-100 transition-all duration-200 ease-out"
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                if (onShowFeedback) {
+                  onShowFeedback();
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  if (onShowFeedback) {
+                    onShowFeedback();
+                  }
+                }
+              }}
+              className="flex items-center gap-2 p-2 px-4 mt-2 rounded-md cursor-pointer hover:bg-gray-100 transition-all duration-200 ease-out"
             >
-              {/* <img src={write} className="w-[30px] h-[30px]" /> */}
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#99a1af" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-square-icon lucide-message-square transition-colors duration-200 ease-out"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" /></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#99a1af" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-message-square-icon lucide-message-square transition-colors duration-200 ease-out"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" /></svg>
               <span className="text-sm text-gray-400 transition-colors duration-200 ease-out">{window.__t('feedback')}</span>
             </div>
           </div>
