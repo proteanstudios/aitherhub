@@ -33,12 +33,18 @@ export default function MainContent({
   const [progress, setProgress] = useState(0);
   const [uploadedVideoId, setUploadedVideoId] = useState(null);
   const [videoData, setVideoData] = useState(null);
+  const [loadingVideo, setLoadingVideo] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("");
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [resumeUploadId, setResumeUploadId] = useState(null);
   const prevIsLoggedInRef = useRef(isLoggedIn);
   const resumeFileInputRef = useRef(null);
+
+  // Clear resume upload file name on page reload
+  useEffect(() => {
+    localStorage.removeItem('resumeUploadFileName');
+  }, []);
 
   useEffect(() => {
     console.log("[MainContent] user", user);
@@ -161,6 +167,7 @@ export default function MainContent({
     setProgress(0);
 
     try {
+      localStorage.setItem('resumeUploadFileName', file.name);
       // Get metadata from IndexedDB
       const metadata = await UploadService.getUploadMetadata(resumeUploadId);
       if (!metadata) {
@@ -227,6 +234,7 @@ export default function MainContent({
       if (onUploadSuccess) {
         onUploadSuccess();
       }
+      localStorage.removeItem('resumeUploadFileName');
     } catch (error) {
       const errorMsg = error?.message || window.__t('uploadFailedMessage');
       toast.error(errorMsg);
@@ -256,8 +264,9 @@ export default function MainContent({
     setUploading(true);
     setMessage("");
     setProgress(0);
-
+    
     try {
+      localStorage.setItem('resumeUploadFileName', selectedFile.name);
       const video_id = await UploadService.uploadFile(
         selectedFile,
         user.email,
@@ -265,7 +274,7 @@ export default function MainContent({
           setProgress(percentage);
         }
       );
-
+      localStorage.removeItem('resumeUploadFileName');
       setMessageType("success");
       toast.success(window.__t('uploadSuccessMessage'));
       setSelectedFile(null);
@@ -325,21 +334,42 @@ export default function MainContent({
     }
   };
 
+  // Clear uploadedVideoId when selectedVideoId is set (from sidebar selection)
+  // This ensures only ONE ProcessingSteps is rendered
+  useEffect(() => {
+    if (selectedVideoId) {
+      console.log("[MainContent] Clearing uploadedVideoId due to selectedVideoId:", selectedVideoId);
+      setUploadedVideoId(null);
+      setSelectedFile(null);
+      setProgress(0);
+      setUploading(false);
+    }
+  }, [selectedVideoId]);
+
   // Fetch video details when uploadedVideoId OR selectedVideoId changes
   useEffect(() => {
     const videoId = uploadedVideoId || selectedVideoId;
-    console.log("[MainContent] videoId changed:", videoId, { uploadedVideoId, selectedVideoId });
+    console.log("[MainContent] Fetching video details for:", videoId);
     
     if (!videoId) {
       setVideoData(null);
+      setLoadingVideo(false);
+      
+      // Check if there's a pending upload in localStorage
+      const resumeFileName = localStorage.getItem('resumeUploadFileName');
+      if (resumeFileName) {
+        // Restore upload UI state for pending upload
+        setUploading(true);
+        setSelectedFile({ name: resumeFileName }); // Set file name for UI display
+      }
       return;
     }
 
+    setLoadingVideo(true);
     const fetchVideoDetails = async () => {
       try {
         const response = await VideoService.getVideoById(videoId);
         const data = response || {};
-
         // normalize reports
         const r1 = Array.isArray(data.reports_1) ? data.reports_1 : (data.reports_1 ? [data.reports_1] : []);
         let r2 = Array.isArray(data.reports_2) ? data.reports_2 : (data.reports_2 ? [data.reports_2] : []);
@@ -352,7 +382,7 @@ export default function MainContent({
             video_clip_url: it.video_clip_url,
           }));
         }
-        setVideoData({
+        const newVideoData = {
           id: data.id || videoId,
           original_filename: data.original_filename,
           status: data.status,
@@ -360,9 +390,13 @@ export default function MainContent({
           reports_1: r1,
           reports_2: r2,
           report3: Array.isArray(data.report3) ? data.report3 : (data.report3 ? [data.report3] : []),
-        });
+        };
+        console.log("[MainContent] Setting videoData:", newVideoData);
+        setVideoData(newVideoData);
       } catch (err) {
         console.error('Failed to fetch video details:', err);
+      } finally {
+        setLoadingVideo(false);
       }
     };
 
@@ -423,10 +457,11 @@ export default function MainContent({
       <Body>
         {videoData ? (
           videoData.status === 'DONE' ? (
-            <VideoDetail video={videoData} />
+            console.log("[MainContent] Rendering VideoDetail for videoData:", videoData) ||
+            <VideoDetail videoData={videoData} />
           ) : (
             <div className="w-full flex flex-col items-center justify-center">
-              <div className="w-full max-w-md mx-auto mt-8">
+              <div className="rounded-2xl p-8 border transition-all duration-200 border-white/30 bg-white/5 backdrop-blur-sm hover:border-white/50 hover:bg-white/10">
                 <ProcessingSteps
                   videoId={uploadedVideoId || selectedVideoId}
                   initialStatus={videoData.status}
@@ -436,6 +471,15 @@ export default function MainContent({
               </div>
             </div>
           )
+        ) : loadingVideo ? (
+          <div className="w-full flex flex-col items-center justify-center">
+            <div className="rounded-2xl p-8 border transition-all duration-200 border-white/30 bg-white/5 backdrop-blur-sm">
+              <div className="flex flex-col items-center text-center space-y-4">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+                <p className="text-white text-sm">読み込み中...</p>
+              </div>
+            </div>
+          </div>
         ) : children ?? (
           <>
             <div className="w-full flex flex-col items-center justify-center">

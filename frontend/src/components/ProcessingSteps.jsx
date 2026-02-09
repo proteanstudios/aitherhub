@@ -11,6 +11,7 @@ export default function ProcessingSteps({ videoId, initialStatus, videoTitle, on
   const pollingIntervalRef = useRef(null);
   const lastStatusChangeRef = useRef(Date.now());
   const retryCountRef = useRef(0);
+  const lastInitializedVideoIdRef = useRef(null); // Track last initialized videoId
   const MAX_SSE_RETRIES = 2;
 
   // Update smooth progress from external prop if provided (for upload progress)
@@ -126,6 +127,16 @@ export default function ProcessingSteps({ videoId, initialStatus, videoTitle, on
 
   // Stream status updates if video is processing
   useEffect(() => {
+    // Only reset state when videoId actually changes
+    if (lastInitializedVideoIdRef.current !== videoId) {
+      setCurrentStatus(initialStatus || 'NEW');
+      setSmoothProgress(0);
+      setErrorMessage(null);
+      setUsePolling(false);
+      lastStatusChangeRef.current = Date.now();
+      retryCountRef.current = 0;
+    }
+
     // Only stream/poll if video exists
     if (!videoId) {
       if (progressIntervalRef.current) {
@@ -139,18 +150,20 @@ export default function ProcessingSteps({ videoId, initialStatus, videoTitle, on
       return;
     }
 
-    // If we're already using polling, don't try SSE again
-    if (usePolling) {
+    // Skip if already initialized for this same videoId (prevents StrictMode double-mount)
+    if (lastInitializedVideoIdRef.current === videoId) {
+      console.log(`⚠️  Stream already initialized for video ${videoId}, skipping duplicate`);
       return;
     }
 
-    // Close any existing stream
+    // Close any existing stream first
     if (statusStreamRef.current) {
       statusStreamRef.current.close();
       statusStreamRef.current = null;
     }
 
-    console.log(`🔌 Starting SSE stream for video ${videoId}`);
+    // Mark this videoId as initialized
+    lastInitializedVideoIdRef.current = videoId;
 
     // Start SSE stream
     statusStreamRef.current = VideoService.streamVideoStatus({
@@ -171,6 +184,10 @@ export default function ProcessingSteps({ videoId, initialStatus, videoTitle, on
           if (statusStreamRef.current) {
             statusStreamRef.current.close();
             statusStreamRef.current = null;
+          }
+          // Notify parent when processing is done
+          if (data.status === 'DONE' && handleProcessingComplete) {
+            handleProcessingComplete();
           }
         }
       },
@@ -200,13 +217,20 @@ export default function ProcessingSteps({ videoId, initialStatus, videoTitle, on
       },
     });
 
-    // Cleanup
+    // Cleanup - only close stream if videoId changed (switching videos)
+    // Don't close in StrictMode when videoId stays the same
     return () => {
-      console.log(`🧹 Cleaning up SSE stream for video ${videoId}`);
-      if (statusStreamRef.current) {
-        statusStreamRef.current.close();
-        statusStreamRef.current = null;
+      const videoIdChanged = lastInitializedVideoIdRef.current !== videoId;
+      
+      if (videoIdChanged) {
+        console.log(`🧹 Cleaning up SSE stream for video ${videoId} (videoId changed)`);
+        if (statusStreamRef.current) {
+          statusStreamRef.current.close();
+          statusStreamRef.current = null;
+        }
       }
+      
+      // Always clear intervals
       if (progressIntervalRef.current) {
         clearInterval(progressIntervalRef.current);
         progressIntervalRef.current = null;
@@ -216,26 +240,7 @@ export default function ProcessingSteps({ videoId, initialStatus, videoTitle, on
         pollingIntervalRef.current = null;
       }
     };
-  }, [videoId, usePolling]); // Only depend on videoId and usePolling flag
-
-  // Reset progress when video changes
-  useEffect(() => {
-    setCurrentStatus(initialStatus || 'NEW');
-    setSmoothProgress(0);
-    setErrorMessage(null);
-    setUsePolling(false);
-    lastStatusChangeRef.current = Date.now();
-    retryCountRef.current = 0;
-    
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
-    }
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-    }
-  }, [videoId, initialStatus]);
+  }, [videoId]); // Only depend on videoId, not initialStatus which changes frequently
   // Danh sách tất cả các steps bao gồm UPLOADING
   const processingSteps = [
     { key: 'UPLOADING', label: window.__t('statusUploading') || 'ファイルをアップロードしています' },

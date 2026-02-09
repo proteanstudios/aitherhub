@@ -335,6 +335,7 @@ export default function VideoDetail({ videoData }) {
   }, []);
 
   useEffect(() => {
+    console.log("Loading chat history for video:", videoData);
     let cancelled = false;
     const vid = videoData?.id;
     if (!vid) {
@@ -410,7 +411,7 @@ export default function VideoDetail({ videoData }) {
         <div className="flex flex-col gap-2">
           <div className="inline-flex self-start items-center bg-white rounded-[50px] h-[41px] px-4">
             <div className="text-[14px] font-bold whitespace-nowrap bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))] text-transparent bg-clip-text">
-              {videoData?.title}
+              {videoData?.original_filename}
             </div>
           </div>
         </div>
