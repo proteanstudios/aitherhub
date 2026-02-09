@@ -20,10 +20,13 @@ note.txt
 **/report
 
 worker/batch/benmark.py
+worker/batch/split_test.py
 worker/batch/testopencv.py
 worker/batch/split_benmark.py
 worker/batch/video_structure_grouping_old.py
 worker/batch/process_video_stable_22012026.py
+
+**/split_video/
 
 
 # Environment files (keep secrets out of git)
