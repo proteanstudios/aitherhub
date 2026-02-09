@@ -1316,3 +1316,46 @@ async def get_video_structure_group_stats(group_id: str):
 def get_video_structure_group_stats_sync(group_id: str):
     loop = get_event_loop()
     return loop.run_until_complete(get_video_structure_group_stats(group_id))
+
+
+# =========================
+# Split status (VIDEO)
+# =========================
+
+async def get_video_split_status(video_id: str):
+    sql = text("""
+        SELECT split_status
+        FROM videos
+        WHERE id = :video_id
+    """)
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(sql, {"video_id": video_id})
+        row = result.fetchone()
+    return row[0] if row else None
+
+
+def get_video_split_status_sync(video_id: str):
+    loop = get_event_loop()
+    return loop.run_until_complete(get_video_split_status(video_id))
+
+
+async def update_video_split_status(video_id: str, split_status: str):
+    sql = text("""
+        UPDATE videos
+        SET split_status = :split_status,
+            updated_at = now()
+        WHERE id = :video_id
+    """)
+    async with AsyncSessionLocal() as session:
+        await session.execute(sql, {
+            "video_id": video_id,
+            "split_status": split_status,
+        })
+        await session.commit()
+
+
+def update_video_split_status_sync(video_id: str, split_status: str):
+    loop = get_event_loop()
+    return loop.run_until_complete(
+        update_video_split_status(video_id, split_status)
+    )
