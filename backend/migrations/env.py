@@ -24,6 +24,8 @@ from app.models.orm import (
     PhaseGroup,
     PhaseGroupBestPhase,
     PhaseInsight,
+    Chat,
+    Feedback,
 )
 
 config = context.config
