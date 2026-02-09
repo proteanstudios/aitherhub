@@ -95,7 +95,8 @@ export default function MainLayout() {
     onShowFeedback: handleShowFeedback,
     refreshKey,
     selectedVideo,
-  }), [openSidebar, handleCloseSidebar, user, handleVideoSelect, handleNewAnalysis, handleShowFeedback, refreshKey, selectedVideo]);
+    showFeedback,
+  }), [openSidebar, handleCloseSidebar, user, handleVideoSelect, handleNewAnalysis, handleShowFeedback, refreshKey, selectedVideo, showFeedback]);
 
   const mainContentProps = useMemo(() => ({
     onOpenSidebar: handleOpenSidebar,
