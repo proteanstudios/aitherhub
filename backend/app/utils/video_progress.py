@@ -17,31 +17,32 @@ def calculate_progress(status: str) -> int:
         >>> calculate_progress('uploaded')
         0
         >>> calculate_progress('STEP_5_BUILD_PHASE_UNITS')
-        60
+        89
         >>> calculate_progress('DONE')
         100
         >>> calculate_progress('ERROR')
         -1
     """
+    # Calibrated from observed processing timeline so progress reflects elapsed time better.
     status_map = {
         "NEW": 0,
         "uploaded": 0,
-        "STEP_0_EXTRACT_FRAMES": 5,
-        "STEP_1_DETECT_PHASES": 10,
-        "STEP_2_EXTRACT_METRICS": 20,
-        "STEP_3_TRANSCRIBE_AUDIO": 30,
-        "STEP_4_IMAGE_CAPTION": 40,
-        "STEP_5_BUILD_PHASE_UNITS": 50,
-        "STEP_6_BUILD_PHASE_DESCRIPTION": 60,
-        "STEP_7_GROUPING": 65,
-        "STEP_8_UPDATE_BEST_PHASE": 70,
-        "STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES": 75,
-        "STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP": 80,
-        "STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS": 85,
-        "STEP_12_UPDATE_VIDEO_STRUCTURE_BEST": 90,
-        "STEP_13_BUILD_REPORTS": 95,
-        "STEP_14_FINALIZE": 98,
-        "STEP_14_SPLIT_VIDEO": 98,
+        "STEP_0_EXTRACT_FRAMES": 2,
+        "STEP_1_DETECT_PHASES": 4,
+        "STEP_2_EXTRACT_METRICS": 10,
+        "STEP_3_TRANSCRIBE_AUDIO": 80,
+        "STEP_4_IMAGE_CAPTION": 87,
+        "STEP_5_BUILD_PHASE_UNITS": 89,
+        "STEP_6_BUILD_PHASE_DESCRIPTION": 91,
+        "STEP_7_GROUPING": 93,
+        "STEP_8_UPDATE_BEST_PHASE": 94,
+        "STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES": 95,
+        "STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP": 96,
+        "STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS": 97,
+        "STEP_12_UPDATE_VIDEO_STRUCTURE_BEST": 98,
+        "STEP_13_BUILD_REPORTS": 99,
+        "STEP_14_FINALIZE": 99,
+        "STEP_14_SPLIT_VIDEO": 99,
         "DONE": 100,
         "ERROR": -1,
     }

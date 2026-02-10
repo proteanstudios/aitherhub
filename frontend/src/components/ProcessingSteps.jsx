@@ -1,6 +1,14 @@
 import { memo, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import VideoService from '../base/services/videoService';
 
+const normalizeProcessingStatus = (status) => {
+  if (status === 'uploaded') {
+    // Keep analysis spinner active immediately after upload complete.
+    return 'STEP_0_EXTRACT_FRAMES';
+  }
+  return status;
+};
+
 function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingComplete, externalProgress }) {
   const [currentStatus, setCurrentStatus] = useState(initialStatus || 'NEW');
   const [smoothProgress, setSmoothProgress] = useState(externalProgress || 0);
@@ -26,22 +34,22 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
     const statusMap = {
       NEW: 0,
       uploaded: 0,
-      STEP_0_EXTRACT_FRAMES: 5,
-      STEP_1_DETECT_PHASES: 10,
-      STEP_2_EXTRACT_METRICS: 20,
-      STEP_3_TRANSCRIBE_AUDIO: 30,
-      STEP_4_IMAGE_CAPTION: 40,
-      STEP_5_BUILD_PHASE_UNITS: 50,
-      STEP_6_BUILD_PHASE_DESCRIPTION: 60,
-      STEP_7_GROUPING: 65,
-      STEP_8_UPDATE_BEST_PHASE: 70,
-      STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES: 75,
-      STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP: 80,
-      STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS: 85,
-      STEP_12_UPDATE_VIDEO_STRUCTURE_BEST: 90,
-      STEP_13_BUILD_REPORTS: 95,
-      STEP_14_FINALIZE: 98,
-      STEP_14_SPLIT_VIDEO: 98,
+      STEP_0_EXTRACT_FRAMES: 2,
+      STEP_1_DETECT_PHASES: 4,
+      STEP_2_EXTRACT_METRICS: 10,
+      STEP_3_TRANSCRIBE_AUDIO: 80,
+      STEP_4_IMAGE_CAPTION: 87,
+      STEP_5_BUILD_PHASE_UNITS: 89,
+      STEP_6_BUILD_PHASE_DESCRIPTION: 91,
+      STEP_7_GROUPING: 93,
+      STEP_8_UPDATE_BEST_PHASE: 94,
+      STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES: 95,
+      STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP: 96,
+      STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS: 97,
+      STEP_12_UPDATE_VIDEO_STRUCTURE_BEST: 98,
+      STEP_13_BUILD_REPORTS: 99,
+      STEP_14_FINALIZE: 99,
+      STEP_14_SPLIT_VIDEO: 99,
       DONE: 100,
       ERROR: -1,
     };
@@ -97,10 +105,11 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
       try {
         const response = await VideoService.getVideoById(videoId);
         if (response && response.status) {
-          const newStatus = response.status;
+          const newStatus = normalizeProcessingStatus(response.status);
           setCurrentStatus(newStatus);
 
-          const progress = calculateProgressFromStatus(newStatus);
+          const serverProgress = typeof response.progress === 'number' ? response.progress : 0;
+          const progress = Math.max(serverProgress, calculateProgressFromStatus(newStatus));
           startGradualProgress(progress);
           lastStatusChangeRef.current = Date.now();
 
@@ -130,9 +139,10 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
   useEffect(() => {
     // Only reset state when videoId actually changes
     if (lastInitializedVideoIdRef.current !== videoId) {
+      const initial = normalizeProcessingStatus(initialStatus || 'NEW');
       queueMicrotask(() => {
-        setCurrentStatus(initialStatus || 'NEW');
-        setSmoothProgress(0);
+        setCurrentStatus(initial);
+        setSmoothProgress(calculateProgressFromStatus(initial));
         setErrorMessage(null);
         setUsePolling(false);
       });
@@ -174,22 +184,25 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
 
       onStatusUpdate: (data) => {
         console.log(`📡 SSE Update: ${data.status}`);
-        setCurrentStatus(data.status);
+        const nextStatus = normalizeProcessingStatus(data.status);
+        setCurrentStatus(nextStatus);
         setErrorMessage(null); // Clear any previous errors
         retryCountRef.current = 0; // Reset retry count on success
         // Start gradual progress increase
-        startGradualProgress(data.progress);
+        const serverProgress = typeof data.progress === 'number' ? data.progress : 0;
+        const safeProgress = Math.max(serverProgress, calculateProgressFromStatus(nextStatus));
+        startGradualProgress(safeProgress);
         lastStatusChangeRef.current = Date.now();
 
         // Auto-stop stream if done or error
-        if (data.status === 'DONE' || data.status === 'ERROR') {
-          console.log(`✅ Stream auto-closing due to status: ${data.status}`);
+        if (nextStatus === 'DONE' || nextStatus === 'ERROR') {
+          console.log(`✅ Stream auto-closing due to status: ${nextStatus}`);
           if (statusStreamRef.current) {
             statusStreamRef.current.close();
             statusStreamRef.current = null;
           }
           // Notify parent when processing is done
-          if (data.status === 'DONE' && handleProcessingComplete) {
+          if (nextStatus === 'DONE' && handleProcessingComplete) {
             handleProcessingComplete();
           }
         }
@@ -275,7 +288,7 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
   // Get analysis step status: 'completed', 'current', 'pending', or 'error'
   const getAnalysisStepStatus = (stepKey) => {
     if (currentStatus === 'ERROR') return 'error';
-    if (currentStatus === 'NEW' || currentStatus === 'UPLOADING' || currentStatus === 'uploaded') {
+    if (currentStatus === 'NEW' || currentStatus === 'UPLOADING') {
       return 'pending';
     }
 
@@ -292,7 +305,7 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
   const renderStepIcon = (status) => {
     if (status === 'completed') {
       return (
-        <div className="flex items-center justify-center w-5 h-5 rounded-full bg-green-500 text-white">
+        <div className="flex items-center justify-center w-6 h-6 rounded-full bg-green-500 text-white transition-all duration-500 ease-out">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
             <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
           </svg>
@@ -302,10 +315,20 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
 
     if (status === 'current') {
       return (
-        <div className="flex items-center justify-center w-6 h-6 rounded-full bg-purple-500/20">
-          <svg className="w-4 h-4 text-purple-400 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        <div className="flex items-center justify-center w-6 h-6 rounded-full scale-105 transition-all duration-500 ease-out">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#ffffff"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="lucide lucide-loader-circle-icon lucide-loader-circle w-[18px] h-[18px] animate-spin"
+          >
+            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
           </svg>
         </div>
       );
@@ -323,14 +346,27 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
 
     // Pending - hollow circle
     return (
-      <div className="flex items-center justify-center w-5 h-5 rounded-full bg-gray-700/50">
-        <div className="w-2 h-2 rounded-full bg-gray-500"></div>
+      <div className="flex items-center justify-center w-6 h-6 rounded-full transition-all duration-500 ease-out">
+        <svg
+          className="w-5 h-5"
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="12" cy="12" r="10" />
+        </svg>
       </div>
     );
   };
 
   // Get visible analysis steps window (max 5 steps, current step in middle)
-  const { visibleAnalysisSteps, isAnalysisFirst, isAnalysisLast } = useMemo(() => {
+  const { visibleAnalysisSteps, isAnalysisFirst, isAnalysisLast, currentAnalysisIndex } = useMemo(() => {
     const totalSteps = analysisSteps.length;
     const foundIndex = analysisSteps.findIndex(s => s.key === currentStatus);
     const currentIndex = foundIndex >= 0 ? foundIndex : 0;
@@ -348,6 +384,7 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
       visibleAnalysisSteps: analysisSteps.slice(startIndex, endIndex),
       isAnalysisFirst: startIndex === 0,
       isAnalysisLast: endIndex === totalSteps,
+      currentAnalysisIndex: currentIndex,
     };
   }, [currentStatus]);
 
@@ -379,9 +416,9 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
 
       {/* Fixed upload step + scrolling analysis steps */}
       <div className="mb-4 space-y-2">
-        <div className="flex items-center gap-3 transition-all duration-300">
+        <div className="flex items-center gap-3 transition-all duration-500 ease-out">
           {renderStepIcon(uploadStepStatus)}
-          <span className={`text-sm ${uploadStepStatus === 'current' ? 'text-white font-medium' : 'text-green-500'}`}>
+          <span className={`text-sm transition-all duration-500 ease-out ${uploadStepStatus === 'current' ? 'text-white font-medium' : 'text-green-500'}`}>
             {uploadStep.label}
           </span>
         </div>
@@ -409,14 +446,25 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
           const stepStatus = getAnalysisStepStatus(step.key);
           const isActive = stepStatus === 'current';
           const isCompleted = stepStatus === 'completed';
+          const stepGlobalIndex = analysisSteps.findIndex((analysisStep) => analysisStep.key === step.key);
+          const distanceFromCurrent = currentAnalysisIndex >= 0
+            ? Math.abs(stepGlobalIndex - currentAnalysisIndex)
+            : 0;
+          const transitionDelay = `${Math.min(distanceFromCurrent, 4) * 45}ms`;
 
           return (
             <div
               key={step.key}
-              className={`flex items-center gap-3 transition-all duration-300`}
+              className={`flex items-center gap-3 transition-all duration-500 ease-out will-change-transform ${isActive
+                ? 'opacity-100 translate-y-0 scale-[1.01] ml-1'
+                : isCompleted
+                  ? 'opacity-95 translate-y-0 scale-100'
+                  : 'opacity-70 translate-y-px scale-[0.99]'
+                }`}
+              style={{ transitionDelay }}
             >
               {renderStepIcon(stepStatus)}
-              <span className={`text-sm ${isActive ? 'text-white font-medium' :
+              <span className={`text-sm transition-all duration-500 ease-out ${isActive ? 'text-white font-medium' :
                 isCompleted ? 'text-green-500' :
                   'text-gray-400'
                 }`}>
@@ -444,7 +492,7 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
         <>
           <div className="w-full h-2 bg-white/20 rounded-full overflow-hidden">
             <div
-              className="h-2 rounded-full transition-all duration-300 bg-gradient-to-r from-indigo-500 to-violet-400"
+              className="h-2 rounded-full transition-all duration-500 ease-out bg-linear-to-r from-indigo-500 to-violet-400"
               style={{ width: `${smoothProgress}%` }}
             />
           </div>

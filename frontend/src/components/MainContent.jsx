@@ -520,6 +520,15 @@ export default function MainContent({
     !shouldShowGlobalVideoLoading &&
     (uploading || Boolean(activeProcessingVideoId)) &&
     (!videoData || (videoData.status !== 'DONE' && videoData.status !== 'ERROR'));
+  const processingInitialStatus = useMemo(() => {
+    if (uploading) return "UPLOADING";
+    if (videoData?.status) return videoData.status;
+    // Optimistic transition after upload complete:
+    // keep upload step completed and immediately show first analysis step loading
+    // while waiting for backend status stream/API response.
+    if (activeProcessingVideoId) return "STEP_0_EXTRACT_FRAMES";
+    return "NEW";
+  }, [uploading, videoData?.status, activeProcessingVideoId]);
   const stableProcessingVideoTitle = useMemo(() => {
     const nextTitle = videoData?.original_filename || selectedFile?.name || "";
     if (nextTitle) {
@@ -596,7 +605,7 @@ export default function MainContent({
                   <div className="flex flex-col items-center text-center space-y-6">
                     <ProcessingSteps
                       videoId={activeProcessingVideoId}
-                      initialStatus={uploading ? "UPLOADING" : (videoData?.status || "NEW")}
+                      initialStatus={processingInitialStatus}
                       videoTitle={stableProcessingVideoTitle}
                       externalProgress={uploading ? progress : undefined}
                       onProcessingComplete={handleProcessingComplete}
