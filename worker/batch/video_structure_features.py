@@ -3,6 +3,8 @@ from db_ops import (
     upsert_video_structure_features_sync,
 )
 
+W_MACRO = 3.0      # nhịp video 
+W_TIMELINE = 2.0   # bố cục early/mid/late
 
 def build_video_structure_features(video_id: str, user_id: int):
     """
@@ -88,16 +90,32 @@ def build_video_structure_features(video_id: str, user_id: int):
     )
 
     vec = []
-    vec.append(float(phase_count))
-    vec.append(float(avg_phase_duration))
-    vec.append(float(switch_rate))
+    # vec.append(float(phase_count))
+    # vec.append(float(avg_phase_duration))
+    # vec.append(float(switch_rate))
+
+    # for gid in all_gids:
+    #     vec.append(float(early_ratio.get(gid, 0.0)))
+    # for gid in all_gids:
+    #     vec.append(float(mid_ratio.get(gid, 0.0)))
+    # for gid in all_gids:
+    #     vec.append(float(late_ratio.get(gid, 0.0)))
+
+    pc_norm  = phase_count / 50.0        
+    dur_norm = avg_phase_duration / 300.0
+    sr_norm  = switch_rate / 0.05
+
+    vec = []
+    vec.append(pc_norm  * W_MACRO)
+    vec.append(dur_norm * W_MACRO)
+    vec.append(sr_norm  * W_MACRO)
 
     for gid in all_gids:
-        vec.append(float(early_ratio.get(gid, 0.0)))
+        vec.append(early_ratio.get(gid, 0.0) * W_TIMELINE)
     for gid in all_gids:
-        vec.append(float(mid_ratio.get(gid, 0.0)))
+        vec.append(mid_ratio.get(gid, 0.0) * W_TIMELINE)
     for gid in all_gids:
-        vec.append(float(late_ratio.get(gid, 0.0)))
+        vec.append(late_ratio.get(gid, 0.0) * W_TIMELINE)
 
     upsert_video_structure_features_sync(
         user_id=user_id,

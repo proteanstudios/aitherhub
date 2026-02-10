@@ -331,9 +331,9 @@ async def update_phase_group_for_video_phase(video_id: str, phase_index: int, gr
         await session.commit()
 
 
-def upsert_phase_group_sync(*args, **kwargs):
-    loop = get_event_loop()
-    return loop.run_until_complete(upsert_phase_group(*args, **kwargs))
+# def upsert_phase_group_sync(*args, **kwargs):
+#     loop = get_event_loop()
+#     return loop.run_until_complete(upsert_phase_group(*args, **kwargs))
 
 
 def update_phase_group_for_video_phase_sync(*args, **kwargs):
