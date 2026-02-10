@@ -1,8 +1,8 @@
 from alembic import op
 
 
-revision = "qrst3456"
-down_revision = "mnop9012"
+revision = "ruc_20260210"
+down_revision = "qrst3456"
 branch_labels = None
 depends_on = None
 

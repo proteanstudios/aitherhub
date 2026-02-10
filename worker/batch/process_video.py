@@ -102,14 +102,6 @@ def audio_dir(video_id: str):
 def audio_text_dir(video_id: str):
     return os.path.join(video_root(video_id), "audio_text")
 
-
-def upload_video_dir(video_id: str):
-    return os.path.join("uploadedvideo", video_id)
-
-
-def upload_video_path(video_id: str):
-    return os.path.join(upload_video_dir(video_id), "source.mp4")
-
 # =========================
 # STEP 1 cache helpers
 # =========================
@@ -255,9 +247,9 @@ def _resolve_inputs(args) -> tuple[str, str]:
     if not video_id:
         raise RuntimeError("Must provide --video-id (Azure Batch always has this).")
 
-    local_dir = upload_video_dir(video_id)
+    local_dir = "uploadedvideo"
     _ensure_dir(local_dir)
-    local_path = upload_video_path(video_id)
+    local_path = os.path.join(local_dir, f"{video_id}.mp4")
 
     if os.path.exists(local_path):
         return local_path, video_id
@@ -356,10 +348,11 @@ def main():
             start_step = 0
             logger.info(f"[RESUME] force restart from STEP 0 (status={current_status})")
 
-            video_artifact_dir = video_root(video_id)
-            if os.path.exists(video_artifact_dir):
-                logger.info("[CLEAN] Remove old artifact folder for video_id=%s", video_id)
-                shutil.rmtree(video_artifact_dir, ignore_errors=True)
+            if os.path.exists(ART_ROOT):
+                logger.info("[CLEAN] Remove old artifact folder")
+                # shutil.rmtree(video_root(video_id), ignore_errors=True)
+                shutil.rmtree(ART_ROOT, ignore_errors=True)
+                os.makedirs(ART_ROOT, exist_ok=True)
 
         # =========================
         # STEP 0 – EXTRACT FRAMES
@@ -737,15 +730,24 @@ def main():
                 
 
         # =========================
-        # CLEANUP – CLEAR uploadedvideo for this video only
+        # CLEANUP – CLEAR uploadedvideo
         # =========================
         try:
-            upload_dir = upload_video_dir(video_id)
+            upload_dir = "uploadedvideo"
             if os.path.exists(upload_dir):
-                print(f"[CLEANUP] Remove upload temp dir {upload_dir}/")
-                shutil.rmtree(upload_dir, ignore_errors=True)
+                print(f"[CLEANUP] Clear all files in {upload_dir}/")
+
+                for name in os.listdir(upload_dir):
+                    path = os.path.join(upload_dir, name)
+                    try:
+                        if os.path.isfile(path) or os.path.islink(path):
+                            os.remove(path)
+                        elif os.path.isdir(path):
+                            shutil.rmtree(path)
+                    except Exception as e:
+                        print(f"[WARN] Could not remove {path}: {e}")
         except Exception as e:
-            print(f"[WARN] Cleanup upload temp dir failed for {video_id}: {e}")
+            print(f"[WARN] Cleanup uploadedvideo failed: {e}")
 
 
     except Exception:
