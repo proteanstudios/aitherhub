@@ -66,7 +66,8 @@ from db_ops import (
     get_video_structure_group_id_of_video_sync,
     bulk_upsert_group_best_phases_sync,
     bulk_refresh_phase_insights_sync,
-    get_video_split_status_sync
+    get_video_split_status_sync,
+    get_user_id_of_video_sync
 )
 
 from video_structure_features import build_video_structure_features
@@ -75,17 +76,7 @@ from video_structure_group_stats import recompute_video_structure_group_stats
 from best_video_pipeline import process_best_video
 
 from video_status import VideoStatus
-from split_video import split_video_into_segments
 
-
-
-# def _log_download(msg: str):
-#     os.makedirs(LOG_DIR, exist_ok=True)
-#     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-#     line = f"[{ts}] {msg}\n"
-#     logger.info(line, end="")  # vẫn in ra console
-#     with open(DOWNLOAD_LOG, "a", encoding="utf-8") as f:
-#         f.write(line)
 
 # =========================
 # Artifact layout (PERSISTENT)
@@ -286,12 +277,12 @@ def fire_split_async(args, video_id, video_path, phase_source):
     url = args.blob_url if getattr(args, "blob_url", None) else video_path
 
      # ===== debug =====
-    # if video_id == "2ce39f1d-6489-4fc7-99b7-236ba56a2439":
+    # if video_id == "2ce59f1d-6589-4fc7-79b7-796ba56a2439":
     #     url = (
     #         "https://kyogokuvideos.blob.core.windows.net/"
     #         "videos/"
     #         "abc@gmail.com/"
-    #         "2ce39f1d-6489-4fc7-99b7-236ba56a2439/"
+    #         "2ce59f1d-6589-4fc7-79b7-796ba56a2439/"
     #         "source.mp4"
     #     )
     #     logger.warning("[TEMP] Force blob_url = %s", url)
@@ -332,6 +323,13 @@ def main():
         current_status = get_video_status_sync(video_id)
         raw_start_step = status_to_step_index(current_status)
 
+        user_id = get_user_id_of_video_sync(video_id)
+        if user_id is None:
+            logger.error(
+                "[FATAL] Cannot resolve user_id for video_id=%s (video not found or missing owner)", video_id,
+            )
+            raise RuntimeError(f"Cannot resolve user_id for video {video_id}")
+
         # Chỉ cho resume nếu >= STEP 7
         if raw_start_step >= 7:
             start_step = raw_start_step
@@ -344,25 +342,6 @@ def main():
 
             logger.info(f"[RESUME] resume from step {start_step} (status={current_status})")
 
-           
-            # try:
-            #     logger.info("[ASYNC] Fire split_video (DB phase source)")
-
-            #     subprocess.Popen(
-            #         [
-            #             "python",
-            #             "split_video_async.py",
-            #             "--video-id", video_id,
-            #             "--video-path", video_path,
-            #             "--phase-source", "db",
-            #         ],
-            #           
-            #         stderr=subprocess.DEVNULL,
-            #     )
-            # except Exception as e:
-            #     logger.info(f"[WARN] Cannot fire async split (resume): {e}")
-
-            # fire_split_async(video_id, video_path, "step1")
             fire_split_async(args, video_id, video_path, "db")
 
         else:
@@ -412,23 +391,6 @@ def main():
                 total_frames=total_frames,
             )
 
-            # try:
-            #     logger.info("[ASYNC] Fire split_video early (after STEP 1)")
-
-            #     subprocess.Popen(
-            #         [
-            #             "python",
-            #             "split_video_async.py",
-            #             "--video-id", video_id,
-            #             "--video-path", video_path,
-            #             "--phase-source", "step1",
-            #         ],
-            #         stdout=subprocess.DEVNULL,
-            #         stderr=subprocess.DEVNULL,
-            #     )
-            # except Exception as e:
-            #     # logger.info(f"[WARN] Cannot fire async split: {e}")
-            #     logger.warning("Cannot fire async split: %s", e)
             fire_split_async(args, video_id, video_path, "step1")
 
         else:
@@ -489,6 +451,7 @@ def main():
             update_video_status_sync(video_id, VideoStatus.STEP_5_BUILD_PHASE_UNITS)
             logger.info("=== STEP 5 – BUILD PHASE UNITS ===")
             phase_units = build_phase_units(
+                user_id,
                 keyframes=keyframes,
                 rep_frames=rep_frames,
                 keyframe_captions=keyframe_captions,
@@ -505,7 +468,7 @@ def main():
         else:
             logger.info("[SKIP] STEP 5")
             # raise RuntimeError("Resume from STEP >=5 should load phase_units from DB (not implemented yet).")
-            phase_units = load_video_phases_sync(video_id)
+            phase_units = load_video_phases_sync(video_id, user_id)
 
         # =========================
         # STEP 6 – PHASE DESCRIPTION
@@ -536,8 +499,8 @@ def main():
             phase_units = embed_phase_descriptions(phase_units)
 
             from grouping_pipeline import load_global_groups_from_db
-            groups = load_global_groups_from_db()
-            phase_units, groups = assign_phases_to_groups(phase_units, groups)
+            groups = load_global_groups_from_db(user_id)
+            phase_units, groups = assign_phases_to_groups(phase_units, groups, user_id)
 
             for g in groups:
                 update_phase_group_sync(
@@ -597,8 +560,9 @@ def main():
 
             logger.info(f"[STEP8] Bulk upsert {len(bulk_rows)} group best phases")
 
-            bulk_upsert_group_best_phases_sync(bulk_rows)
-            bulk_refresh_phase_insights_sync(bulk_rows)
+
+            bulk_upsert_group_best_phases_sync(user_id,bulk_rows)
+            bulk_refresh_phase_insights_sync( user_id,bulk_rows)
 
         else:
             logger.info("[SKIP] STEP 8")
@@ -610,7 +574,7 @@ def main():
         if start_step <= 9:
             update_video_status_sync(video_id, VideoStatus.STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES)
             logger.info("=== STEP 9 – BUILD VIDEO STRUCTURE FEATURES ===")
-            build_video_structure_features(video_id)
+            build_video_structure_features(video_id, user_id)
         else:
             logger.info("[SKIP] STEP 9")
 
@@ -622,7 +586,7 @@ def main():
             update_video_status_sync(video_id, VideoStatus.STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP)
             logger.info("=== STEP 10 – ASSIGN VIDEO STRUCTURE GROUP ===")
 
-            assign_video_structure_group(video_id)
+            assign_video_structure_group(video_id, user_id)
         else:
             logger.info("[SKIP] STEP 10")
 
@@ -634,9 +598,9 @@ def main():
             update_video_status_sync(video_id, VideoStatus.STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS)
             logger.info("=== STEP 11 – UPDATE VIDEO STRUCTURE GROUP STATS ===")
 
-            group_id = get_video_structure_group_id_of_video_sync(video_id)
+            group_id = get_video_structure_group_id_of_video_sync(video_id, user_id)
             if group_id:
-                recompute_video_structure_group_stats(group_id)
+                recompute_video_structure_group_stats(group_id, user_id)
         else:
             logger.info("[SKIP] STEP 11")
 
@@ -648,7 +612,7 @@ def main():
             logger.info("=== STEP 12 – UPDATE VIDEO STRUCTURE BEST ===")
 
             
-            process_best_video(video_id)
+            process_best_video(video_id, user_id)
         else:
             logger.info("[SKIP] STEP 12")
 
@@ -675,6 +639,7 @@ def main():
 
             for item in r2_gpt:
                 upsert_phase_insight_sync(
+                    user_id,
                     video_id=video_id,
                     phase_index=item["phase_index"],
                     group_id=int(item["group_id"]) if item.get("group_id") else None,
@@ -692,19 +657,20 @@ def main():
                 get_video_structure_group_stats_sync,
             )
 
-            group_id = get_video_structure_group_id_of_video_sync(video_id)
+            group_id = get_video_structure_group_id_of_video_sync(video_id, user_id)
             if not group_id:
                 logger.info("[REPORT3] No structure group, skip")
             else:
-                best = get_video_structure_group_best_video_sync(group_id)
+                best = get_video_structure_group_best_video_sync(group_id, user_id)
                 if not best:
                     logger.info("[REPORT3] No benchmark video, skip")
                 else:
                     best_video_id = best["video_id"]
 
-                    current_features = get_video_structure_features_sync(video_id)
-                    best_features = get_video_structure_features_sync(best_video_id)
-                    group_stats = get_video_structure_group_stats_sync(group_id)
+                    current_features = get_video_structure_features_sync(video_id, user_id)
+                    best_features = get_video_structure_features_sync(best_video_id, user_id)
+
+                    group_stats = get_video_structure_group_stats_sync(group_id, user_id)
 
                     if not current_features or not best_features:
                         logger.info("[REPORT3] Missing structure features, skip")

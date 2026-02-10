@@ -87,8 +87,8 @@ def embed_phase_descriptions(phase_units):
 # ======================================================
 # STEP 7.2 – LOAD GLOBAL GROUPS
 # ======================================================
-def load_global_groups_from_db():
-    rows = get_all_phase_groups_sync()
+def load_global_groups_from_db(user_id: int):
+    rows = get_all_phase_groups_sync(user_id)
 
     groups = []
     for r in rows:
@@ -180,7 +180,7 @@ def save_global_groups(groups, art_root: str, video_id: str):
 
 #     return phase_units, groups
 
-def assign_phases_to_groups(phase_units, groups):
+def assign_phases_to_groups(phase_units, groups, user_id: int):
     """
     Incremental cosine-based grouping.
     """
@@ -212,6 +212,7 @@ def assign_phases_to_groups(phase_units, groups):
             # new_id = next_group_id
 
             new_id = create_phase_group_sync(
+                user_id=user_id,
                 centroid=v.tolist(),
                 size=1,
             )

@@ -80,5 +80,19 @@
   "privacyPolicy": "Privacy Policy",
   "accountId": "Account ID",
   "authTokenNotFound": "Authentication token not found. Please log in again.",
-  "sessionExpired": "Your session has expired. Please log in again."
+  "sessionExpired": "Your session has expired. Please log in again.",
+  "resumeUploadSelectFile": "Previous upload was interrupted. To continue, please select the same file again.",
+  "resumeButton": "Resume",
+  "skipButton": "Skip",
+  "resumeUploadDesc": "Upload is not complete. Continue?",
+  "resumeUploadTitle": "Resumable upload found",
+  "uploadResumeCleared": "Upload resume information cleared",
+  "feedbackTitle": "Send Feedback",
+  "feedbackDescription": "Please let us know your opinions and requests",
+  "feedbackPlaceholder": "Enter feedback...",
+  "feedbackBack": "Back",
+  "feedbackSubmit": "Send",
+  "feedbackSuccess": "Feedback sent successfully!",
+  "feedbackError": "Failed to send feedback",
+  "feedbackEmptyError": "Please enter your feedback"
 }

@@ -20,7 +20,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return dot / (na * nb)
 
 
-def assign_video_structure_group(video_id: str):
+def assign_video_structure_group(video_id: str, user_id : int):
     """
     STEP 10:
     - Load video_structure_features
@@ -30,7 +30,7 @@ def assign_video_structure_group(video_id: str):
     - Upsert video_structure_group_members
     """
 
-    feat = get_video_structure_features_sync(video_id)
+    feat = get_video_structure_features_sync(video_id, user_id)
     if not feat:
         print("[STEP 10] No structure feature, skip")
         return None
@@ -40,7 +40,7 @@ def assign_video_structure_group(video_id: str):
         print("[STEP 10] Empty embedding, skip")
         return None
 
-    groups = get_all_video_structure_groups_sync()
+    groups = get_all_video_structure_groups_sync(user_id)
 
     best_group = None
     best_sim = -1.0
@@ -61,6 +61,7 @@ def assign_video_structure_group(video_id: str):
     # =========================
     if best_group is None or best_sim < THRESHOLD:
         group_id = create_video_structure_group_sync(
+            user_id=user_id,
             structure_embedding=emb,
             phase_count=feat["phase_count"],
             avg_phase_duration=feat["avg_phase_duration"],
@@ -110,6 +111,7 @@ def assign_video_structure_group(video_id: str):
         new_late_ratio = mean_ratio(best_group["late_ratio"], feat["late_ratio"])
 
         update_video_structure_group_sync(
+            user_id=user_id,
             group_id=group_id,
             structure_embedding=new_emb,
             avg_phase_count=new_avg_phase_count,
@@ -127,6 +129,7 @@ def assign_video_structure_group(video_id: str):
     # Save membership
     # =========================
     upsert_video_structure_group_member_sync(
+        user_id,
         video_id=video_id,
         group_id=group_id,
         distance=distance,

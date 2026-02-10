@@ -82,7 +82,7 @@ def _compute_score(view_scale, view_velocity, like_scale, like_velocity):
 # MAIN PIPELINE
 # =========================================================
 
-def process_best_video(video_id: str):
+def process_best_video(video_id: str, user_id: int):
     """
     Entry point:
     - Tính metrics + score cho video
@@ -115,13 +115,13 @@ def process_best_video(video_id: str):
     )
 
     # ---------- find group ----------
-    group_id = get_video_structure_group_id_of_video_sync(video_id)
+    group_id = get_video_structure_group_id_of_video_sync(video_id, user_id)
     if not group_id:
         print(f"[BEST_VIDEO] Video {video_id} has no structure group, skip")
         return
 
     # ---------- get current best ----------
-    best = get_video_structure_group_best_video_sync(group_id)
+    best = get_video_structure_group_best_video_sync(group_id, user_id)
 
     is_new_best = False
     if best is None:
@@ -144,6 +144,7 @@ def process_best_video(video_id: str):
 
     # upsert best
     upsert_video_structure_group_best_video_sync(
+        user_id=user_id,
         group_id=group_id,
         video_id=video_id,
         score=score,
@@ -157,6 +158,7 @@ def process_best_video(video_id: str):
 
     # ---------- invalidate other video_insights ----------
     mark_video_insights_need_refresh_by_structure_group_sync(
+        user_id,
         group_id=group_id,
         except_video_id=video_id,
     )

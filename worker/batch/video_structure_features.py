@@ -4,7 +4,7 @@ from db_ops import (
 )
 
 
-def build_video_structure_features(video_id: str):
+def build_video_structure_features(video_id: str, user_id: int):
     """
     STEP 9:
     - Read video_phases
@@ -12,7 +12,7 @@ def build_video_structure_features(video_id: str):
     - Save into video_structure_features
     """
 
-    phases = load_video_phases_sync(video_id)
+    phases = load_video_phases_sync(video_id, user_id)
 
     if not phases:
         print("[STEP 9] No phases, skip video structure features")
@@ -100,6 +100,7 @@ def build_video_structure_features(video_id: str):
         vec.append(float(late_ratio.get(gid, 0.0)))
 
     upsert_video_structure_features_sync(
+        user_id=user_id,
         video_id=video_id,
         phase_count=phase_count,
         avg_phase_duration=avg_phase_duration,

@@ -1,5 +1,7 @@
 import Sidebar from "../components/Sidebar";
 import MainContent from '../components/MainContent';
+import VideoDetail from '../components/VideoDetail';
+import FeedbackPage from '../components/FeedbackPage';
 import { useState, useCallback, useMemo, useEffect } from "react";
 
 const getUserFromStorage = () => {
@@ -16,6 +18,7 @@ export default function MainLayout() {
   const [selectedVideoId, setSelectedVideoId] = useState(null);
   const [user, setUser] = useState(getUserFromStorage);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showFeedback, setShowFeedback] = useState(false);
   useEffect(() => {
     let scrollY;
     if (openSidebar) {
@@ -45,6 +48,7 @@ export default function MainLayout() {
   }, [openSidebar]);
 
   const handleVideoSelect = useCallback((video) => {
+    setShowFeedback(false);
     setSelectedVideoId(video?.id || null);
     setOpenSidebar(false);
   }, []);
@@ -65,8 +69,13 @@ export default function MainLayout() {
   }, []);
 
   const handleNewAnalysis = useCallback(() => {
+    setShowFeedback(false);
     setSelectedVideoId(null);
     setOpenSidebar(false);
+  }, []);
+
+  const handleCloseFeedback = useCallback(() => {
+    setShowFeedback(false);
   }, []);
 
   const handleUploadSuccess = useCallback(() => {
@@ -79,9 +88,11 @@ export default function MainLayout() {
     user,
     onVideoSelect: handleVideoSelect,
     onNewAnalysis: handleNewAnalysis,
+    onShowFeedback: handleShowFeedback,
     refreshKey,
+    showFeedback,
     selectedVideo: selectedVideoId ? { id: selectedVideoId } : null,
-  }), [openSidebar, handleCloseSidebar, user, handleVideoSelect, handleNewAnalysis, refreshKey, selectedVideoId]);
+  }), [openSidebar, handleCloseSidebar, user, handleVideoSelect, handleNewAnalysis, handleShowFeedback, refreshKey, selectedVideoId, showFeedback]);
 
   const mainContentProps = useMemo(() => ({
     onOpenSidebar: handleOpenSidebar,
@@ -105,7 +116,13 @@ export default function MainLayout() {
 
         <main className="w-full md:flex-1 bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))]
  text-white">
-          <MainContent {...mainContentProps} />
+          <MainContent {...mainContentProps}>
+            {showFeedback ? (
+              <FeedbackPage onBack={handleCloseFeedback} />
+            ) : (
+              selectedVideo && <VideoDetail video={selectedVideo} />
+            )}
+          </MainContent>
         </main>
       </div>
     </div>

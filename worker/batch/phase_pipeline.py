@@ -476,6 +476,7 @@ def collect_speech_for_phase(segments, start_sec, end_sec):
     return " ".join(texts)
 
 def build_phase_units(
+    user_id,
     keyframes,
     rep_frames,
     keyframe_captions,
@@ -576,6 +577,7 @@ def build_phase_units(
                 time_end = float(end_sec) if end_sec is not None else None
 
                 new_id = insert_video_phase_sync(
+                    user_id=user_id,
                     video_id=str(video_id),
                     phase_index=phase["phase_index"],
                     phase_description=None,

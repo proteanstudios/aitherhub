@@ -6,20 +6,25 @@ from db_ops import (
 )
 
 
-def recompute_video_structure_group_stats(group_id: str):
+def recompute_video_structure_group_stats(group_id: str, user_id: int):
     """
     STEP 11:
     Recompute centroid & stats of a structure group from ALL its members
     """
 
-    members = get_video_structure_group_members_by_group_sync(group_id)
+    members = get_video_structure_group_members_by_group_sync(group_id, user_id)
     if not members:
         print(f"[STEP 11] No members in group {group_id}, skip")
         return
 
     feats = []
-    for m in members:
-        feat = get_video_structure_features_sync(m["video_id"])
+    # for m in members:
+    #     feat = get_video_structure_features_sync(m["video_id"], user_id)
+    #     if feat:
+    #         feats.append(feat)
+
+    for video_id in members:
+        feat = get_video_structure_features_sync(str(video_id), user_id)
         if feat:
             feats.append(feat)
 
@@ -57,6 +62,7 @@ def recompute_video_structure_group_stats(group_id: str):
     late_ratio = mean_ratio([f["late_ratio"] for f in feats])
 
     update_video_structure_group_sync(
+        user_id=user_id,
         group_id=group_id,
         structure_embedding=centroid,
         avg_phase_count=avg_phase_count,

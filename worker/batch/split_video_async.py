@@ -14,6 +14,7 @@ from db_ops import (
     get_video_split_status_sync,
     update_video_split_status_sync,
     load_video_phases_sync,
+    get_user_id_of_video_sync
 )
 
 # =====================
@@ -287,7 +288,8 @@ def load_phases_from_step1(video_id: str) -> list[dict]:
 
 
 def load_phases_from_db(video_id: str):
-    rows = load_video_phases_sync(video_id)
+    user_id = get_user_id_of_video_sync(video_id)
+    rows = load_video_phases_sync(video_id, user_id)
     phases = []
     for r in rows:
         phases.append({

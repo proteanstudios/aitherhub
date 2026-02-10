@@ -86,5 +86,13 @@
   "skipButton": "スキップ",
   "resumeUploadDesc": "アップロードが完了していません。続行しますか？",
   "resumeUploadTitle": "再開可能なアップロードが見つかりました",
-  "uploadResumeCleared": "アップロード再開情報を削除しました"
+  "uploadResumeCleared": "アップロード再開情報を削除しました",
+  "feedbackTitle": "フィードバックを送信",
+  "feedbackDescription": "ご意見・ご要望をお聞かせください",
+  "feedbackPlaceholder": "フィードバックを入力...",
+  "feedbackBack": "戻る",
+  "feedbackSubmit": "送信する",
+  "feedbackSuccess": "フィードバックを送信しました！",
+  "feedbackError": "フィードバックの送信に失敗しました",
+  "feedbackEmptyError": "フィードバックを入力してください"
 }
