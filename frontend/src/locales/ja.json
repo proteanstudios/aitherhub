@@ -30,6 +30,7 @@
   "statusDone": "解析完了",
   "statusError": "エラーが発生しました",
   "statusProcessing": "処理中...",
+  "statusAnalyzing": "解析中...",
   "progressCompleteMessage": "解析が完了すると、自動的に結果が表示されます。",
   "errorAnalysisMessage": "動画の解析中にエラーが発生しました。もう一度アップロードしてください。",
   "clickToPreview": "クリックしてプレビュー",
@@ -48,6 +49,7 @@
   "noInsight": "(インサイトなし)",
   "newAnalysis": "新しい解析",
   "searchChat": "チャットを検索",
+  "feedback": "フィードバック",
   "analysisHistory": "解析履歴",
   "noVideos": "ビデオがありません",
   "myAccount": "マイアカウント",
@@ -85,5 +87,14 @@
   "skipButton": "スキップ",
   "resumeUploadDesc": "アップロードが完了していません。続行しますか？",
   "resumeUploadTitle": "再開可能なアップロードが見つかりました",
-  "uploadResumeCleared": "アップロード再開情報を削除しました"
+  "uploadResumeCleared": "アップロード再開情報を削除しました",
+  "feedbackTitle": "フィードバックを送信",
+  "feedbackDescription": "ご意見・ご要望をお聞かせください",
+  "feedbackPlaceholder": "フィードバックを入力...",
+  "feedbackBack": "戻る",
+  "feedbackSubmit": "送信する",
+  "feedbackSuccess": "フィードバックを送信しました！",
+  "feedbackError": "フィードバックの送信に失敗しました",
+  "feedbackEmptyError": "フィードバックを入力してください",
+  "analysisSectionHint": "アップロード完了後、解析ステップを実行中"
 }

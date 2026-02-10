@@ -292,8 +292,12 @@ class UploadService extends BaseApiService {
    * @param {Function} onProgress - Callback for progress updates
    * @returns {Promise<string>} - video_id
    */
-  async uploadFile(file, email, onProgress) {
+  async uploadFile(file, email, onProgress, onUploadInit) {
     const { video_id, upload_id, upload_url } = await this.generateUploadUrl(email, file.name);
+
+    if (onUploadInit) {
+      onUploadInit({ uploadId: upload_id, videoId: video_id });
+    }
 
     // Save initial metadata with video_id for potential resume
     await this.saveUploadMetadata({

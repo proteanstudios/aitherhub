@@ -1,15 +1,11 @@
 # app/models/orm/upload.py
-from datetime import datetime
-import uuid
-from sqlalchemy import Integer, Text, ForeignKey
-from sqlalchemy import DateTime as SADateTime
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.orm.base import Base, UUIDMixin
+from app.models.orm.base import Base, UUIDMixin, TimestampMixin
 
 
-class Upload(Base, UUIDMixin):
+class Upload(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "uploads"
 
     # Optional association to a user who initiated the upload

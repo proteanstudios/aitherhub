@@ -1,6 +1,5 @@
 import Sidebar from "../components/Sidebar";
 import MainContent from '../components/MainContent';
-import VideoDetail from '../components/VideoDetail';
 import { useState, useCallback, useMemo, useEffect } from "react";
 
 const getUserFromStorage = () => {
@@ -14,9 +13,10 @@ const getUserFromStorage = () => {
 
 export default function MainLayout() {
   const [openSidebar, setOpenSidebar] = useState(false);
-  const [selectedVideo, setSelectedVideo] = useState(null);
+  const [selectedVideoId, setSelectedVideoId] = useState(null);
   const [user, setUser] = useState(getUserFromStorage);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showFeedback, setShowFeedback] = useState(false);
   useEffect(() => {
     let scrollY;
     if (openSidebar) {
@@ -44,14 +44,17 @@ export default function MainLayout() {
       };
     }
   }, [openSidebar]);
+
   const handleVideoSelect = useCallback((video) => {
-    setSelectedVideo(video);
+    setShowFeedback(false);
+    setSelectedVideoId(video?.id || null);
+    setOpenSidebar(false);
   }, []);
 
   const handleUserChange = useCallback((newUser) => {
     setUser(newUser);
     if (!newUser?.isLoggedIn) {
-      setSelectedVideo(null);
+      setSelectedVideoId(null);
     }
   }, []);
 
@@ -64,12 +67,26 @@ export default function MainLayout() {
   }, []);
 
   const handleNewAnalysis = useCallback(() => {
-    setSelectedVideo(null);
+    setShowFeedback(false);
+    setSelectedVideoId(null);
+    setOpenSidebar(false);
+  }, []);
+  const handleShowFeedback = useCallback(() => {
+    setShowFeedback(true);
+    setSelectedVideoId(null);
     setOpenSidebar(false);
   }, []);
 
-  const handleUploadSuccess = useCallback(() => {
+  const handleCloseFeedback = useCallback(() => {
+    setShowFeedback(false);
+  }, []);
+
+  const handleUploadSuccess = useCallback((videoId) => {
     setRefreshKey(prev => prev + 1);
+    if (videoId) {
+      setShowFeedback(false);
+      setSelectedVideoId(videoId);
+    }
   }, []);
 
   const sidebarProps = useMemo(() => ({
@@ -78,34 +95,38 @@ export default function MainLayout() {
     user,
     onVideoSelect: handleVideoSelect,
     onNewAnalysis: handleNewAnalysis,
+    onShowFeedback: handleShowFeedback,
+    onCloseFeedback: handleCloseFeedback,
     refreshKey,
-    selectedVideo,
-  }), [openSidebar, handleCloseSidebar, user, handleVideoSelect, handleNewAnalysis, refreshKey, selectedVideo]);
+    showFeedback,
+    selectedVideo: selectedVideoId ? { id: selectedVideoId } : null,
+  }), [openSidebar, handleCloseSidebar, user, handleVideoSelect, handleNewAnalysis, handleShowFeedback, handleCloseFeedback, refreshKey, selectedVideoId, showFeedback]);
 
   const mainContentProps = useMemo(() => ({
     onOpenSidebar: handleOpenSidebar,
     user,
     setUser: handleUserChange,
     onUploadSuccess: handleUploadSuccess,
-    onVideoSelect: handleVideoSelect,
-  }), [handleOpenSidebar, user, handleUserChange, handleUploadSuccess, handleVideoSelect]);
+    selectedVideoId,
+    showFeedback,
+    onCloseFeedback: handleCloseFeedback,
+  }), [handleOpenSidebar, user, handleUserChange, handleUploadSuccess, selectedVideoId, showFeedback, handleCloseFeedback]);
 
   return (
     <div className="min-h-screen bg-gray-100 flex justify-center">
       <div className="w-full flex">
 
-        <aside className="hidden xl:block w-1/5 bg-white text-black">
+        <aside className="hidden xl:block w-1/5 max-w-[350px] bg-white text-black">
           <Sidebar {...sidebarProps} />
         </aside>
-        
+
         <div className="xl:hidden">
           <Sidebar {...sidebarProps} />
         </div>
-        
-        <main className="w-full md:w-4/5 bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))]
+
+        <main className="w-full md:flex-1 bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))]
  text-white">
           <MainContent {...mainContentProps}>
-            {selectedVideo && <VideoDetail video={selectedVideo} />}
           </MainContent>
         </main>
       </div>

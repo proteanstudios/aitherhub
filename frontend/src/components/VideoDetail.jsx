@@ -6,7 +6,7 @@ import VideoPreviewModal from "./modals/VideoPreviewModal";
 import VideoService from "../base/services/videoService";
 import "../assets/css/sidebar.css";
 
-export default function VideoDetail({ video }) {
+export default function VideoDetail({ videoData }) {
   const markdownTableStyles = `
   .markdown table {
     width: 100%;
@@ -84,10 +84,8 @@ export default function VideoDetail({ video }) {
   }
   `;
   const [loading, setLoading] = useState(false);
-  const [videoData, setVideoData] = useState(null);
   const [error, setError] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
-  const [processingStatus, setProcessingStatus] = useState(null);
   const [previewData, setPreviewData] = useState(null); // { url, timeStart, timeEnd }
   const [previewLoading, setPreviewLoading] = useState(false);
   const [expandedR2, setExpandedR2] = useState({});
@@ -96,42 +94,11 @@ export default function VideoDetail({ video }) {
   const lastSentRef = useRef({ text: null, t: 0 });
   const reloadTimeoutRef = useRef(null);
   const chatEndRef = useRef(null);
-  const statusStreamRef = useRef(null);
 
   // Smooth progress bar animation - gradual increase every few seconds
   const [smoothProgress, setSmoothProgress] = useState(0);
   const progressIntervalRef = useRef(null);
   const lastStatusChangeRef = useRef(Date.now());
-
-  // Start gradual progress increase
-  const startGradualProgress = useCallback((targetProgress) => {
-    // Clear any existing interval
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-    }
-
-    // Set initial progress to current target
-    setSmoothProgress(targetProgress);
-
-    // Start interval to gradually increase progress every 3-5 seconds
-    progressIntervalRef.current = setInterval(() => {
-      setSmoothProgress(prev => {
-        const increment = Math.random() * 2 + 1; // Random increment 1-3%
-        const newProgress = Math.min(prev + increment, 99); // Cap at 99% until actually complete
-
-        // Stop if we've reached a reasonable limit for this step
-        if (newProgress >= targetProgress + 5) {
-          if (progressIntervalRef.current) {
-            clearInterval(progressIntervalRef.current);
-            progressIntervalRef.current = null;
-          }
-          return targetProgress + 5; // Allow slight overshoot for visual effect
-        }
-
-        return newProgress;
-      });
-    }, 2000 + Math.random() * 3000); // Random interval 2-5 seconds
-  }, []);
 
   const scrollToBottom = (smooth = true) => {
     if (chatEndRef.current) {
@@ -254,58 +221,6 @@ export default function VideoDetail({ video }) {
     }
   };
 
-  // Helper to calculate progress percentage from status
-  const calculateProgressFromStatus = (status) => {
-    const statusMap = {
-      NEW: 0,
-      uploaded: 0,
-      STEP_0_EXTRACT_FRAMES: 5,
-      STEP_1_DETECT_PHASES: 10,
-      STEP_2_EXTRACT_METRICS: 20,
-      STEP_3_TRANSCRIBE_AUDIO: 30,
-      STEP_4_IMAGE_CAPTION: 40,
-      STEP_5_BUILD_PHASE_UNITS: 50,
-      STEP_6_BUILD_PHASE_DESCRIPTION: 60,
-      STEP_7_GROUPING: 65,
-      STEP_8_UPDATE_BEST_PHASE: 70,
-      STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES: 75,
-      STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP: 80,
-      STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS: 85,
-      STEP_12_UPDATE_VIDEO_STRUCTURE_BEST: 90,
-      STEP_13_BUILD_REPORTS: 95,
-      STEP_14_SPLIT_VIDEO: 98,
-      DONE: 100,
-      ERROR: -1,
-    };
-    return statusMap[status] || 0;
-  };
-
-  // Helper to get user-friendly status message
-  const getStatusMessage = (status) => {
-    const messages = {
-      NEW: window.__t('statusNew'),
-      uploaded: window.__t('statusUploaded'),
-      STEP_0_EXTRACT_FRAMES: window.__t('statusStep0'),
-      STEP_1_DETECT_PHASES: window.__t('statusStep1'),
-      STEP_2_EXTRACT_METRICS: window.__t('statusStep2'),
-      STEP_3_TRANSCRIBE_AUDIO: window.__t('statusStep3'),
-      STEP_4_IMAGE_CAPTION: window.__t('statusStep4'),
-      STEP_5_BUILD_PHASE_UNITS: window.__t('statusStep5'),
-      STEP_6_BUILD_PHASE_DESCRIPTION: window.__t('statusStep6'),
-      STEP_7_GROUPING: window.__t('statusStep7'),
-      STEP_8_UPDATE_BEST_PHASE: window.__t('statusStep8'),
-      STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES: window.__t('statusStep9'),
-      STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP: window.__t('statusStep10'),
-      STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS: window.__t('statusStep11'),
-      STEP_12_UPDATE_VIDEO_STRUCTURE_BEST: window.__t('statusStep12'),
-      STEP_13_BUILD_REPORTS: window.__t('statusStep13'),
-      STEP_14_SPLIT_VIDEO: window.__t('statusStep14'),
-      DONE: window.__t('statusDone'),
-      ERROR: window.__t('statusError'),
-    };
-    return messages[status] || window.__t('statusProcessing');
-  };
-
   const reloadHistory = async () => {
     const vid = video?.id || videoData?.id;
     if (!vid) return;
@@ -396,91 +311,6 @@ export default function VideoDetail({ video }) {
   };
 
   useEffect(() => {
-    const fetchVideoDetails = async () => {
-      if (!video || !video.id) {
-        setVideoData(null);
-        return;
-      }
-
-      setLoading(true);
-      setError(null);
-
-      try {
-        const response = await VideoService.getVideoById(video.id);
-        const data = response || {};
-
-        // normalize reports
-        const r1 = Array.isArray(data.reports_1) ? data.reports_1 : (data.reports_1 ? [data.reports_1] : []);
-        let r2 = Array.isArray(data.reports_2) ? data.reports_2 : (data.reports_2 ? [data.reports_2] : []);
-        // if API doesn't provide reports_2, derive it from reports_1 (use insight if present, else fallback to phase_description)
-        if ((!r2 || r2.length === 0) && r1 && r1.length > 0) {
-          r2 = r1.map((it) => ({
-            phase_index: it.phase_index,
-            time_start: it.time_start,
-            time_end: it.time_end,
-            insight: it.insight ?? it.phase_description ?? "",
-            video_clip_url: it.video_clip_url, // Include video_clip_url for preview
-          }));
-        }
-        setVideoData({
-          id: data.id || video.id,
-          title: data.original_filename || video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`,
-          status: data.status || video.status || "processing",
-          uploadedAt: data.created_at || video.created_at || new Date().toISOString(),
-          reports_1: r1,
-          reports_2: r2,
-          report3: Array.isArray(data.report3) ? data.report3 : (data.report3 ? [data.report3] : []),
-        });
-
-        // initialize collapsed state for report2 (closed by default)
-        try {
-          const map = {};
-          const list = Array.isArray(r2) ? r2 : [];
-          list.forEach((it, i) => {
-            const key = it.phase_index ?? i;
-            map[key] = false;
-          });
-          setExpandedR2(map);
-        } catch (e) {
-          setExpandedR2({});
-        }
-
-        // initialize collapsed state for report2 (closed by default)
-        try {
-          const map = {};
-          const list = Array.isArray(r2) ? r2 : [];
-          list.forEach((it, i) => {
-            const key = it.phase_index ?? i;
-            map[key] = false;
-          });
-          setExpandedR2(map);
-        } catch (e) {
-          setExpandedR2({});
-        }
-        // Set initial processing status if not done
-        if (data.status && data.status !== 'DONE' && data.status !== 'ERROR') {
-          setProcessingStatus({
-            status: data.status,
-            progress: calculateProgressFromStatus(data.status),
-            message: getStatusMessage(data.status),
-          });
-        }
-
-      } catch (err) {
-        // If it's 403 Forbidden, interceptor will handle logout and open login modal
-        // Don't show error message in this case
-        if (err?.response?.status !== 403) {
-          setError(window.__t('fetchError'));
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchVideoDetails();
-  }, [video]);
-
-  useEffect(() => {
     const onGlobalSubmit = (ev) => {
       try {
         const text = ev?.detail?.text;
@@ -505,29 +335,9 @@ export default function VideoDetail({ video }) {
   }, []);
 
   useEffect(() => {
-    if (streamCancelRef.current) {
-      try {
-        if (typeof streamCancelRef.current.cancel === "function") streamCancelRef.current.cancel();
-        else if (typeof streamCancelRef.current === "function") streamCancelRef.current();
-      } catch (e) { }
-      streamCancelRef.current = null;
-    }
-    answerRef.current = "";
-    lastSentRef.current = { text: null, t: 0 };
-    lastStatusChangeRef.current = Date.now();
-
-    // Reset smooth progress and processing status when video changes
-    setSmoothProgress(0);
-    setProcessingStatus(null); // Clear progress bar when switching videos
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
-    }
-  }, [video?.id]);
-
-  useEffect(() => {
+    console.log("Loading chat history for video:", videoData);
     let cancelled = false;
-    const vid = video?.id || videoData?.id;
+    const vid = videoData?.id;
     if (!vid) {
       setChatMessages([]);
       return;
@@ -557,7 +367,7 @@ export default function VideoDetail({ video }) {
     return () => {
       cancelled = true;
     };
-  }, [video]);
+  }, [videoData]);
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -568,149 +378,6 @@ export default function VideoDetail({ video }) {
       }
     }
   }, [chatMessages]);
-
-  // Stream status updates if video is processing
-  useEffect(() => {
-    // Only stream if video exists and is not done/error
-    if (!video?.id || !videoData) return;
-    if (videoData.status === 'DONE' || videoData.status === 'ERROR') return;
-
-    // Close any existing stream
-    if (statusStreamRef.current) {
-      statusStreamRef.current.close();
-      statusStreamRef.current = null;
-    }
-
-    // Start SSE stream
-    statusStreamRef.current = VideoService.streamVideoStatus({
-      videoId: video.id,
-
-      onStatusUpdate: (data) => {
-        setProcessingStatus({
-          status: data.status,
-          progress: data.progress,
-          message: data.message,
-          updatedAt: data.updated_at,
-        });
-
-        // Start gradual progress increase
-        startGradualProgress(data.progress);
-        lastStatusChangeRef.current = Date.now();
-      },
-
-      onDone: async () => {
-        // Processing complete - reload full video data to get reports
-        try {
-          const response = await VideoService.getVideoById(video.id);
-          const rr1 = Array.isArray(response.reports_1) ? response.reports_1 : (response.reports_1 ? [response.reports_1] : []);
-          let rr2 = Array.isArray(response.reports_2) ? response.reports_2 : (response.reports_2 ? [response.reports_2] : []);
-          if ((!rr2 || rr2.length === 0) && rr1 && rr1.length > 0) {
-            rr2 = rr1.map((it) => ({
-              phase_index: it.phase_index,
-              time_start: it.time_start,
-              time_end: it.time_end,
-              insight: it.insight ?? it.phase_description ?? "",
-              video_clip_url: it.video_clip_url, // Include video_clip_url for preview
-            }));
-          }
-          setVideoData({
-            id: response.id || video.id,
-            title: response.original_filename || video.original_filename,
-            status: response.status,
-            uploadedAt: response.created_at,
-            reports_1: rr1,
-            reports_2: rr2,
-            report3: Array.isArray(response.report3) ? response.report3 : (response.report3 ? [response.report3] : []),
-          });
-          setProcessingStatus(null);
-        } catch (err) {
-          console.error('Failed to reload video after processing:', err);
-        }
-      },
-
-      onError: (error) => {
-        console.error('Status stream error:', error);
-        setProcessingStatus(null);
-        // Could implement polling fallback here
-      },
-    });
-
-    // Cleanup
-    return () => {
-      if (statusStreamRef.current) {
-        statusStreamRef.current.close();
-        statusStreamRef.current = null;
-      }
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
-    };
-  }, [video?.id, videoData?.status]);
-
-  // console.log(normalizeMarkdownTable(chatMessages[7].answer || ""));
-
-  // Clear progress bar if video is already DONE or ERROR (handles race conditions)
-  useEffect(() => {
-    if (videoData?.status === 'DONE' || videoData?.status === 'ERROR') {
-      setProcessingStatus(null);
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
-    }
-  }, [videoData?.status]);
-
-  // Render processing status UI
-  const renderProcessingStatus = () => {
-    if (!processingStatus) return null;
-
-    const { status, progress, message } = processingStatus;
-    const isError = status === 'ERROR';
-
-    return (
-      <div className={`mt-4 p-4 rounded-lg ${isError ? 'bg-red-500/10 border border-red-500/50' : 'bg-white/5'}`}>
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-semibold">
-            {message}
-          </span>
-          {!isError && (
-            <span className="text-sm text-gray-400">
-              {Math.round(smoothProgress)}%
-            </span>
-          )}
-        </div>
-
-        {!isError && smoothProgress >= 0 && (
-          <>
-            <div className="w-full bg-gray-700 rounded-full h-2">
-              <div
-                className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${smoothProgress}%` }}
-              />
-            </div>
-            <p className="text-xs text-gray-400 mt-2">
-              {window.__t('progressCompleteMessage')}
-            </p>
-          </>
-        )}
-
-        {isError && (
-          <p className="text-sm text-red-400 mt-2">
-            {window.__t('errorAnalysisMessage')}
-          </p>
-        )}
-      </div>
-    );
-  };
-
-  if (!video) {
-    return (
-      <div className="w-full h-full flex items-center justify-center">
-        <p className="text-gray-400 text-lg">{window.__t('noVideo')}</p>
-      </div>
-    );
-  }
 
   if (loading) {
     return (
@@ -744,7 +411,7 @@ export default function VideoDetail({ video }) {
         <div className="flex flex-col gap-2">
           <div className="inline-flex self-start items-center bg-white rounded-[50px] h-[41px] px-4">
             <div className="text-[14px] font-bold whitespace-nowrap bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))] text-transparent bg-clip-text">
-              {videoData?.title || video.original_filename}
+              {videoData?.original_filename}
             </div>
           </div>
         </div>
@@ -752,7 +419,7 @@ export default function VideoDetail({ video }) {
         {/* SCROLL AREA */}
         <div className="flex-1 overflow-y-auto scrollbar-custom text-left md:mb-0">
           {/* Show processing status when video is being processed */}
-          {renderProcessingStatus()}
+          {/* {renderProcessingStatus()} */}
 
           {/* Show thank you message and reports only when video is done */}
           {videoData?.status === 'DONE' && videoData?.reports_1 && videoData.reports_1.length > 0 && (

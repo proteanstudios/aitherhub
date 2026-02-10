@@ -39,9 +39,9 @@ class VideoService extends BaseApiService {
     }
   }
 
-  async getVideoById(videoId) {
+  async getVideoById(videoId, config = {}) {
     try {
-      const response = await this.get(`/api/v1/videos/${videoId}`);
+      const response = await this.get(`/api/v1/videos/${videoId}`, config);
       if (response?.data) {
         return response.data;
       }

@@ -82,7 +82,7 @@ export default function Header({
             onClick={onOpenSidebar}
             className="block md:hidden w-[19px] h-[16px]"
           />
-          <span className="font-cabin font-semibold text-[20px]">
+          <span className="text-xl font-semibold text-white">
             Liveboost AI
           </span>
         </div>
@@ -105,7 +105,7 @@ export default function Header({
               {openDropdown && (
                 <div className="absolute right-0 top-[40px] w-[196px] bg-white border rounded-md shadow-md z-50">
                   <ul className="flex flex-col text-[16px] text-black">
-                    <li className="px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2">
+                    <li className="text-sm text-gray-700 px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2">
                       <img
                         src={MyAccount}
                         alt="My Account"
@@ -115,7 +115,7 @@ export default function Header({
                     </li>
 
                     <li
-                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                      className="text-sm text-gray-700 px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
                       onClick={() => {
                         setOpenDropdown(false);
                         setOpenForgotPassword(true);
@@ -130,7 +130,7 @@ export default function Header({
                     </li>
 
                     <li
-                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2 text-red-500"
+                      className="text-sm px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2 text-red-500"
                       onClick={() => {
                         setOpenDropdown(false);
                         AuthService.logout();

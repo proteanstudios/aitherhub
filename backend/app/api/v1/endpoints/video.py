@@ -110,7 +110,7 @@ async def check_upload_resume(
         result = await db.execute(
             select(Upload)
             .where(Upload.user_id == user_id)
-            .order_by(Upload.id.desc())
+            .order_by(Upload.created_at.desc(), Upload.id.desc())
             .limit(1)
         )
         upload = result.scalar_one_or_none()

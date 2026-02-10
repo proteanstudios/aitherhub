@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import logo from "../assets/logo/logo.svg";
-import write from "../assets/icons/write.png";
-import searchIcon from "../assets/icons/searchBlack.png";
 import searchMobile from "../assets/icons/searchmobile.png";
-import textSearch from "../assets/icons/text.png";
 import searchSp from "../assets/icons/searchSp.png";
 import library from "../assets/icons/Library.png";
 
@@ -17,7 +14,7 @@ import ForgotPasswordModal from "./modals/ForgotPasswordModal";
 import AuthService from "../base/services/userService";
 import VideoService from "../base/services/videoService";
 
-export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAnalysis, refreshKey, selectedVideo }) {
+export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAnalysis, onShowFeedback, refreshKey, selectedVideo, showFeedback }) {
   const sidebarRef = useRef(null);
   const dropdownRef = useRef(null);
 
@@ -36,8 +33,6 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
 
   // ===== SP search =====
   const [searchValue, setSearchValue] = useState("");
-  const [isFocus, setIsFocus] = useState(false);
-  const showPlaceholder = !isFocus && searchValue === "";
   const [showBackButton, setShowBackButton] = useState(false);
 
   // ===== user fallback =====
@@ -142,28 +137,62 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
         md:overflow-y-auto md:scrollbar-custom md:py-4 md:pl-4 md:pr-0`}
       >
         {/* ================= PC ================= */}
-        <div className="hidden md:block space-y-3">
-          <img src={logo} className="w-[37px] h-[35px]" />
-
-          <div
-            onClick={() => {
-              setSelectedVideoId(null);
-              if (onVideoSelect) {
-                onVideoSelect(null);
-              }
-              if (onNewAnalysis) {
-                onNewAnalysis();
-              }
-            }}
-            className="flex items-center mt-[28px] ml-[5px] gap-2 cursor-pointer hover:text-gray-400"
-          >
-            <img src={write} className="w-[30px] h-[30px]" />
-            <span className="font-semibold">{window.__t('newAnalysis')}</span>
+        <div className="hidden md:block space-y-3 pr-4">
+          <div className="flex items-center">
+            <img src={logo} className="w-[37px] h-[35px]" />
+            <span className="font-semibold text-[22px] ml-2 bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))] bg-clip-text text-transparent">
+              Liveboost AI
+            </span>
           </div>
-
-          <div className="flex items-center ml-[10px] gap-2 cursor-pointer hover:text-gray-400">
-            <img src={searchIcon} className="w-[20px] h-[20px]" />
-            <span className="font-semibold">{window.__t('searchChat')}</span>
+          <div className="mt-[28px]">
+            <div
+              onClick={() => {
+                setSelectedVideoId(null);
+                if (onVideoSelect) {
+                  onVideoSelect(null);
+                }
+                if (onNewAnalysis) {
+                  onNewAnalysis();
+                }
+              }}
+              className={`flex items-center gap-2 p-2 px-4 border rounded-md cursor-pointer transition-all duration-200 ease-out ${!showFeedback && !selectedVideo
+                ? "border-purple-300 bg-purple-50 text-purple-700"
+                : "border-gray-200 hover:bg-gray-100"
+                }`}
+            >
+              {/* <img src={write} className="w-[30px] h-[30px]" /> */}
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={!showFeedback && !selectedVideo ? "#7c3aed" : "#213547"} stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil-icon lucide-pencil transition-colors duration-200 ease-out"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /><path d="m15 5 4 4" /></svg>
+              <span className={`text-sm transition-colors duration-200 ease-out ${!showFeedback && !selectedVideo ? "text-purple-700 font-medium" : "text-[#020817]"
+                }`}>{window.__t('newAnalysis')}</span>
+            </div>
+            <div className="flex items-center gap-2 p-2 px-4 mt-2 border border-gray-200 rounded-md cursor-pointer hover:text-gray-400 hover:bg-gray-100 transition-all duration-200 ease-out">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#213547" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search-icon lucide-search transition-colors duration-200 ease-out"><path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" /></svg>
+              <input type="text" placeholder={window.__t('searchChat')} className="w-full outline-none text-sm text-[#213547] transition-colors duration-200 ease-out placeholder:text-[#020817] focus:placeholder:text-gray-400" />
+            </div>
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                if (onShowFeedback) {
+                  onShowFeedback();
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  if (onShowFeedback) {
+                    onShowFeedback();
+                  }
+                }
+              }}
+              className={`flex items-center gap-2 p-2 px-4 mt-2 border rounded-md cursor-pointer transition-all duration-200 ease-out ${showFeedback
+                ? "border-purple-300 bg-purple-50 text-purple-700"
+                : "border-gray-200 hover:bg-gray-100"
+                }`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={showFeedback ? "#7c3aed" : "#213547"} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-message-square-icon lucide-message-square transition-colors duration-200 ease-out"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" /></svg>
+              <span className={`text-sm transition-colors duration-200 ease-out ${showFeedback ? "text-purple-700 font-medium" : "text-[#020817]"
+                }`}>{window.__t('feedback')}</span>
+            </div>
           </div>
         </div>
 
@@ -177,8 +206,6 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                   placeholder="検索"
                   value={searchValue}
                   onChange={(e) => setSearchValue(e.target.value)}
-                  onFocus={() => setIsFocus(true)}
-                  onBlur={() => setIsFocus(false)}
                   className="
                     w-full h-[40px] rounded-[5px] bg-white text-black pl-[35px] pr-3 outline-none
 
@@ -226,30 +253,35 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
 
         {/* ================= COMMON ================= */}
         <div className="mt-6 md:space-y-3 flex flex-col flex-1 min-h-0 pl-4 pr-0 md:px-0">
-          <span className="block ml-[16px] text-[#9E9E9E] font-semibold text-left flex-shrink-0">{window.__t('analysisHistory')}</span>
+          <span className="block text-[#9E9E9E] text-left flex-shrink-0 text-sm">{window.__t('analysisHistory')}</span>
 
           {effectiveUser?.isLoggedIn && (
             <>
               <div className="flex-1 min-h-0 flex flex-col">
-                {loadingVideos ? (
+                {loadingVideos && videos.length === 0 ? (
                   <div className="flex items-center justify-center py-4">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-400"></div>
                   </div>
                 ) : videos.length > 0 ? (
                   <div className="flex flex-col items-start gap-2 flex-1 min-h-0 overflow-y-auto scrollbar-custom">
+                    {loadingVideos && (
+                      <div className="w-full flex justify-center py-1">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400"></div>
+                      </div>
+                    )}
                     {videos.map((video) => (
-                      <span
-                        key={video.id}
-                        onClick={() => handleVideoClick(video)}
-                        className={`min-h-10 block font-semibold cursor-pointer text-black px-4 py-2 rounded-lg w-full text-left
-                        truncate
-                        ${selectedVideoId === video.id
-                            ? "bg-purple-100 text-purple-700"
-                            : "hover:text-gray-400 hover:bg-gray-100"
-                          }`}
-                      >
-                        {video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`}
-                      </span>
+                      <div className={`w-full min-h-10 flex items-center gap-2 font-semibold cursor-pointer text-black p-2 rounded-lg text-left transition-all duration-200 ease-out ${selectedVideoId === video.id
+                        ? "bg-purple-100 text-purple-700"
+                        : "hover:text-gray-400 hover:bg-gray-100"
+                        }`} key={video.id}
+                        onClick={() => handleVideoClick(video)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="min-w-[16px]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-video-icon lucide-video"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
+                        <span
+                          className={`text-sm font-medium text-[#6b7280] block truncate`}
+                        >
+                          {video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`}
+                        </span>
+                      </div>
                     ))}
                   </div>
                 ) : (
@@ -262,11 +294,11 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
               {/* ===== Email pill (SP) ===== */}
               <div
                 onClick={toggleDropdown}
-                className="ml-[7px] w-[223px] h-[45px] mb-[25px] mt-auto
+                className="ml-[7px] w-[225px] h-[45px] mb-[25px] mt-auto
                 md:hidden rounded-[50px] border border-[#B5B5B5]
                 flex items-center justify-center shadow cursor-pointer flex-shrink-0"
               >
-                <span className="font-bold text-[18px] max-w-[160px] truncate inline-block align-middle text-black">
+                <span className="font-bold text-sm max-w-[180px] truncate inline-block align-middle text-gray-700">
                   {effectiveUser.email}
                 </span>
               </div>
@@ -286,7 +318,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                 setOpenDropdown(false);
                 if (onClose) onClose();
               }}
-              className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 cursor-pointer transition-all duration-200 ease-out text-gray-700"
             >
               <img src={MyAccount} className="w-4 h-4" />
               {window.__t('myAccount')}
@@ -298,7 +330,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                 setOpenForgotPassword(true);
                 if (onClose) onClose();
               }}
-              className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 cursor-pointer transition-all duration-200 ease-out text-gray-700"
             >
               <img src={PasswordIcon} className="w-4 h-4" />
               {window.__t('changePassword')}
@@ -311,7 +343,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                 AuthService.logout();
                 window.location.reload();
               }}
-              className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 cursor-pointer transition-all duration-200 ease-out text-gray-700"
             >
               <img src={Signout} className="w-4 h-4" />
               {window.__t('signOut')}
