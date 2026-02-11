@@ -54,7 +54,7 @@ def assign_video_structure_group(video_id: str, user_id : int):
             best_sim = sim
             best_group = g
 
-    THRESHOLD = 0.93
+    THRESHOLD = 0.85
 
     # =========================
     # Case 1: create new group
@@ -85,15 +85,15 @@ def assign_video_structure_group(video_id: str, user_id : int):
         if n is None:
             n = 0
 
-        # old_emb = json.loads(best_group["structure_embedding"])
-        # new_emb = []
-        # for i in range(min(len(old_emb), len(emb))):
-        #     new_emb.append((old_emb[i] * n + emb[i]) / (n + 1))
-        ALPHA = 0.3
         old_emb = json.loads(best_group["structure_embedding"])
         new_emb = []
         for i in range(min(len(old_emb), len(emb))):
-            new_emb.append(old_emb[i] * (1 - ALPHA) + emb[i] * ALPHA)
+            new_emb.append((old_emb[i] * n + emb[i]) / (n + 1))
+        # ALPHA = 0.3
+        # old_emb = json.loads(best_group["structure_embedding"])
+        # new_emb = []
+        # for i in range(min(len(old_emb), len(emb))):
+        #     new_emb.append(old_emb[i] * (1 - ALPHA) + emb[i] * ALPHA)
 
         new_video_count = n + 1
 

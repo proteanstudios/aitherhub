@@ -277,12 +277,12 @@ def fire_split_async(args, video_id, video_path, phase_source):
     url = args.blob_url if getattr(args, "blob_url", None) else video_path
 
      # ===== debug =====
-    # if video_id == "5ab59f1d-6589-4fc7-79b7-796ba56a2439":
+    # if video_id == "20b59f1d-6589-4fc7-79b7-796ba56a2439":
     #     url = (
     #         "https://kyogokuvideos.blob.core.windows.net/"
     #         "videos/"
     #         "abc@gmail.com/"
-    #         "5ab59f1d-6589-4fc7-79b7-796ba56a2439/"
+    #         "20b59f1d-6589-4fc7-79b7-796ba56a2439/"
     #         "source.mp4"
     #     )
     #     logger.warning("[TEMP] Force blob_url = %s", url)

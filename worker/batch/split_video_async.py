@@ -121,34 +121,134 @@ def parse_blob_url(blob_url: str) -> dict:
 #     return float(out)
 
 
-def cut_segment(input_path, out_path, start_sec, end_sec, crf=23, preset="ultrafast"):
+# def cut_segment(input_path, out_path, start_sec, end_sec, crf=23, preset="ultrafast"):
 
+#     logger.info(
+#         "[CUT] %s | %.2f -> %.2f | out=%s",
+#         input_path,
+#         start_sec,
+#         end_sec,
+#         out_path,
+#     )
+
+#     duration = end_sec - start_sec
+
+#     if duration <= 0:
+#         return False
+
+#     # cmd = [
+#     #     # "ffmpeg", 
+#     #     FFMPEG,
+#     #     "-y",
+#     #     "-ss", str(start_sec),
+#     #     "-i", input_path,
+#     #     "-t", str(duration),
+#     #     "-map", "0:v:0",
+#     #     "-map", "0:a?",
+#     #     "-c:v", "libx264",
+#     #     "-preset", preset,
+#     #     "-crf", str(crf),
+#     #     # "-c:a", "copy",
+#     #     "-c:a", "aac",
+
+#     #     "-movflags", "+faststart",
+#     #     out_path,
+#     # ]
+
+#     cmd = [
+#         FFMPEG,
+#         "-y",
+#         "-i", input_path,       
+#         "-ss", str(start_sec),   
+#         "-t", str(duration),
+#         "-map", "0:v:0",
+#         "-map", "0:a?",
+#         "-c:v", "libx264",
+#         "-preset", preset,
+#         "-crf", str(crf),
+#         "-c:a", "aac",          
+#         "-movflags", "+faststart",
+#         out_path,
+#     ]
+
+
+#     try:
+#         subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+#         if os.path.exists(out_path):
+#             logger.info("[CUT OK] file created: %s (%.2f MB)", out_path, os.path.getsize(out_path) / 1024 / 1024)
+#         else:
+#             logger.error("[CUT FAIL] ffmpeg returned but file not found: %s", out_path)
+
+
+#         return True
+#     except subprocess.CalledProcessError as e:
+#         logger.error("ffmpeg failed: %s", e.stderr)
+#         if os.path.exists(out_path):
+#             os.remove(out_path)
+#         return False
+
+def cut_segment(
+    input_path,
+    out_path,
+    start_sec,
+    end_sec,
+    crf=23,
+    preset="ultrafast",
+    safe_seek=False,
+):
     logger.info(
-        "[CUT] %s | %.2f -> %.2f | out=%s",
+        "[CUT] %s | %.2f -> %.2f | out=%s | safe_seek=%s",
         input_path,
         start_sec,
         end_sec,
         out_path,
+        safe_seek,
     )
 
     duration = end_sec - start_sec
-
     if duration <= 0:
         return False
 
-    cmd = [
-        # "ffmpeg", 
-        FFMPEG,
-        "-y",
-        "-ss", str(start_sec),
-        "-i", input_path,
-        "-t", str(duration),
+    if safe_seek:
+        # SAFE: -ss sau -i (phase cuối)
+        cmd = [
+            FFMPEG,
+            "-y",
+            "-i", input_path,
+            "-ss", str(start_sec),
+            "-t", str(duration),
+        ]
+    else:
+        # FAST: -ss trước -i (phase thường)
+        cmd = [
+            FFMPEG,
+            "-y",
+            "-ss", str(start_sec),
+            "-i", input_path,
+            "-t", str(duration),
+        ]
+
+    # cmd += [
+    #     "-map", "0:v:0",
+    #     "-map", "0:a?",
+    #     "-c:v", "libx264",
+    #     "-preset", preset,
+    #     "-crf", str(crf),
+    #     "-c:a", "aac",
+    #     "-movflags", "+faststart",
+    #     out_path,
+    # ]
+
+    audio_codec = "aac" if safe_seek else "copy"
+
+    cmd += [
         "-map", "0:v:0",
         "-map", "0:a?",
         "-c:v", "libx264",
         "-preset", preset,
         "-crf", str(crf),
-        "-c:a", "copy",
+        "-c:a", audio_codec,
         "-movflags", "+faststart",
         out_path,
     ]
@@ -157,14 +257,20 @@ def cut_segment(input_path, out_path, start_sec, end_sec, crf=23, preset="ultraf
         subprocess.run(cmd, check=True, capture_output=True, text=True)
 
         if os.path.exists(out_path):
-            logger.info("[CUT OK] file created: %s (%.2f MB)", out_path, os.path.getsize(out_path) / 1024 / 1024)
+            logger.info(
+                "[CUT OK] file created: %s (%.2f MB)",
+                out_path,
+                os.path.getsize(out_path) / 1024 / 1024,
+            )
         else:
             logger.error("[CUT FAIL] ffmpeg returned but file not found: %s", out_path)
 
-
         return True
+
     except subprocess.CalledProcessError as e:
-        logger.error("ffmpeg failed: %s", e.stderr)
+        logger.error("ffmpeg failed (safe_seek=%s)", safe_seek)
+        logger.error("stdout: %s", e.stdout)
+        logger.error("stderr: %s", e.stderr)
         if os.path.exists(out_path):
             os.remove(out_path)
         return False
@@ -361,10 +467,14 @@ def main():
         blob_info = parse_blob_url(blob_url) if blob_url else None
 
         # ---- CUT LOOP ----
+ 
         # for p in phases:
         #     idx = p["phase_index"]
         #     if idx < start_phase:
         #         continue
+
+        #     # out_name = f"{idx}.mp4"
+        #     # out_path = os.path.join(out_dir, out_name)
 
         #     time_start = p["time_start"]
         #     time_end = p["time_end"]
@@ -373,24 +483,17 @@ def main():
         #     out_path = os.path.join(out_dir, out_name)
 
 
-        #     if not cut_segment(video_path, out_path, p["start_sec"], p["end_sec"]):
+        #     logger.info("[CUT] phase=%s out=%s", idx, out_path)
+
+        #     if not cut_segment(video_path, out_path, p["time_start"], p["time_end"]):
+        #         logger.error("[CUT FAIL] phase=%s", idx)
         #         break
 
-        #     if blob_info:
-        #         dest = f"{blob_info['parent_path']}/reportvideo/{out_name}"
-        #         if not upload_to_blob(out_path, dest):
-        #             break
-
-        #     update_video_split_status_sync(video_id, str(idx))
-        #     logger.info("split_status = %d", idx)
-
+        total_phases = len(phases)
         for p in phases:
             idx = p["phase_index"]
             if idx < start_phase:
                 continue
-
-            # out_name = f"{idx}.mp4"
-            # out_path = os.path.join(out_dir, out_name)
 
             time_start = p["time_start"]
             time_end = p["time_end"]
@@ -398,10 +501,17 @@ def main():
             out_name = f"{time_start}_{time_end}.mp4"
             out_path = os.path.join(out_dir, out_name)
 
-
             logger.info("[CUT] phase=%s out=%s", idx, out_path)
 
-            if not cut_segment(video_path, out_path, p["time_start"], p["time_end"]):
+            is_last_phase = (idx == total_phases)
+
+            if not cut_segment(
+                video_path,
+                out_path,
+                time_start,
+                time_end,
+                safe_seek=is_last_phase, 
+            ):
                 logger.error("[CUT FAIL] phase=%s", idx)
                 break
 
