@@ -97,5 +97,6 @@
   "feedbackSuccess": "フィードバックを送信しました！",
   "feedbackError": "フィードバックの送信に失敗しました",
   "feedbackEmptyError": "フィードバックを入力してください",
-  "analysisSectionHint": "アップロード完了後、解析ステップを実行中"
+  "analysisSectionHint": "アップロード完了後、解析ステップを実行中",
+  "aiThinking": "AIが考え中..."
 }

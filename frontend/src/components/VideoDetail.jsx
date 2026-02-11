@@ -88,6 +88,7 @@ export default function VideoDetail({ videoData }) {
   const [chatMessages, setChatMessages] = useState([]);
   const [previewData, setPreviewData] = useState(null); // { url, timeStart, timeEnd }
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const [expandedR2, setExpandedR2] = useState({});
   const answerRef = useRef("");
   const streamCancelRef = useRef(null);
@@ -273,6 +274,7 @@ export default function VideoDetail({ videoData }) {
 
       const localId = `local-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       setChatMessages((prev) => [...prev, { id: localId, question: text, answer: "" }]);
+      setIsThinking(true);
 
       const streamHandle = VideoService.streamChat({
         videoId: videoData?.id,
@@ -295,6 +297,7 @@ export default function VideoDetail({ videoData }) {
         },
         onDone: () => {
           streamCancelRef.current = null;
+          setIsThinking(false);
           if (reloadTimeoutRef.current) clearTimeout(reloadTimeoutRef.current);
           reloadTimeoutRef.current = setTimeout(() => {
             reloadHistory();
@@ -304,12 +307,14 @@ export default function VideoDetail({ videoData }) {
         onError: (err) => {
           console.error("Chat stream error:", err);
           streamCancelRef.current = null;
+          setIsThinking(false);
         },
       });
 
       streamCancelRef.current = streamHandle;
     } catch (err) {
       console.error("handleChatSend error:", err);
+      setIsThinking(false);
     }
   };
 
@@ -330,6 +335,7 @@ export default function VideoDetail({ videoData }) {
         } catch (e) { }
         streamCancelRef.current = null;
       }
+      setIsThinking(false);
       if (reloadTimeoutRef.current) {
         clearTimeout(reloadTimeoutRef.current);
         reloadTimeoutRef.current = null;
@@ -402,16 +408,14 @@ export default function VideoDetail({ videoData }) {
     <div className="overflow-hidden w-full h-full flex flex-col gap-6 p-0 md:overflow-auto lg:p-6">
       <style>{markdownTableStyles}</style>
       {/* Video Header */}
-      <div className="flex flex-col overflow-hidden md:overflow-auto lg:ml-[65px] h-full">
+      <div className="flex flex-col overflow-hidden md:overflow-auto h-full max-w-3xl mx-auto">
         <div className="flex flex-col gap-2 items-center">
-          <div className="inline-flex items-center rounded-[50px] h-[41px] px-4 border border-white/30">
-            <div className="text-[14px] font-bold whitespace-nowrap bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))] text-white bg-clip-text">
-              {videoData?.original_filename}
-            </div>
+          <div className="px-4 py-2 rounded-full border border-white/30 bg-white/10 text-white text-xs">
+            {videoData?.original_filename}
           </div>
         </div>
         {/* SCROLL AREA */}
-        <div className="flex-1 overflow-y-auto scrollbar-custom text-left md:mb-0">
+        <div className="flex-1 overflow-y-auto scrollbar-custom text-left px-4 md:mb-0">
           <div className="w-full max-w-4xl mt-6 mx-auto">
             <div className="rounded-2xl bg-white/10 border border-white/20">
               <div onClick={() => setReportCollapsed((s) => !s)} className="flex items-center justify-between p-5 cursor-pointer hover:bg-white/5 transform transition-all duration-200">
@@ -488,7 +492,7 @@ export default function VideoDetail({ videoData }) {
                   {/* Divider and Timeline Section */}
                   <div className="space-y-3 pt-2 border-t border-white/10">
                     <div
-                      className="flex items-center justify-between p-3 mb-5 rounded-lg cursor-pointer hover:bg-white/5 transform transition-all duration-200"
+                      className="flex items-center justify-between p-3 rounded-lg cursor-pointer hover:bg-white/5 transform transition-all duration-200"
                       onClick={() => setTimelineCollapsed((s) => !s)}
                     >
                       <div className="flex items-center gap-4">
@@ -508,17 +512,34 @@ export default function VideoDetail({ videoData }) {
                       </button>
                     </div>
                     {/* Report Section */}
-                    <div>
+                    <div className="pb-4">
                       {!timelineCollapsed && videoData?.reports_1 && videoData.reports_1.map((item, index) => {
                         const itemKey = item.phase_index ?? index;
                         return (
                           <div key={`timeline-${itemKey}`}>
                             <div className="mt-4 rounded-xl bg-white/5 border border-white/10 mx-5">
                               <div
-                                className="flex items-start justify-between gap-4 px-4 py-3 border-l-4 border-orange-400/80 rounded-xl hover:bg-purple-500/5 transition-colors"
+                                className={`flex items-start justify-between gap-4 px-4 py-3 border-l-4 border-orange-400/80 rounded-xl transition-colors cursor-pointer ${expandedTimeline[itemKey] ? 'bg-white/10 hover:bg-white/10' : 'hover:bg-white/5'
+                                  }`}
+                                role="button"
+                                tabIndex={0}
+                                aria-expanded={!!expandedTimeline[itemKey]}
+                                onClick={() => setExpandedTimeline((prev) => ({ ...prev, [itemKey]: !prev[itemKey] }))}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    setExpandedTimeline((prev) => ({ ...prev, [itemKey]: !prev[itemKey] }));
+                                  }
+                                }}
                               >
-                                <div className="flex items-start gap-3 min-w-0">
-                                  <div className="flex items-start gap-3 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => handlePhasePreview(item)}>
+                                <div className="flex flex-1 min-w-0 items-start gap-3">
+                                  <div
+                                    className="flex items-start gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handlePhasePreview(item);
+                                    }}
+                                  >
                                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                                       className="lucide lucide-play w-4 h-4 text-white/70 flex-shrink-0 mt-0.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                                     <div className="text-white/80 text-sm font-semibold whitespace-nowrap">
@@ -533,7 +554,7 @@ export default function VideoDetail({ videoData }) {
                                       )}
                                     </div>
                                   </div>
-                                  <div className={`text-white/80 text-sm ${!expandedTimeline[itemKey] ? 'truncate' : ''}`}>
+                                  <div className={`flex-1 min-w-0 text-white/80 text-sm ${!expandedTimeline[itemKey] ? 'truncate' : ''}`}>
                                     {item.phase_description || window.__t('noDescription')}
                                   </div>
                                 </div>
@@ -544,7 +565,6 @@ export default function VideoDetail({ videoData }) {
                                     className={`w-5 h-5 text-white/70 transition-transform duration-200
                                   cursor-pointer 
                                   ${expandedTimeline[itemKey] ? 'rotate-180' : ''}`}
-                                    onClick={() => setExpandedTimeline((prev) => ({ ...prev, [itemKey]: !prev[itemKey] }))}
                                   >
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                                   </svg>
@@ -553,7 +573,7 @@ export default function VideoDetail({ videoData }) {
                             </div>
                             {/* Expanded content sections */}
                             {expandedTimeline[itemKey] && (
-                              <div className="px-4 pb-4 mt-4 ml-15 flex flex-col gap-4 rounded-xl py-3 bg-white/5 mr-5">
+                              <div className="px-4 pb-4 mt-4 ml-15 flex flex-col gap-4 rounded-xl py-3 bg-white/10 mr-5">
                                 {/* 概要 (Overview) section */}
                                 <div className="flex items-start gap-4">
                                   <div className="text-cyan-300">
@@ -608,10 +628,10 @@ export default function VideoDetail({ videoData }) {
 
           </div>
           {/* Questions and Answers Section */}
-          <div className="w-full max-w-4xl mx-auto mt-8 pt-6 border-t border-white/20">
-            <h3 className="text-white text-lg font-semibold mb-4 text-center">質問と回答</h3>
-            <div className="rounded-2xl p-6 bg-gradient-to-r from-purple-500/20 to-blue-500/20 border border-white/20 w-[80%]">
-              <p className="text-white/80 text-sm leading-relaxed">
+          <div className="space-y-3 pt-4 mt-4 border-t border-white/10">
+            <p className="text-white/60 text-xs text-center">質問と回答</p>
+            <div className="rounded-2xl p-4 max-w-[85%] bg-white/10 backdrop-blur-sm border border-white/30">
+              <p className="text-white text-sm">
                 この動画の解析が完了しました。全体的に良い構成ですが、いくつかの改善点が見つかりました。詳細について質問があれば、お聞きください。
               </p>
             </div>
@@ -638,6 +658,14 @@ export default function VideoDetail({ videoData }) {
                     )}
                   </div>
                 ))}
+                {isThinking && (
+                  <div className="w-[80%] rounded-2xl p-4 bg-white/10 backdrop-blur-sm border border-white/20">
+                    <div className="flex items-center gap-3">
+                      <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white/80 animate-spin" />
+                      <p className="text-white/70 text-sm">{window.__t ? window.__t("aiThinking") : "AI is thinking..."}</p>
+                    </div>
+                  </div>
+                )}
                 <div ref={chatEndRef} />
               </div>
             )}

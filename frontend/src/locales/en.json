@@ -97,5 +97,6 @@
   "feedbackSuccess": "Feedback sent successfully!",
   "feedbackError": "Failed to send feedback",
   "feedbackEmptyError": "Please enter your feedback",
-  "analysisSectionHint": "After upload, the analysis steps are being executed"
+  "analysisSectionHint": "After upload, the analysis steps are being executed",
+  "aiThinking": "AI is thinking..."
 }
