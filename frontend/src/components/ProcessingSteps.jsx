@@ -20,14 +20,27 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
   const lastStatusChangeRef = useRef(0);
   const retryCountRef = useRef(0);
   const lastInitializedVideoIdRef = useRef(null); // Track last initialized videoId
+  const maxProgressRef = useRef(0);
   const MAX_SSE_RETRIES = 2;
 
   // Update smooth progress from external prop if provided (for upload progress)
+  const setMonotonicProgress = useCallback((nextProgress) => {
+    if (nextProgress < 0) {
+      setSmoothProgress(nextProgress);
+      return;
+    }
+    setSmoothProgress((prev) => {
+      const safeProgress = Math.max(prev, nextProgress, maxProgressRef.current);
+      maxProgressRef.current = safeProgress;
+      return safeProgress;
+    });
+  }, []);
+
   useEffect(() => {
     if (externalProgress !== undefined && externalProgress !== null) {
-      queueMicrotask(() => setSmoothProgress(externalProgress));
+      queueMicrotask(() => setMonotonicProgress(externalProgress));
     }
-  }, [externalProgress]);
+  }, [externalProgress, setMonotonicProgress]);
 
   // Helper to calculate progress percentage from status
   const calculateProgressFromStatus = useCallback((status) => {
@@ -56,35 +69,65 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
     return statusMap[status] || 0;
   }, []);
 
+  const calculateProgressCeilingFromStatus = useCallback((status) => {
+    const ceilingMap = {
+      NEW: 0,
+      uploaded: 2,
+      STEP_0_EXTRACT_FRAMES: 4,
+      STEP_1_DETECT_PHASES: 10,
+      STEP_2_EXTRACT_METRICS: 79,
+      STEP_3_TRANSCRIBE_AUDIO: 86,
+      STEP_4_IMAGE_CAPTION: 88,
+      STEP_5_BUILD_PHASE_UNITS: 90,
+      STEP_6_BUILD_PHASE_DESCRIPTION: 92,
+      STEP_7_GROUPING: 94,
+      STEP_8_UPDATE_BEST_PHASE: 95,
+      STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES: 96,
+      STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP: 97,
+      STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS: 98,
+      STEP_12_UPDATE_VIDEO_STRUCTURE_BEST: 99,
+      STEP_13_BUILD_REPORTS: 99,
+      STEP_14_FINALIZE: 99,
+      STEP_14_SPLIT_VIDEO: 99,
+      DONE: 100,
+      ERROR: -1,
+    };
+    return ceilingMap[status] ?? 99;
+  }, []);
+
   // Start gradual progress increase
-  const startGradualProgress = useCallback((targetProgress) => {
+  const startGradualProgress = useCallback((targetProgress, status) => {
     // Clear any existing interval
     if (progressIntervalRef.current) {
       clearInterval(progressIntervalRef.current);
     }
 
-    // Set initial progress to current target
-    setSmoothProgress(targetProgress);
+    const ceiling = calculateProgressCeilingFromStatus(status);
+    const boundedTarget = Math.min(targetProgress, ceiling);
+    setMonotonicProgress(boundedTarget);
 
     // Start interval to gradually increase progress every 3-5 seconds
     progressIntervalRef.current = setInterval(() => {
       setSmoothProgress(prev => {
+        if (prev < 0) return prev;
         const increment = Math.random() * 2 + 1; // Random increment 1-3%
-        const newProgress = Math.min(prev + increment, 99); // Cap at 99% until actually complete
+        const newProgress = Math.min(prev + increment, ceiling);
+        const monotonicProgress = Math.max(newProgress, maxProgressRef.current);
+        maxProgressRef.current = monotonicProgress;
 
-        // Stop if we've reached a reasonable limit for this step
-        if (newProgress >= targetProgress + 5) {
+        // Stop if we've reached the max allowed progress for this step
+        if (monotonicProgress >= ceiling) {
           if (progressIntervalRef.current) {
             clearInterval(progressIntervalRef.current);
             progressIntervalRef.current = null;
           }
-          return targetProgress + 5; // Allow slight overshoot for visual effect
+          return ceiling;
         }
 
-        return newProgress;
+        return monotonicProgress;
       });
     }, 2000 + Math.random() * 3000); // Random interval 2-5 seconds
-  }, []);
+  }, [calculateProgressCeilingFromStatus, setMonotonicProgress]);
 
   // Callback when processing completes - memoize to prevent re-creation
   const handleProcessingComplete = useCallback(() => {
@@ -110,7 +153,7 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
 
           const serverProgress = typeof response.progress === 'number' ? response.progress : 0;
           const progress = Math.max(serverProgress, calculateProgressFromStatus(newStatus));
-          startGradualProgress(progress);
+          startGradualProgress(progress, newStatus);
           lastStatusChangeRef.current = Date.now();
 
           // Stop polling if done or error
@@ -142,7 +185,9 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
       const initial = normalizeProcessingStatus(initialStatus || 'NEW');
       queueMicrotask(() => {
         setCurrentStatus(initial);
-        setSmoothProgress(calculateProgressFromStatus(initial));
+        const initialProgress = calculateProgressFromStatus(initial);
+        maxProgressRef.current = Math.max(initialProgress, 0);
+        setSmoothProgress(initialProgress);
         setErrorMessage(null);
         setUsePolling(false);
       });
@@ -191,7 +236,7 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
         // Start gradual progress increase
         const serverProgress = typeof data.progress === 'number' ? data.progress : 0;
         const safeProgress = Math.max(serverProgress, calculateProgressFromStatus(nextStatus));
-        startGradualProgress(safeProgress);
+        startGradualProgress(safeProgress, nextStatus);
         lastStatusChangeRef.current = Date.now();
 
         // Auto-stop stream if done or error
@@ -212,6 +257,7 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
         console.log('✅ SSE Stream completed');
         // Processing complete - notify parent
         setCurrentStatus('DONE');
+        maxProgressRef.current = 100;
         setSmoothProgress(100);
         if (handleProcessingComplete) {
           handleProcessingComplete();
