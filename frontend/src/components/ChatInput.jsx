@@ -37,31 +37,39 @@ export default function ChatInput({ className = "", onSend, disabled = false }) 
   };
 
   return (
-    <div className={`flex items-center ${className}`}>
+    <div className={`flex items-center gap-3 ${className}`}>
       <img src={AddIcon} alt="Add" className=" md:hidden w-[50px] h-[50px] cursor-pointer" />
-      <div className="relative ml-[14px] flex-1">
-          <img
-          src={AddIcon}
-          alt="Send"
-          onClick={handleSend}
-          className="hidden md:block absolute top-1/2 -translate-y-1/2 w-[40px] h-[40px] cursor-pointer hover:opacity-80 transition-opacity right-[10px] md:right-auto md:left-[10px]"
-        />
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          disabled={disabled}
-          onKeyDown={handleKeyDown}
-          placeholder={window.__t('askQuestionPlaceholder')}
-          className="text-[18px] leading-[40px] text-black w-full h-[50px] pl-[16px] md:pl-[60px] pr-[50px] rounded-[25px] border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-        />
-        <img
-          src={SendIcon}
-          alt="Send"
-          onClick={() => { if (!disabled) handleSend(); }}
-          className={`absolute right-[7px] top-1/2 -translate-y-1/2 w-[40px] h-[40px] ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:opacity-80 transition-opacity'}`}
-        />
-      </div>
+      <input
+        type="text"
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        disabled={disabled}
+        onKeyDown={handleKeyDown}
+        placeholder={window.__t('askQuestionPlaceholder')}
+        className="text-[18px] leading-[40px] text-white/90 flex-1 h-[50px] pl-[16px] md:pl-[20px] rounded-[12px] border border-white/20 bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/30 focus:bg-white/15 transition-all"
+      />
+      <button
+        type="button"
+        onClick={() => { if (!disabled) handleSend(); }}
+        disabled={disabled}
+        className={`flex items-center justify-center w-[50px] h-[50px] rounded-[12px] flex-shrink-0 transition-all ${disabled ? 'opacity-40 cursor-not-allowed bg-white/40' : 'cursor-pointer bg-white hover:bg-white/90'}`}
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`w-6 h-6 ${disabled ? 'text-white/40' : 'text-black'}`}
+        >
+          <path d="M22 2L11 13"></path>
+          <path d="M22 2l-7 20-5-9-9-5 20-7z"></path>
+        </svg>
+      </button>
     </div>
   );
 }
