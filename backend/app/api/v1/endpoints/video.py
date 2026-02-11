@@ -1,7 +1,7 @@
 from typing import List
 import json
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
@@ -394,19 +394,70 @@ async def get_video_detail(
                     ts_str = f"{ts:.1f}"
                     te_str = f"{te:.1f}"
                     filename = f"{ts_str}_{te_str}.mp4"
-                    # Gọi generate_download_url để lấy SAS URL
-                    try:
-                        download_url_result = await video_service.generate_download_url(
-                            email=email,
-                            video_id=video_id,
-                            filename=f"reportvideo/{filename}",
-                            expires_in_minutes=60*24,  # 1 ngày
-                        )
-                        video_clip_url = download_url_result.get("download_url")
-                    except Exception as e:
-                        video_clip_url = None
+
+                    # First, try to find the video_phases record matching this phase
+                    sql_phase_check = text("""
+                        SELECT id, sas_token, sas_expireddate
+                        FROM video_phases
+                        WHERE video_id = :video_id AND time_start = :ts AND time_end = :te
+                        LIMIT 1
+                    """)
+                    pres = await db.execute(sql_phase_check, {"video_id": video_id, "ts": ts, "te": te})
+                    phase_row = pres.fetchone()
+
+                    need_generate = True
+                    if phase_row:
+                        sas_token = getattr(phase_row, "sas_token", None)
+                        sas_expire = getattr(phase_row, "sas_expireddate", None)
+                        if sas_token and sas_expire:
+                            # Handle naive vs aware datetimes safely
+                            if sas_expire.tzinfo is not None and sas_expire.tzinfo.utcoffset(sas_expire) is not None:
+                                now = datetime.now(timezone.utc)
+                                sas_expire_cmp = sas_expire.astimezone(timezone.utc)
+                            else:
+                                now = datetime.utcnow()
+                                sas_expire_cmp = sas_expire
+
+                            if sas_expire_cmp >= now:
+                                # Existing valid SAS — reuse
+                                video_clip_url = sas_token
+                                need_generate = False
+
+                    if need_generate:
+                        try:
+                            download_url_result = await video_service.generate_download_url(
+                                email=email,
+                                video_id=video_id,
+                                filename=f"reportvideo/{filename}",
+                                expires_in_minutes=60 * 24,  # 1 day
+                            )
+                            video_clip_url = download_url_result.get("download_url")
+
+                            # Persist new SAS info back to video_phases if we have a matching row
+                            if video_clip_url and phase_row:
+                                expires_at = download_url_result.get("expires_at")
+                                if isinstance(expires_at, str):
+                                    try:
+                                        expires_at = datetime.fromisoformat(expires_at)
+                                    except Exception:
+                                        expires_at = None
+
+                                if expires_at is None:
+                                    expires_at = datetime.utcnow() + timedelta(days=1)
+
+                                sql_update = text("""
+                                    UPDATE video_phases
+                                    SET sas_token = :sas_token, sas_expireddate = :sas_expireddate
+                                    WHERE id = :id
+                                """)
+                                await db.execute(sql_update, {"sas_token": video_clip_url, "sas_expireddate": expires_at, "id": phase_row.id})
+                                await db.commit()
+
+                        except Exception:
+                            video_clip_url = None
                 except Exception:
                     video_clip_url = None
+
             report1_items.append({
                 "phase_index": int(r.phase_index),
                 "phase_description": pm.get("phase_description"),
