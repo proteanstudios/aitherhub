@@ -34,6 +34,16 @@ router = APIRouter(
 video_service = VideoService()
 
 
+def _replace_blob_url_to_cdn(url: str) -> str:
+    """Replace blob storage domain with CDN domain if applicable."""
+    if url and isinstance(url, str):
+        return url.replace(
+            "https://aitherhub.blob.core.windows.net",
+            "https://cdn.aitherhub.com"
+        )
+    return url
+
+
 @router.post("/generate-upload-url", response_model=GenerateUploadURLResponse)
 async def generate_upload_url(
     payload: GenerateUploadURLRequest,
@@ -431,7 +441,7 @@ async def get_video_detail(
                                 filename=f"reportvideo/{filename}",
                                 expires_in_minutes=60 * 24,  # 1 day
                             )
-                            video_clip_url = download_url_result.get("download_url")
+                            video_clip_url = _replace_blob_url_to_cdn(download_url_result.get("download_url"))
 
                             # Persist new SAS info back to video_phases if we have a matching row
                             if video_clip_url and phase_row:
