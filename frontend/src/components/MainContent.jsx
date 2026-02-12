@@ -391,31 +391,29 @@ export default function MainContent({
     }
   };
 
-  // Clear uploadedVideoId when selectedVideoId is set (from sidebar selection)
-  // This ensures only ONE ProcessingSteps is rendered
+  // When switching to a different history item, clear draft upload UI only
+  // if no active upload/processing is running.
   useEffect(() => {
-    // Keep uploadedVideoId when sidebar auto-selects the same freshly uploaded video.
-    // Only clear upload-tracking state when user switches to a different history item.
-    if (selectedVideoId && selectedVideoId !== uploadedVideoId) {
+    if (selectedVideoId && !uploading && !uploadedVideoId) {
       console.log("[MainContent] Clearing uploadedVideoId due to selectedVideoId:", selectedVideoId);
       setUploadedVideoId(null);
       setSelectedFile(null);
       setProgress(0);
       setUploading(false);
     }
-  }, [selectedVideoId, uploadedVideoId]);
+  }, [selectedVideoId, uploadedVideoId, uploading]);
 
   // When leaving a selected history video and returning to home, clear upload-tracking UI state.
   useEffect(() => {
     const prevSelectedVideoId = prevSelectedVideoIdRef.current;
-    if (prevSelectedVideoId && !selectedVideoId) {
+    if (prevSelectedVideoId && !selectedVideoId && !uploading && !uploadedVideoId) {
       setUploadedVideoId(null);
       setSelectedFile(null);
       setProgress(0);
       setUploading(false);
     }
     prevSelectedVideoIdRef.current = selectedVideoId;
-  }, [selectedVideoId]);
+  }, [selectedVideoId, uploading, uploadedVideoId]);
 
   useEffect(() => {
     return () => {
@@ -428,7 +426,7 @@ export default function MainContent({
 
   // Fetch video details when uploadedVideoId OR selectedVideoId changes
   useEffect(() => {
-    const videoId = uploadedVideoId || selectedVideoId;
+    const videoId = selectedVideoId || uploadedVideoId;
     console.log("[MainContent] Fetching video details for:", videoId);
 
     if (!isLoggedIn) {
@@ -499,7 +497,7 @@ export default function MainContent({
 
   // Handle processing complete - reload video data
   const handleProcessingComplete = useCallback(async () => {
-    const videoId = uploadedVideoId || selectedVideoId;
+    const videoId = selectedVideoId || uploadedVideoId;
     if (!videoId) return;
     lastRequestedVideoIdRef.current = videoId;
 
