@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import MarkdownWithTables from "./markdown/MarkdownWithTables";
 import ChatInput from "./ChatInput";
@@ -83,23 +83,19 @@ export default function VideoDetail({ videoData }) {
     font-weight: 800;
   }
   `;
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [loading] = useState(false);
+  const [error] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [previewData, setPreviewData] = useState(null); // { url, timeStart, timeEnd }
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const [, setPreviewLoading] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
-  const [expandedR2, setExpandedR2] = useState({});
+  const hasAnswerStartedRef = useRef(false);
   const answerRef = useRef("");
   const streamCancelRef = useRef(null);
   const lastSentRef = useRef({ text: null, t: 0 });
   const reloadTimeoutRef = useRef(null);
   const chatEndRef = useRef(null);
 
-  // Smooth progress bar animation - gradual increase every few seconds
-  const [smoothProgress, setSmoothProgress] = useState(0);
-  const progressIntervalRef = useRef(null);
-  const lastStatusChangeRef = useRef(Date.now());
   const [reportCollapsed, setReportCollapsed] = useState(false);
   const [timelineCollapsed, setTimelineCollapsed] = useState(true);
   const [expandedTimeline, setExpandedTimeline] = useState({});
@@ -108,8 +104,9 @@ export default function VideoDetail({ videoData }) {
     if (chatEndRef.current) {
       try {
         chatEndRef.current.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "end" });
-      } catch (e) {
+      } catch {
         // Ignore scroll errors
+        void 0;
       }
     }
   };
@@ -169,14 +166,14 @@ export default function VideoDetail({ videoData }) {
           const res = await fetch(url, { method: 'HEAD', mode: 'cors', signal: controller.signal });
           clearTimeout(id);
           return res.status === 200 || res.status === 206;
-        } catch (e) {
+        } catch {
           try {
             const controller2 = new AbortController();
             const id2 = setTimeout(() => controller2.abort(), timeout);
             const res2 = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-0' }, mode: 'cors', signal: controller2.signal });
             clearTimeout(id2);
             return res2.status === 206 || res2.status === 200;
-          } catch (e2) {
+          } catch {
             return false;
           }
         }
@@ -226,7 +223,7 @@ export default function VideoDetail({ videoData }) {
   };
 
   const reloadHistory = async () => {
-    const vid = video?.id || videoData?.id;
+    const vid = videoData?.id;
     if (!vid) return;
     try {
       const hist = await VideoService.getChatHistory(vid);
@@ -251,7 +248,6 @@ export default function VideoDetail({ videoData }) {
       const hasReport = !!(videoData && Array.isArray(videoData.reports_1) && videoData.reports_1.length > 0);
       const statusDone = (videoData && (String(videoData.status || "").toUpperCase() === "DONE")) || false;
       if (!vid || !(hasReport || statusDone)) {
-        try { } catch (e) { }
         return;
       }
       const now = Date.now();
@@ -263,7 +259,9 @@ export default function VideoDetail({ videoData }) {
         try {
           if (typeof streamCancelRef.current.cancel === "function") streamCancelRef.current.cancel();
           else if (typeof streamCancelRef.current === "function") streamCancelRef.current();
-        } catch (e) { }
+        } catch {
+          void 0;
+        }
         streamCancelRef.current = null;
       }
       if (reloadTimeoutRef.current) {
@@ -271,6 +269,7 @@ export default function VideoDetail({ videoData }) {
         reloadTimeoutRef.current = null;
       }
       answerRef.current = "";
+      hasAnswerStartedRef.current = false;
 
       const localId = `local-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       setChatMessages((prev) => [...prev, { id: localId, question: text, answer: "" }]);
@@ -281,11 +280,18 @@ export default function VideoDetail({ videoData }) {
         messages: [{ role: "user", content: text }],
         onMessage: (chunk) => {
           try {
+            if (!hasAnswerStartedRef.current) {
+              // Hide "thinking" as soon as the first answer chunk arrives (stream has started).
+              hasAnswerStartedRef.current = true;
+              setIsThinking(false);
+            }
             let processed = chunk;
             try {
               processed = processed.replace(/\\r\\n/g, "\r\n").replace(/\\n/g, "\n");
               processed = processed.replace(/([.!?])\s+([A-ZÀ-ỸÂÊÔƠƯĂĐ])/g, "$1\n$2");
-            } catch (e) { }
+            } catch {
+              void 0;
+            }
 
             answerRef.current += processed;
             setChatMessages((prev) =>
@@ -323,7 +329,9 @@ export default function VideoDetail({ videoData }) {
       try {
         const text = ev?.detail?.text;
         if (text && !streamCancelRef.current) handleChatSend(text);
-      } catch (e) { }
+      } catch {
+        void 0;
+      }
     };
     window.addEventListener("videoInput:submitted", onGlobalSubmit);
     return () => {
@@ -332,7 +340,9 @@ export default function VideoDetail({ videoData }) {
         try {
           if (typeof streamCancelRef.current.cancel === "function") streamCancelRef.current.cancel();
           else if (typeof streamCancelRef.current === "function") streamCancelRef.current();
-        } catch (e) { }
+        } catch {
+          void 0;
+        }
         streamCancelRef.current = null;
       }
       setIsThinking(false);
@@ -382,8 +392,9 @@ export default function VideoDetail({ videoData }) {
     if (chatEndRef.current) {
       try {
         chatEndRef.current.scrollIntoView({ behavior: "smooth" });
-      } catch (e) {
+      } catch {
         // Ignore scroll errors
+        void 0;
       }
     }
   }, [chatMessages]);
@@ -415,7 +426,7 @@ export default function VideoDetail({ videoData }) {
           </div>
         </div>
         {/* SCROLL AREA */}
-        <div className="flex-1 overflow-y-auto scrollbar-custom text-left px-4 md:mb-0">
+        <div className="flex-1 overflow-y-auto scrollbar-custom text-left px-0 md:px-4 md:mb-0">
           <div className="w-full max-w-4xl mt-6 mx-auto">
             <div className="rounded-2xl bg-white/10 border border-white/20">
               <div onClick={() => setReportCollapsed((s) => !s)} className="flex items-center justify-between p-5 cursor-pointer hover:bg-white/5 transform transition-all duration-200">
@@ -519,7 +530,7 @@ export default function VideoDetail({ videoData }) {
                           <div key={`timeline-${itemKey}`}>
                             <div className="mt-4 rounded-xl bg-white/5 border border-white/10 mx-5">
                               <div
-                                className={`flex items-start justify-between gap-4 px-4 py-3 border-l-4 border-orange-400/80 rounded-xl transition-colors cursor-pointer ${expandedTimeline[itemKey] ? 'bg-white/10 hover:bg-white/10' : 'hover:bg-white/5'
+                                className={`flex items-start justify-between flex-col md:flex-row gap-4 px-4 py-3 border-l-4 border-orange-400/80 rounded-xl transition-colors cursor-pointer ${expandedTimeline[itemKey] ? 'bg-white/10 hover:bg-white/10' : 'hover:bg-white/5'
                                   }`}
                                 role="button"
                                 tabIndex={0}
@@ -532,42 +543,53 @@ export default function VideoDetail({ videoData }) {
                                   }
                                 }}
                               >
-                                <div className="flex flex-1 min-w-0 items-start gap-3">
-                                  <div
-                                    className="flex items-start gap-3 cursor-pointer hover:opacity-80 transition-opacity"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handlePhasePreview(item);
-                                    }}
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                                      className="lucide lucide-play w-4 h-4 text-white/70 flex-shrink-0 mt-0.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                                    <div className="text-white/80 text-sm font-semibold whitespace-nowrap">
-                                      {item.time_start != null || item.time_end != null ? (
-                                        <>
-                                          {formatTime(item.time_start)}
-                                          {" – "}
-                                          {formatTime(item.time_end)}
-                                        </>
-                                      ) : (
-                                        <span className="text-gray-500">-</span>
-                                      )}
+                                <div className="w-full flex items-start justify-between gap-4">
+                                  <div className="flex flex-1 min-w-0 items-start gap-3">
+                                    <div
+                                      className="flex items-start gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handlePhasePreview(item);
+                                      }}
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                                        className="lucide lucide-play w-4 h-4 text-white/70 flex-shrink-0 mt-0.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                      <div className="text-white/80 text-sm font-semibold whitespace-nowrap">
+                                        {item.time_start != null || item.time_end != null ? (
+                                          <>
+                                            {formatTime(item.time_start)}
+                                            {" – "}
+                                            {formatTime(item.time_end)}
+                                          </>
+                                        ) : (
+                                          <span className="text-gray-500">-</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div
+                                      className={`hidden flex-1 min-w-0 text-white/80 text-sm ${expandedTimeline[itemKey] ? 'md:block' : 'md:line-clamp-1'
+                                        }`}
+                                    >
+                                      {item.phase_description || window.__t('noDescription')}
                                     </div>
                                   </div>
-                                  <div className={`flex-1 min-w-0 text-white/80 text-sm ${!expandedTimeline[itemKey] ? 'line-clamp-1' : ''}`}>
-                                    {item.phase_description || window.__t('noDescription')}
-                                  </div>
-                                </div>
-                                <div className="flex items-start gap-2 text-orange-400 flex-shrink-0 mt-0.5">
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-flame w-4 h-4"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                                    stroke="currentColor" strokeWidth="1.5"
-                                    className={`w-5 h-5 text-white/70 transition-transform duration-200
+                                  <div className="flex items-start gap-2 text-orange-400 flex-shrink-0 mt-0.5">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-flame w-4 h-4"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                      stroke="currentColor" strokeWidth="1.5"
+                                      className={`w-5 h-5 text-white/70 transition-transform duration-200
                                   cursor-pointer 
                                   ${expandedTimeline[itemKey] ? 'rotate-180' : ''}`}
-                                  >
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                                  </svg>
+                                    >
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                  </div>
+                                </div>
+                                <div
+                                  className={`md:hidden min-w-0 text-white/80 text-sm ${!expandedTimeline[itemKey] ? 'line-clamp-1' : ''
+                                    }`}
+                                >
+                                  {item.phase_description || window.__t('noDescription')}
                                 </div>
                               </div>
                             </div>

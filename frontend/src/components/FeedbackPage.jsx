@@ -27,9 +27,9 @@ export default function FeedbackPage({ onBack }) {
     };
 
     return (
-        <div className="flex-1 flex items-center justify-center p-4">
+        <div className="flex-1 flex items-center justify-center p-0 md:p-4">
             <div className="w-full max-w-lg">
-                <div className="bg-white/10 backdrop-blur-sm border border-white/30 rounded-2xl p-8">
+                <div className="bg-white/10 backdrop-blur-sm border border-white/30 rounded-2xl p-4 md:p-8">
                     <div className="flex flex-col items-center text-center space-y-6">
                         {/* Icon */}
                         <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center">

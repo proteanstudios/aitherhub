@@ -140,16 +140,16 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
       {/* SIDEBAR */}
       <aside
         ref={sidebarRef}
-        className={`fixed md:static top-0 left-0 z-50
+        className={`fixed md:static top-0 left-0 z-50 py-4 pl-4 pr-0
         w-full md:min-w-[260px] md:w-[320px] bg-white md:h-screen
         bottom-0
         flex flex-col 
         transition-transform duration-300 ease-in-out
         ${isOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0
-        md:overflow-y-auto md:scrollbar-custom md:py-4 md:pl-4 md:pr-0`}
+        md:overflow-y-auto md:scrollbar-custom`}
       >
         {/* ================= PC ================= */}
-        <div className="hidden md:block space-y-3 pr-4">
+        <div className="block space-y-3 pr-4 ">
           <div className="flex items-center">
             <img src={logo} className="w-[37px] h-[35px]" />
             <span className="font-semibold text-[22px] ml-2 bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))] bg-clip-text text-transparent">
@@ -218,8 +218,8 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
         </div>
 
         {/* ================= SP ================= */}
-        <div className="md:hidden mt-[22px] px-4 shrink-0">
-          <div className="flex justify-between items-center ml-[50px] mb-[20px] gap-2">
+        <div className="hidden mt-[22px] px-4 shrink-0">
+          {/* <div className="flex justify-between items-center ml-[50px] mb-[20px] gap-2">
             <div className="relative w-full max-w-[270px]">
               <div className="relative p-px rounded-[5px] bg-linear-to-b from-[#4500FF] via-[#6A00FF] to-[#9B00FF]">
                 <img src={searchSp} className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -241,17 +241,10 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                 />
 
               </div>
-
-              {/* {showPlaceholder && (
-                <div className="pointer-events-none absolute inset-0 flex items-center gap-2 px-3 text-gray-400">
-                  <img src={searchSp} className="w-4 h-4" />
-                  <img src={textSearch} className="h-[14px]" />
-                </div>
-              )} */}
             </div>
 
             <img src={searchMobile} onClick={() => { setSelectedVideoId(null); if (onVideoSelect) onVideoSelect(null); if (onNewAnalysis) onNewAnalysis(); }} className="w-[32px] cursor-pointer" />
-          </div>
+          </div> */}
 
           <div className="bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))]">
             <div className="bg-white">
@@ -377,7 +370,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
       <button
         onClick={onClose}
         style={{ fontSize: "24px", borderRadius: "50%" }}
-        className={`md:hidden ml-[-10px] fixed top-[28px] left-[25px] z-70 w-[32px] h-[32px] flex items-center justify-center font-bold bg-white rounded-full shadow-lg transition-all duration-200 ease-out ${showBackButton ? "opacity-100 translate-x-0 pointer-events-auto" : "opacity-0 translate-x-2 pointer-events-none"}`}
+        className={`md:hidden ml-[-10px] fixed top-[16px] right-[16px] z-70 w-[32px] h-[32px] flex items-center justify-center font-bold bg-white rounded-full shadow-lg transition-all duration-200 ease-out ${showBackButton ? "opacity-100 translate-x-0 pointer-events-auto" : "opacity-0 translate-x-2 pointer-events-none"}`}
       >
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" stroke="#4500FF" />
