@@ -247,8 +247,8 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
               </div>
             </div>
 
-            <img src={searchMobile} onClick={() => { setSelectedVideoId(null); navigate('/'); if (onVideoSelect) onVideoSelect(null); if (onNewAnalysis) onNewAnalysis(); }} className="w-[32px] cursor-pointer" />
-          </div>
+            <img src={searchMobile} onClick={() => { setSelectedVideoId(null); if (onVideoSelect) onVideoSelect(null); if (onNewAnalysis) onNewAnalysis(); }} className="w-[32px] cursor-pointer" />
+          </div> */}
 
           <div className="bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))]">
             <div className="bg-white">
