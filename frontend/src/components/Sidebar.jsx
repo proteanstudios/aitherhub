@@ -6,22 +6,23 @@ import searchMobile from "../assets/icons/searchmobile.png";
 import searchSp from "../assets/icons/searchSp.png";
 import library from "../assets/icons/Library.png";
 
-import MyAccount from "../assets/icons/user-profile-icon-df.png";
-import PasswordIcon from "../assets/icons/password-icon.svg";
-import Signout from "../assets/icons/signout-icon-df.png";
-
 import "../assets/css/sidebar.css";
 import ForgotPasswordModal from "./modals/ForgotPasswordModal";
 import AuthService from "../base/services/userService";
 import VideoService from "../base/services/videoService";
 
-import { X } from "lucide-react";
+import { ChevronDown, LogOut, Settings, User, X } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 
 export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAnalysis, onShowFeedback, refreshKey, selectedVideo, showFeedback }) {
   const sidebarRef = useRef(null);
-  const dropdownRef = useRef(null);
-
-  const [openDropdown, setOpenDropdown] = useState(false);
   const [openForgotPassword, setOpenForgotPassword] = useState(false);
   const [videos, setVideos] = useState([]);
   const [loadingVideos, setLoadingVideos] = useState(false);
@@ -104,17 +105,6 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
     }
   };
 
-  // ===== dropdown click outside =====
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setOpenDropdown(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   useEffect(() => {
     if (isOpen) {
       const timer = setTimeout(() => {
@@ -126,10 +116,6 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
       setShowBackButton(false);
     }
   }, [isOpen]);
-
-  const toggleDropdown = () => {
-    setOpenDropdown((prev) => !prev);
-  };
 
   return (
     <>
@@ -312,64 +298,62 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
               </div>
 
               {/* ===== Email pill (SP) ===== */}
-              <div
-                onClick={toggleDropdown}
-                className="ml-[7px] w-[225px] h-[45px] mb-[25px] mt-auto
-                md:hidden rounded-[50px] border border-[#B5B5B5]
-                flex items-center justify-center shadow cursor-pointer shrink-0"
-              >
-                <span className="font-bold text-sm max-w-[180px] truncate inline-block align-middle text-gray-700">
-                  {effectiveUser.email}
-                </span>
+              <div className="ml-[7px] mb-[25px] mt-auto md:hidden shrink-0">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="w-[225px] h-[45px] rounded-[50px] border border-[#B5B5B5] flex items-center justify-center shadow cursor-pointer transition-colors hover:bg-gray-100 active:bg-gray-100"
+                    >
+                      <span className="font-bold text-sm max-w-[165px] truncate inline-block align-middle text-gray-700">
+                        {effectiveUser.email}
+                      </span>
+                      <ChevronDown className="ml-1 w-4 h-4 text-gray-500" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-[210px]">
+                    <DropdownMenuLabel>{window.__t("myAccount")}</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        onClose?.();
+                      }}
+                    >
+                      <User className="w-4 h-4" />
+                      {window.__t("myAccount")}
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        setOpenForgotPassword(true);
+                        // Close sidebar after opening modal to avoid unmount/blur race on mobile
+                        setTimeout(() => onClose?.(), 0);
+                      }}
+                    >
+                      <Settings className="w-4 h-4" />
+                      {window.__t("changePassword")}
+                    </DropdownMenuItem>
+
+                    <DropdownMenuSeparator />
+
+                    <DropdownMenuItem
+                      className="text-red-500 focus:text-red-600"
+                      onSelect={() => {
+                        onClose?.();
+                        AuthService.logout();
+                        window.location.reload();
+                      }}
+                    >
+                      <LogOut className="w-4 h-4" />
+                      {window.__t("signOut")}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </>
           )}
         </div>
-
-        {/* ================= DROPDOWN ================= */}
-        {openDropdown && (
-          <ul
-            ref={dropdownRef}
-            className="absolute bottom-[80px] left-[30px] w-[210px]
-            bg-white text-black rounded-[10px] border shadow-lg z-50 overflow-hidden"
-          >
-            <li
-              onClick={() => {
-                setOpenDropdown(false);
-                if (onClose) onClose();
-              }}
-              className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 cursor-pointer transition-all duration-200 ease-out text-gray-700"
-            >
-              <img src={MyAccount} className="w-4 h-4" />
-              {window.__t('myAccount')}
-            </li>
-
-            <li
-              onClick={() => {
-                setOpenDropdown(false);
-                setOpenForgotPassword(true);
-                if (onClose) onClose();
-              }}
-              className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 cursor-pointer transition-all duration-200 ease-out text-gray-700"
-            >
-              <img src={PasswordIcon} className="w-4 h-4" />
-              {window.__t('changePassword')}
-            </li>
-
-            <li
-              onClick={() => {
-                setOpenDropdown(false);
-                if (onClose) onClose();
-                AuthService.logout();
-                window.location.reload();
-              }}
-              className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 cursor-pointer transition-all duration-200 ease-out text-gray-700"
-            >
-              <img src={Signout} className="w-4 h-4" />
-              {window.__t('signOut')}
-            </li>
-          </ul>
-        )}
       </aside>
       <button
         onClick={onClose}
@@ -382,12 +366,9 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
 
       </button>
 
+      {/* ===== MODAL (must be outside dropdown content to avoid unmount when menu closes) ===== */}
+      <ForgotPasswordModal open={openForgotPassword} onOpenChange={setOpenForgotPassword} />
 
-      {/* ===== MODAL ===== */}
-      <ForgotPasswordModal
-        open={openForgotPassword}
-        onOpenChange={setOpenForgotPassword}
-      />
     </>
   );
 }
