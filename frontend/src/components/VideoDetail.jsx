@@ -554,7 +554,7 @@ export default function VideoDetail({ videoData }) {
                                       )}
                                     </div>
                                   </div>
-                                  <div className={`flex-1 min-w-0 text-white/80 text-sm ${!expandedTimeline[itemKey] ? 'truncate' : ''}`}>
+                                  <div className={`flex-1 min-w-0 text-white/80 text-sm ${!expandedTimeline[itemKey] ? 'line-clamp-1' : ''}`}>
                                     {item.phase_description || window.__t('noDescription')}
                                   </div>
                                 </div>
