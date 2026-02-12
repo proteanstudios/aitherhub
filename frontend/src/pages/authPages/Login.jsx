@@ -100,7 +100,7 @@ export default function Login({ onSuccess, onSwitchToRegister }) {
         {window.__t('login')}
       </h2>
 
-      <div className="flex flex-col max-w-full top-[126px] items-start space-y-1 w-[340px] h-[250px] md:w-[400px]">
+      <div className="flex flex-col max-w-full top-[126px] items-start space-y-1 w-full h-[250px] md:w-[400px]">
         <div className="flex flex-col items-start w-full mb-[20px]">
           <label className="font-cabin font-bold text-[14px] text-black mb-[7px]">
             {window.__t('emailAddress')}

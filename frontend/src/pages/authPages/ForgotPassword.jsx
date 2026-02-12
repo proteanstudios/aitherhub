@@ -203,7 +203,7 @@ export default function ForgotPassword({ onSuccess }) {
             </div>
 
             {/* ===== BUTTONS ===== */}
-            <div className="flex flex-col md:flex-row items-center gap-4 w-full mt-6 align-center md:justify-center md:gap-[30px] md:mt-0">
+            <div className="flex flex-row items-center justify-center gap-4 w-full mt-6 align-center md:justify-center md:gap-[30px] md:mt-0">
                 <Button className="min-w-[125px]" onClick={handleForgotPassword}
                     disabled={isLoading}>{isLoading ? window.__t('processing') : window.__t('changePassword')}</Button>
                 <Button variant="outline" onClick={() => {
