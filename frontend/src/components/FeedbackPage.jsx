@@ -70,14 +70,14 @@ export default function FeedbackPage({ onBack }) {
                         <div className="flex gap-4 w-full">
                             <button
                                 onClick={onBack}
-                                className="flex-1 h-11 rounded-lg text-white/80 border hover:text-white hover:bg-white/10 cursor-pointer transition-all duration-200"
+                                className="flex-1 h-11 rounded-lg text-white/80 border hover:text-white hover:bg-white/10 cursor-pointer transition-all duration-200 active:scale-[0.99] active:bg-white/10"
                             >
                                 {window.__t('feedbackBack') || '戻る'}
                             </button>
                             <button
                                 onClick={handleSubmit}
                                 disabled={isSubmitting}
-                                className="flex-1 h-11 rounded-lg bg-white text-[#7D01FF] font-extralight hover:bg-white/90 cursor-pointer transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex-1 h-11 rounded-lg bg-white text-[#7D01FF] font-extralight hover:bg-white/90 cursor-pointer transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99] active:bg-white/90"
                             >
                                 {isSubmitting
                                     ? (window.__t('processing') || '処理中...')
