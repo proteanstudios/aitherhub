@@ -86,7 +86,7 @@ export default function VideoDetail({ videoData }) {
   const [loading] = useState(false);
   const [error] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
-  const [previewData, setPreviewData] = useState(null); // { url, timeStart, timeEnd }
+  const [previewData, setPreviewData] = useState(null); // { url, timeStart, timeEnd, isClipPreview }
   const [, setPreviewLoading] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const hasAnswerStartedRef = useRef(false);
@@ -210,7 +210,7 @@ export default function VideoDetail({ videoData }) {
         url,
         timeStart: Number(phase.time_start) || 0,
         timeEnd: phase.time_end != null ? Number(phase.time_end) : null,
-        skipSeek: !!okPhaseUrl,
+        isClipPreview: !!okPhaseUrl,
       };
 
       console.log('🎯 Setting preview data:', previewDataObj);
@@ -705,7 +705,7 @@ export default function VideoDetail({ videoData }) {
         videoUrl={previewData?.url}
         timeStart={previewData?.timeStart}
         timeEnd={previewData?.timeEnd}
-        skipSeek={previewData?.skipSeek}
+        isClipPreview={previewData?.isClipPreview}
       />
     </div>
   );

@@ -2,33 +2,24 @@ import { useEffect, useRef, useState } from "react";
 import CloseSvg from "../../assets/icons/close.svg";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogClose } from "../ui/dialog";
 
-/**
- * Modal video preview that seeks to a specific start time.
- */
-export default function VideoPreviewModal({ open, onClose, videoUrl, timeStart = 0, timeEnd = null, skipSeek = false }) {
+export default function VideoPreviewModal({
+  open,
+  onClose,
+  videoUrl,
+  timeStart = 0,
+  skipSeek = false,
+  isClipPreview = false
+}) {
   const videoRef = useRef(null);
   const hasSetupRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [playBlocked, setPlayBlocked] = useState(false);
   const [bufferedProgress, setBufferedProgress] = useState(0);
   const [showCustomLoading, setShowCustomLoading] = useState(true);
   const prevOpenRef = useRef(false);
   const prevVideoUrlRef = useRef(null);
 
-  const applyUnmutedDefaults = (vid) => {
-    if (!vid) return;
-    try {
-      vid.muted = false;
-      vid.defaultMuted = false;
-      if (vid.volume === 0) vid.volume = 1;
-    } catch {
-      // ignore
-    }
-  };
-
   const resetUiState = () => {
     setIsLoading(true);
-    setPlayBlocked(false);
     setBufferedProgress(0);
     setShowCustomLoading(true); // Always show custom loading initially
     hasSetupRef.current = false;
@@ -50,21 +41,20 @@ export default function VideoPreviewModal({ open, onClose, videoUrl, timeStart =
     prevVideoUrlRef.current = videoUrl;
   }, [open, videoUrl]);
 
-  // Seek to start time when modal opens or URL changes
+  // Setup seek/play when modal opens or URL changes
   useEffect(() => {
     // Skip if modal closed or no video
     if (!open || !videoUrl) {
       return;
     }
 
-    const setupVideoSeekAndPlay = () => {
+    const setupVideoPlay = () => {
       const vid = videoRef.current;
       if (!vid || hasSetupRef.current) {
         return;
       }
 
       hasSetupRef.current = true;
-
       let hasSeeked = false;
 
       const seekAndPlay = async () => {
@@ -73,30 +63,25 @@ export default function VideoPreviewModal({ open, onClose, videoUrl, timeStart =
           setShowCustomLoading(true);
           setIsLoading(true);
 
-          applyUnmutedDefaults(vid);
-
-          const shouldSeek = !skipSeek && !hasSeeked && Math.abs(vid.currentTime - timeStart) > 0.5;
+          const shouldSkipSeek = isClipPreview || skipSeek;
+          const shouldSeek = !shouldSkipSeek && !hasSeeked && Math.abs(vid.currentTime - timeStart) > 0.5;
           if (shouldSeek && timeStart !== null && timeStart !== undefined) {
             vid.currentTime = timeStart;
             hasSeeked = true;
-          } else if (skipSeek) {
+          } else if (shouldSkipSeek) {
             hasSeeked = true;
-          } else {
-            // no-op
           }
 
-          // Try to play, handle promise rejection (autoPlay blocked)
+          // Try autoplay; if blocked, keep native controls so user can start playback.
           try {
             await vid.play();
-            setPlayBlocked(false);
-            setIsLoading(false);
             // Keep custom loading for a moment to show success, then hide
+            setIsLoading(false);
             setTimeout(() => setShowCustomLoading(false), 500);
           } catch {
-            setPlayBlocked(true);
+            // Autoplay can be blocked by browser policy. Let user click native play.
             setIsLoading(false);
-            // Keep custom loading to show play button
-            // Don't hide it automatically since user needs to interact
+            setShowCustomLoading(false);
           }
         } catch (e) {
           console.error("Error seeking/playing video preview:", e);
@@ -106,11 +91,8 @@ export default function VideoPreviewModal({ open, onClose, videoUrl, timeStart =
       };
 
       const handleCanPlay = () => {
-        // Only seek if we haven't seeked yet
         if (!hasSeeked) {
           seekAndPlay();
-        } else {
-          // no-op
         }
       };
 
@@ -144,13 +126,13 @@ export default function VideoPreviewModal({ open, onClose, videoUrl, timeStart =
     };
 
     // Try to setup immediately if video element exists
-    const cleanup = setupVideoSeekAndPlay();
+    const cleanup = setupVideoPlay();
 
     // If setup failed (video element not ready), try again after a short delay
     if (!hasSetupRef.current) {
       const timeoutId = setTimeout(() => {
         if (open && videoUrl && !hasSetupRef.current) {
-          setupVideoSeekAndPlay();
+          setupVideoPlay();
         }
       }, 100);
 
@@ -163,46 +145,14 @@ export default function VideoPreviewModal({ open, onClose, videoUrl, timeStart =
     return () => {
       if (cleanup) cleanup();
     };
-  }, [videoUrl, timeStart, timeEnd, open, skipSeek]);
-
-  const handleTimeUpdate = (e) => {
-    if (!timeEnd) return;
-    try {
-      if (e.currentTarget.currentTime >= timeEnd) {
-        e.currentTarget.currentTime = timeEnd;
-        e.currentTarget.pause();
-      }
-    } catch {
-      // ignore
-    }
-  };
-
-  const handleManualPlay = async () => {
-    if (!videoRef.current) return;
-
-    try {
-      setIsLoading(true);
-      applyUnmutedDefaults(videoRef.current);
-      await videoRef.current.play();
-      setPlayBlocked(false);
-      setIsLoading(false);
-      // Hide custom loading after successful manual play
-      setTimeout(() => setShowCustomLoading(false), 500);
-    } catch (error) {
-      console.error("Manual play failed:", error);
-      setPlayBlocked(true);
-      setIsLoading(false);
-    }
-  };
+  }, [videoUrl, open, isClipPreview, skipSeek, timeStart]);
 
   const handleProgress = () => {
     const video = videoRef.current;
     if (!video || video.duration === 0) return;
 
-    // Calculate buffered progress within preview range
+    // Calculate buffered progress within the current source duration
     const currentTime = video.currentTime;
-    const previewStart = timeStart || 0;
-    const previewEnd = timeEnd || video.duration;
 
     // Find the buffered range that covers current position
     let bufferedEnd = 0;
@@ -215,10 +165,8 @@ export default function VideoPreviewModal({ open, onClose, videoUrl, timeStart =
       }
     }
 
-    // Calculate progress within preview range (0-100%)
-    const previewDuration = previewEnd - previewStart;
-    const bufferedInPreview = Math.min(bufferedEnd, previewEnd) - previewStart;
-    const progress = Math.max(0, Math.min(100, (bufferedInPreview / previewDuration) * 100));
+    // Calculate progress in full clip duration (0-100%)
+    const progress = Math.max(0, Math.min(100, (bufferedEnd / video.duration) * 100));
 
     setBufferedProgress(progress);
   };
@@ -248,13 +196,12 @@ export default function VideoPreviewModal({ open, onClose, videoUrl, timeStart =
               ref={videoRef}
               key={videoUrl}
               src={videoUrl}
-              controls={!playBlocked && !showCustomLoading && !isLoading}
+              controls
               autoPlay
               playsInline
               poster="" // Disable default poster/loading
               className="w-full h-full"
               style={{ backgroundColor: "black" }} // Prevent flash of white
-              onTimeUpdate={handleTimeUpdate}
               onProgress={handleProgress}
               onError={(e) => console.error("Video error:", e)}
             />
@@ -279,24 +226,6 @@ export default function VideoPreviewModal({ open, onClose, videoUrl, timeStart =
               </div>
             )}
 
-            {/* Play Blocked Overlay */}
-            {playBlocked && !isLoading && (
-              <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
-                <div className="flex flex-col items-center gap-4">
-                  <div className="text-white text-center">
-                    <p className="text-lg mb-2">再生するにはクリックしてください</p>
-                    <p className="text-sm text-gray-300">ブラウザの自動再生ポリシーにより停止されました</p>
-                  </div>
-                  <button
-                    onClick={handleManualPlay}
-                    className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-[background-color] flex items-center gap-2"
-                  >
-                    <span>▶️</span>
-                    再生する
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         ) : (
           <div className="w-full aspect-video flex items-center justify-center text-white/80">
