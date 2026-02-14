@@ -1,48 +1,179 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
+"""
+Feedback API Endpoint for aitherhub.
+
+Allows users to rate analysis results (good/bad), which updates
+the quality score in the Qdrant knowledge base. Higher-rated analyses
+are prioritized in future RAG retrievals.
+
+Add this file to: backend/app/api/v1/endpoints/feedback.py
+"""
+
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel, Field
+from typing import Optional
 import logging
 
-from app.core.db import get_db
-from app.core.dependencies import get_current_user
-from app.repository.feedback_repo import create_feedback
-from app.schemas.feedback_schema import FeedbackRequest, FeedbackResponse
+logger = logging.getLogger("feedback_api")
 
-logger = logging.getLogger(__name__)
-
-router = APIRouter(prefix="/feedback", tags=["Feedback"])
+router = APIRouter()
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, response_model=FeedbackResponse)
-async def submit_feedback(
-    payload: FeedbackRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
-):
+# ============================================================
+# Schemas
+# ============================================================
+
+class FeedbackCreate(BaseModel):
+    """Schema for submitting feedback on an analysis result."""
+    video_id: str = Field(..., description="ID of the analyzed video")
+    phase_index: int = Field(..., ge=0, description="Index of the phase being rated")
+    rating: int = Field(
+        ...,
+        ge=-1,
+        le=1,
+        description="Rating: -1 (bad), 0 (neutral), 1 (good)"
+    )
+    comment: Optional[str] = Field(
+        None,
+        max_length=1000,
+        description="Optional comment explaining the rating"
+    )
+
+
+class FeedbackResponse(BaseModel):
+    """Schema for feedback submission response."""
+    success: bool
+    message: str
+    new_quality_score: Optional[float] = None
+
+
+class KnowledgeStatsResponse(BaseModel):
+    """Schema for knowledge base statistics."""
+    total_entries: int
+    high_quality_entries: int
+    phase_type_distribution: dict
+    average_quality_score: float
+
+
+# ============================================================
+# Endpoints
+# ============================================================
+
+@router.post("/", response_model=FeedbackResponse)
+async def submit_feedback(feedback: FeedbackCreate):
     """
-    Submit feedback endpoint - requires authentication
+    Submit feedback on a video analysis result.
+
+    This endpoint updates the quality score of the corresponding
+    analysis in the Qdrant knowledge base. Analyses with higher
+    quality scores are more likely to be used as reference examples
+    in future RAG-augmented analyses.
     """
     try:
-        user_id = current_user["id"]
-        
-        feedback = await create_feedback(
-            db=db,
-            user_id=user_id,
-            content=payload.content,
-        )
-        
-        logger.info(f"[FEEDBACK] User {user_id} submitted feedback: {feedback.id}")
-        
-        return FeedbackResponse(
-            id=feedback.id,
-            user_id=feedback.user_id,
-            content=feedback.content,
-            created_at=feedback.created_at,
-            updated_at=feedback.updated_at,
-        )
-    except Exception as e:
-        logger.error(f"[FEEDBACK] Error creating feedback: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="フィードバックの送信に失敗しました",
+        # Import here to avoid circular dependencies
+        from rag.knowledge_store import update_quality_score
+        from rag.rag_client import get_qdrant_client, COLLECTION_NAME
+        import uuid
+
+        client = get_qdrant_client()
+
+        # Update quality score in Qdrant
+        update_quality_score(
+            video_id=feedback.video_id,
+            phase_index=feedback.phase_index,
+            rating=feedback.rating,
+            client=client,
         )
 
+        # Retrieve updated score
+        point_id = str(
+            uuid.uuid5(
+                uuid.NAMESPACE_DNS,
+                f"{feedback.video_id}_{feedback.phase_index}"
+            )
+        )
+        points = client.retrieve(
+            collection_name=COLLECTION_NAME,
+            ids=[point_id],
+            with_payload=True,
+        )
+
+        new_score = None
+        if points:
+            new_score = points[0].payload.get("quality_score")
+
+        return FeedbackResponse(
+            success=True,
+            message="フィードバックが正常に記録されました",
+            new_quality_score=new_score,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to submit feedback: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"フィードバックの記録に失敗しました: {str(e)}"
+        )
+
+
+@router.get("/stats", response_model=KnowledgeStatsResponse)
+async def get_knowledge_stats():
+    """
+    Get statistics about the knowledge base.
+
+    Returns the total number of stored analyses, the number of
+    high-quality entries, and the distribution of phase types.
+    """
+    try:
+        from rag.rag_client import get_qdrant_client, COLLECTION_NAME
+        from qdrant_client.models import Filter, FieldCondition, Range
+
+        client = get_qdrant_client()
+
+        # Get collection info
+        collection_info = client.get_collection(COLLECTION_NAME)
+        total_entries = collection_info.points_count
+
+        # Count high quality entries (score >= 0.5)
+        high_quality_filter = Filter(
+            must=[
+                FieldCondition(
+                    key="quality_score",
+                    range=Range(gte=0.5),
+                )
+            ]
+        )
+        high_quality_count = client.count(
+            collection_name=COLLECTION_NAME,
+            count_filter=high_quality_filter,
+        ).count
+
+        # Get phase type distribution by scrolling
+        all_points, _ = client.scroll(
+            collection_name=COLLECTION_NAME,
+            limit=10000,
+            with_payload=["phase_type", "quality_score"],
+            with_vectors=False,
+        )
+
+        phase_distribution = {}
+        total_score = 0.0
+        for point in all_points:
+            pt = point.payload.get("phase_type", "unknown")
+            phase_distribution[pt] = phase_distribution.get(pt, 0) + 1
+            total_score += point.payload.get("quality_score", 0.0)
+
+        avg_score = total_score / max(total_entries, 1)
+
+        return KnowledgeStatsResponse(
+            total_entries=total_entries,
+            high_quality_entries=high_quality_count,
+            phase_type_distribution=phase_distribution,
+            average_quality_score=round(avg_score, 3),
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get knowledge stats: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"統計情報の取得に失敗しました: {str(e)}"
+        )

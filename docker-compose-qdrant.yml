@@ -1,0 +1,58 @@
+# ============================================================
+# Qdrant Vector Database Service
+# Add this service to the existing docker-compose.yml
+# ============================================================
+#
+# This configuration adds Qdrant as a vector database for the
+# RAG (Retrieval-Augmented Generation) system. Qdrant stores
+# vectorized analysis results and enables similarity search.
+#
+# Add the following to your existing docker-compose.yml:
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    container_name: aitherhub-qdrant
+    ports:
+      - "6333:6333"    # REST API
+      - "6334:6334"    # gRPC API
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__LOG_LEVEL=INFO
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - app-network
+
+volumes:
+  qdrant_data:
+    driver: local
+
+# ============================================================
+# Environment Variables to add to .env
+# ============================================================
+#
+# # RAG Configuration
+# QDRANT_HOST=qdrant
+# QDRANT_PORT=6333
+# EMBEDDING_MODEL=text-embedding-3-small
+# EMBEDDING_API_VERSION=2024-02-01
+# RAG_ENABLED=true
+# RAG_TOP_K=5
+# RAG_MIN_QUALITY_SCORE=0.0
+
+# ============================================================
+# Worker service dependency update
+# ============================================================
+#
+# Add to the worker service's depends_on:
+#   worker:
+#     depends_on:
+#       - db
+#       - qdrant    # NEW
