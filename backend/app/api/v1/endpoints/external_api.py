@@ -134,7 +134,7 @@ async def store_analysis_with_sales(request: AnalysisWithSalesRequest):
     Pattern B: Screen recording + screen_metrics extracted from frames
     """
     try:
-        from rag.knowledge_store import store_video_analysis
+        from app.services.rag.knowledge_store import store_video_analysis
 
         sales_dict = request.sales_data.dict() if request.sales_data else None
         products_list = [p.dict() for p in request.set_products]
@@ -182,7 +182,7 @@ async def ingest_sales_screenshot(
     will extract structured sales metrics using GPT-4o vision.
     """
     try:
-        from rag.sales_data_ingester import ingest_from_dashboard_screenshot
+        from app.services.rag.sales_data_ingester import ingest_from_dashboard_screenshot
 
         # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(
@@ -217,7 +217,7 @@ async def ingest_products_screenshot(
     Extract set product data from a product sales screenshot using OCR.
     """
     try:
-        from rag.sales_data_ingester import ingest_products_from_screenshot
+        from app.services.rag.sales_data_ingester import ingest_products_from_screenshot
 
         with tempfile.NamedTemporaryFile(
             delete=False, suffix=".png"
@@ -251,7 +251,7 @@ async def ingest_sales_json(data: Dict):
     sales_summary and products fields.
     """
     try:
-        from rag.sales_data_ingester import ingest_from_lcj_api
+        from app.services.rag.sales_data_ingester import ingest_from_lcj_api
 
         sales_data, set_products = ingest_from_lcj_api(data)
 
@@ -281,7 +281,7 @@ async def extract_frame_metrics(
     such as viewer count, likes, shopping rank, etc.
     """
     try:
-        from rag.screen_metrics_extractor import extract_metrics_from_frame
+        from app.services.rag.screen_metrics_extractor import extract_metrics_from_frame
 
         with tempfile.NamedTemporaryFile(
             delete=False, suffix=".jpg"
@@ -317,7 +317,7 @@ async def retrieve_similar(request: SimilarAnalysisRequest):
     Supports sales-context-aware retrieval and liver-specific filtering.
     """
     try:
-        from rag.knowledge_retriever import retrieve_similar_analyses
+        from app.services.rag.knowledge_retriever import retrieve_similar_analyses
 
         results = retrieve_similar_analyses(
             speech_text=request.speech_text,
@@ -350,7 +350,7 @@ async def retrieve_liver_history(request: LiverHistoryRequest):
     trend analysis and personalized insights.
     """
     try:
-        from rag.knowledge_retriever import retrieve_liver_history as _retrieve
+        from app.services.rag.knowledge_retriever import retrieve_liver_history as _retrieve
 
         history = _retrieve(
             liver_id=request.liver_id,
@@ -378,7 +378,7 @@ async def retrieve_top_performers(request: TopPerformerRequest):
     serving as benchmarks for comparison.
     """
     try:
-        from rag.knowledge_retriever import retrieve_top_performers as _retrieve
+        from app.services.rag.knowledge_retriever import retrieve_top_performers as _retrieve
 
         results = _retrieve(
             min_gmv=request.min_gmv,
@@ -407,7 +407,7 @@ async def get_extended_stats():
     Get extended knowledge base statistics including sales data summary.
     """
     try:
-        from rag.rag_client import get_qdrant_client, COLLECTION_NAME
+        from app.services.rag.rag_client import get_qdrant_client, COLLECTION_NAME
 
         client = get_qdrant_client()
 
