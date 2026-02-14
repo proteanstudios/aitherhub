@@ -25,7 +25,9 @@ from qdrant_client.models import (
 
 logger = logging.getLogger("rag_client")
 
-# Configuration
+# Configuration - supports both Qdrant Cloud (URL) and self-hosted (host:port)
+QDRANT_URL = os.getenv("QDRANT_URL", "")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
 QDRANT_HOST = os.getenv("QDRANT_HOST", "qdrant")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 COLLECTION_NAME = "video_analysis_knowledge"
@@ -33,8 +35,14 @@ VECTOR_SIZE = 1536  # OpenAI text-embedding-3-small dimension
 
 
 def get_qdrant_client() -> QdrantClient:
-    """Create and return a Qdrant client instance."""
-    return QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+    """Create and return a Qdrant client instance.
+    Supports Qdrant Cloud (URL) and self-hosted (host:port)."""
+    if QDRANT_URL:
+        logger.info(f"Connecting to Qdrant Cloud: {QDRANT_URL[:50]}...")
+        return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY if QDRANT_API_KEY else None)
+    else:
+        logger.info(f"Connecting to self-hosted Qdrant: {QDRANT_HOST}:{QDRANT_PORT}")
+        return QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 
 
 def init_collection(client: QdrantClient = None):
