@@ -23,15 +23,15 @@ async def submit_feedback(
     """
     try:
         user_id = current_user["id"]
-        
+
         feedback = await create_feedback(
             db=db,
             user_id=user_id,
             content=payload.content,
         )
-        
+
         logger.info(f"[FEEDBACK] User {user_id} submitted feedback: {feedback.id}")
-        
+
         return FeedbackResponse(
             id=feedback.id,
             user_id=feedback.user_id,
@@ -45,4 +45,3 @@ async def submit_feedback(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="フィードバックの送信に失敗しました",
         )
-
