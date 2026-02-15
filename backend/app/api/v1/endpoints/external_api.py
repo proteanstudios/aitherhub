@@ -154,11 +154,35 @@ async def store_analysis_with_sales(request: AnalysisWithSalesRequest):
             data_source=request.data_source,
         )
 
+        # LCJ Webhook: 解析結果をLCJに自動送信
+        lcj_result = None
+        try:
+            from app.services.rag.lcj_webhook import send_analysis_from_store_request
+
+            # フェーズ分析からAIアドバイスを生成
+            ai_advice = _generate_ai_advice_summary(request.phases)
+            ai_structured = _generate_ai_structured_advice(
+                request.phases, sales_dict
+            )
+
+            lcj_result = send_analysis_from_store_request(
+                request_data=request.dict(),
+                ai_advice=ai_advice,
+                ai_structured_advice=ai_structured,
+            )
+            logger.info(f"LCJ webhook result: {lcj_result}")
+        except Exception as webhook_err:
+            logger.warning(
+                f"LCJ webhook failed (non-blocking): {webhook_err}"
+            )
+            lcj_result = {"success": False, "error": str(webhook_err)}
+
         return {
             "success": True,
             "message": f"{len(point_ids)}件のフェーズ分析を保存しました",
             "point_ids": point_ids,
             "video_id": request.video_id,
+            "lcj_sync": lcj_result,
         }
 
     except Exception as e:
@@ -483,4 +507,164 @@ async def get_extended_stats():
 
     except Exception as e:
         logger.error(f"Failed to get extended stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# Helper Functions: AI Advice Generation
+# ============================================================
+
+def _generate_ai_advice_summary(phases: List[Dict]) -> str:
+    """
+    フェーズ分析結果からAIアドバイスのサマリーテキストを生成する。
+    
+    各フェーズの分析結果を要約し、ワンポイントアドバイスとして返す。
+    """
+    if not phases:
+        return ""
+    
+    summaries = []
+    for i, phase in enumerate(phases, 1):
+        phase_type = phase.get("phase_type", "不明")
+        speech = phase.get("speech_text", "")[:100]
+        visual = phase.get("visual_context", "")[:100]
+        
+        if speech or visual:
+            summaries.append(
+                f"フェーズ{i}({phase_type}): "
+                f"{'トーク: ' + speech if speech else ''}"
+                f"{'  映像: ' + visual if visual else ''}"
+            )
+    
+    if not summaries:
+        return "解析データが不足しています。"
+    
+    advice_parts = [
+        f"【AI解析サマリー】全{len(phases)}フェーズを分析しました。",
+    ]
+    advice_parts.extend(summaries[:5])  # 最大5フェーズまで
+    
+    if len(phases) > 5:
+        advice_parts.append(f"...他{len(phases) - 5}フェーズ")
+    
+    return "\n".join(advice_parts)
+
+
+def _generate_ai_structured_advice(
+    phases: List[Dict],
+    sales_data: Optional[Dict] = None,
+) -> Optional[Dict]:
+    """
+    フェーズ分析結果と売上データからAI構造化アドバイスを生成する。
+    
+    LCJのaiStructuredAdviceカラムに保存される形式で返す。
+    """
+    if not phases:
+        return None
+    
+    # フェーズタイプの集計
+    phase_types = [p.get("phase_type", "unknown") for p in phases]
+    phase_type_counts = {}
+    for pt in phase_types:
+        phase_type_counts[pt] = phase_type_counts.get(pt, 0) + 1
+    
+    # 良い点の抽出（高品質スコアのフェーズから）
+    good_points = []
+    improvements = []
+    for phase in phases:
+        qs = phase.get("quality_score", 0)
+        pt = phase.get("phase_type", "")
+        speech = phase.get("speech_text", "")[:80]
+        
+        if qs >= 0.7 and speech:
+            good_points.append(f"{pt}: {speech}")
+        elif qs < 0.3 and speech:
+            improvements.append(f"{pt}: 改善の余地あり")
+    
+    # 計算メトリクス
+    calculated_metrics = {
+        "total_phases": len(phases),
+        "phase_distribution": phase_type_counts,
+    }
+    
+    if sales_data:
+        gmv = sales_data.get("gmv", 0)
+        duration = sales_data.get("duration_minutes", 0)
+        viewers = sales_data.get("viewers", 0)
+        orders = sales_data.get("total_orders", 0)
+        
+        if duration and duration > 0:
+            calculated_metrics["gmv_per_minute"] = round(gmv / duration, 0)
+        if viewers and viewers > 0:
+            calculated_metrics["order_rate"] = f"{round(orders / viewers * 100, 2)}%"
+            calculated_metrics["gmv_per_viewer"] = round(gmv / viewers, 0)
+    
+    return {
+        "summary": f"全{len(phases)}フェーズのAI解析が完了しました。"
+                   f"フェーズ構成: {', '.join(f'{k}:{v}' for k, v in phase_type_counts.items())}",
+        "goodPoints": good_points[:5] if good_points else ["解析データを蓄積中です"],
+        "improvements": improvements[:5] if improvements else ["十分なデータが蓄積されてから改善点を提案します"],
+        "actionPlans": [
+            {
+                "action": "次回配信でのフェーズ構成を最適化",
+                "reason": f"現在の構成: {', '.join(f'{k}:{v}' for k, v in phase_type_counts.items())}",
+                "timing": "次回配信前",
+            }
+        ],
+        "nextGoal": "AI解析データの蓄積と配信パフォーマンスの継続的改善",
+        "calculatedMetrics": calculated_metrics,
+    }
+
+
+# ============================================================
+# Endpoints: Direct LCJ Webhook Trigger
+# ============================================================
+
+class LCJWebhookPayload(BaseModel):
+    """Direct LCJ webhook trigger payload."""
+    liver_email: str = Field("", description="Liver email for matching")
+    brand_id: int = Field(0, description="Brand ID in LCJ")
+    livestream_date: str = Field("", description="Livestream date (YYYY-MM-DD)")
+    streamer_name: str = Field("", description="Streamer display name")
+    platform: str = Field("TikTok", description="Streaming platform")
+    gmv: Optional[float] = None
+    duration: Optional[int] = None
+    viewer_count: Optional[int] = None
+    order_count: Optional[int] = None
+    ai_advice: Optional[str] = None
+    ai_structured_advice: Optional[Dict] = None
+
+
+@router.post("/lcj/sync")
+async def sync_to_lcj(payload: LCJWebhookPayload):
+    """
+    Manually trigger LCJ webhook to sync analysis results.
+    
+    Use this endpoint to manually push data to LCJ when automatic
+    sync from /analysis/store is not sufficient.
+    """
+    try:
+        from app.services.rag.lcj_webhook import send_analysis_to_lcj
+        
+        result = send_analysis_to_lcj(
+            liver_email=payload.liver_email,
+            brand_id=payload.brand_id,
+            livestream_date=payload.livestream_date,
+            streamer_name=payload.streamer_name,
+            platform=payload.platform,
+            gmv=payload.gmv,
+            duration=payload.duration,
+            viewer_count=payload.viewer_count,
+            order_count=payload.order_count,
+            ai_advice=payload.ai_advice,
+            ai_structured_advice=payload.ai_structured_advice,
+        )
+        
+        return {
+            "success": result.get("success", False),
+            "lcj_response": result,
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to sync to LCJ: {e}")
         raise HTTPException(status_code=500, detail=str(e))
