@@ -58,6 +58,9 @@ async def get_current_user_async(
             "display_name": user.display_name,
             "role": user.role,
             "is_active": user.is_active,
+            "lcj_liver_email": getattr(user, "lcj_liver_email", None),
+            "lcj_liver_name": getattr(user, "lcj_liver_name", None),
+            "lcj_linked_at": getattr(user, "lcj_linked_at", None),
         }
     except JWTError as e:
         logger.error(f"JWT decode error: {str(e)}")

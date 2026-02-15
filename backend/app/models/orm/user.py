@@ -54,3 +54,8 @@ class User(Base, IntegerMixin, TimestampMixin):
         default=True,
         nullable=False,
     )
+
+    # LCJ連携
+    lcj_liver_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    lcj_liver_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    lcj_linked_at: Mapped[str | None] = mapped_column(String(50), nullable=True)

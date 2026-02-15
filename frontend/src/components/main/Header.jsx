@@ -3,6 +3,7 @@ import MenuIcon from "../../assets/icons/menu.png";
 import LoginModal from "../modals/LoginModal";
 import RegisterModal from "../modals/RegisterModal";
 import ForgotPasswordModal from "../modals/ForgotPasswordModal";
+import LCJLinkingModal from "../modals/LCJLinkingModal";
 import AuthService from "../../base/services/userService";
 import { BasicButton } from "../buttons";
 import { Button } from "../ui/Button";
@@ -14,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
-import { ChevronDown, User, Settings, LogOut } from "lucide-react";
+import { ChevronDown, User, Settings, LogOut, Link2 } from "lucide-react";
 
 export default function Header({
   onOpenSidebar,
@@ -24,6 +25,7 @@ export default function Header({
   const [openLogin, setOpenLogin] = useState(false);
   const [openRegister, setOpenRegister] = useState(false);
   const [localUser, setLocalUser] = useState(null);
+  const [openLCJLinking, setOpenLCJLinking] = useState(false);
 
   useEffect(() => {
     if (propUser) return;
@@ -137,6 +139,15 @@ export default function Header({
                     </DropdownMenuItem>
                   }
                 />
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setOpenLCJLinking(true);
+                  }}
+                >
+                  <Link2 className="w-4 h-4" />
+                  {window.__t("lcjLinking")}
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-red-500 focus:text-red-600"
@@ -187,6 +198,11 @@ export default function Header({
       <ForgotPasswordModal
         open={openForgotPassword}
         onOpenChange={handleForgotPasswordOpenChange}
+      />
+
+      <LCJLinkingModal
+        open={openLCJLinking}
+        onOpenChange={setOpenLCJLinking}
       />
     </>
   );
