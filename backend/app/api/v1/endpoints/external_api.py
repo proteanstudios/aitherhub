@@ -68,6 +68,7 @@ class AnalysisWithSalesRequest(BaseModel):
     liver_name: str = Field("", description="Liver display name")
     platform: str = Field("tiktok", description="Streaming platform")
     stream_date: str = Field("", description="Stream date (YYYY-MM-DD)")
+    brand_id: int = Field(0, description="Brand ID in LCJ system")
     data_source: str = Field("clean", description="'clean' or 'screen_recording'")
     filename: str = Field("", description="Original filename")
     total_duration: float = Field(0, description="Total video duration in seconds")
