@@ -27,6 +27,7 @@ def calculate_progress(status: str) -> int:
     status_map = {
         "NEW": 0,
         "uploaded": 0,
+        "STEP_COMPRESS_1080P": 1,
         "STEP_0_EXTRACT_FRAMES": 2,
         "STEP_1_DETECT_PHASES": 4,
         "STEP_2_EXTRACT_METRICS": 10,
@@ -68,6 +69,7 @@ def get_status_message(status: str) -> str:
     messages = {
         "NEW": "アップロード待ち",
         "uploaded": "アップロード完了",
+        "STEP_COMPRESS_1080P": "動画を1080pに圧縮中...",
         "STEP_0_EXTRACT_FRAMES": "フレーム抽出中...",
         "STEP_1_DETECT_PHASES": "フェーズ検出中...",
         "STEP_2_EXTRACT_METRICS": "メトリクス抽出中...",

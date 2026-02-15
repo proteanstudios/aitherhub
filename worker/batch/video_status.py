@@ -2,6 +2,11 @@ class VideoStatus:
     NEW = "NEW"
 
     # =========================
+    # PRE-PROCESSING
+    # =========================
+    STEP_COMPRESS_1080P = "STEP_COMPRESS_1080P"
+
+    # =========================
     # PIPELINE CORE
     # =========================
     STEP_0_EXTRACT_FRAMES = "STEP_0_EXTRACT_FRAMES"

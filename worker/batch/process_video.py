@@ -76,6 +76,7 @@ from video_structure_group_stats import recompute_video_structure_group_stats
 from best_video_pipeline import process_best_video
 
 from video_status import VideoStatus
+from video_compressor import compress_and_replace
 
 
 # =========================
@@ -129,6 +130,7 @@ def load_step1_cache(video_id):
 # =========================
 
 STEP_ORDER = [
+    VideoStatus.STEP_COMPRESS_1080P,
     VideoStatus.STEP_0_EXTRACT_FRAMES,
     VideoStatus.STEP_1_DETECT_PHASES,
     VideoStatus.STEP_2_EXTRACT_METRICS,
@@ -331,7 +333,7 @@ def main():
             raise RuntimeError(f"Cannot resolve user_id for video {video_id}")
 
         # Chỉ cho resume nếu >= STEP 7
-        if raw_start_step >= 7:
+        if raw_start_step >= 8:
             start_step = raw_start_step
 
             keyframes = None
@@ -355,11 +357,29 @@ def main():
                 os.makedirs(ART_ROOT, exist_ok=True)
 
         # =========================
+        # STEP COMPRESS – 1080P COMPRESSION
+        # =========================
+        if start_step <= 0:
+            update_video_status_sync(video_id, VideoStatus.STEP_COMPRESS_1080P)
+            logger.info("=== STEP COMPRESS – 1080P COMPRESSION ===")
+            blob_url_for_compress = args.blob_url if getattr(args, "blob_url", None) else None
+            video_path = compress_and_replace(
+                video_path=video_path,
+                blob_url=blob_url_for_compress,
+                crf=23,
+                preset="medium",
+            )
+            logger.info("[COMPRESS] Using video: %s (%.2f GB)",
+                        video_path, os.path.getsize(video_path) / (1024**3))
+        else:
+            logger.info("[SKIP] STEP COMPRESS")
+
+        # =========================
         # STEP 0 – EXTRACT FRAMES
         # =========================
         frame_dir = frames_dir(video_id)
 
-        if start_step <= 0:
+        if start_step <= 1:
             update_video_status_sync(video_id, VideoStatus.STEP_0_EXTRACT_FRAMES)
             logger.info("=== STEP 0 – EXTRACT FRAMES ===")
             # if not os.path.exists(frame_dir) or not os.listdir(frame_dir):
@@ -374,7 +394,7 @@ def main():
         # =========================
         # STEP 1 – PHASE DETECTION (YOLO)
         # =========================
-        if start_step <= 1:
+        if start_step <= 2:
             update_video_status_sync(video_id, VideoStatus.STEP_1_DETECT_PHASES)
 
             logger.info("=== STEP 1 – PHASE DETECTION (YOLO) ===")
@@ -403,7 +423,7 @@ def main():
         # =========================
         # STEP 2 – PHASE METRICS
         # =========================
-        if start_step <= 2:
+        if start_step <= 3:
             update_video_status_sync(video_id, VideoStatus.STEP_2_EXTRACT_METRICS)
             logger.info("=== STEP 2 – PHASE METRICS ===")
             phase_stats = extract_phase_stats(
@@ -421,7 +441,7 @@ def main():
         ad = audio_dir(video_id)
         atd = audio_text_dir(video_id)
 
-        if start_step <= 3:
+        if start_step <= 4:
             update_video_status_sync(video_id, VideoStatus.STEP_3_TRANSCRIBE_AUDIO)
             logger.info("=== STEP 3 – AUDIO TO TEXT ===")
             extract_audio_chunks(video_path, ad)
@@ -432,7 +452,7 @@ def main():
         # =========================
         # STEP 4 – IMAGE CAPTION
         # =========================
-        if start_step <= 4:
+        if start_step <= 5:
             update_video_status_sync(video_id, VideoStatus.STEP_4_IMAGE_CAPTION)
             logger.info("=== STEP 4 – IMAGE CAPTION ===")
             keyframe_captions = caption_keyframes(
@@ -447,7 +467,7 @@ def main():
         # =========================
         # STEP 5 – BUILD PHASE UNITS (DB CHECKPOINT)
         # =========================
-        if start_step <= 5:
+        if start_step <= 6:
             update_video_status_sync(video_id, VideoStatus.STEP_5_BUILD_PHASE_UNITS)
             logger.info("=== STEP 5 – BUILD PHASE UNITS ===")
             phase_units = build_phase_units(
@@ -474,7 +494,7 @@ def main():
         # STEP 6 – PHASE DESCRIPTION
         # =========================
 
-        if start_step <= 6:
+        if start_step <= 7:
             update_video_status_sync(video_id, VideoStatus.STEP_6_BUILD_PHASE_DESCRIPTION)
             logger.info("=== STEP 6 – PHASE DESCRIPTION ===")
             phase_units = build_phase_descriptions(phase_units)
@@ -493,7 +513,7 @@ def main():
         # =========================
         # STEP 7 – GLOBAL GROUPING
         # =========================
-        if start_step <= 7:
+        if start_step <= 8:
             update_video_status_sync(video_id, VideoStatus.STEP_7_GROUPING)
             logger.info("=== STEP 7 – GLOBAL PHASE GROUPING ===")
             phase_units = embed_phase_descriptions(phase_units)
@@ -523,7 +543,7 @@ def main():
         # STEP 8 – GROUP BEST PHASES
         # =========================
        
-        if start_step <= 8:
+        if start_step <= 9:
             update_video_status_sync(video_id, VideoStatus.STEP_8_UPDATE_BEST_PHASE)
             logger.info("=== STEP 8 – GROUP BEST PHASES (BULK) ===")
 
@@ -571,7 +591,7 @@ def main():
         # =========================
         # STEP 9 – BUILD VIDEO STRUCTURE FEATURES
         # =========================
-        if start_step <= 9:
+        if start_step <= 10:
             update_video_status_sync(video_id, VideoStatus.STEP_9_BUILD_VIDEO_STRUCTURE_FEATURES)
             logger.info("=== STEP 9 – BUILD VIDEO STRUCTURE FEATURES ===")
             build_video_structure_features(video_id, user_id)
@@ -582,7 +602,7 @@ def main():
         # =========================
         # STEP 10 – ASSIGN VIDEO STRUCTURE GROUP
         # =========================
-        if start_step <= 10:
+        if start_step <= 11:
             update_video_status_sync(video_id, VideoStatus.STEP_10_ASSIGN_VIDEO_STRUCTURE_GROUP)
             logger.info("=== STEP 10 – ASSIGN VIDEO STRUCTURE GROUP ===")
 
@@ -594,7 +614,7 @@ def main():
         # =========================
         # STEP 11 – UPDATE VIDEO STRUCTURE GROUP STATS
         # =========================
-        if start_step <= 11:
+        if start_step <= 12:
             update_video_status_sync(video_id, VideoStatus.STEP_11_UPDATE_VIDEO_STRUCTURE_GROUP_STATS)
             logger.info("=== STEP 11 – UPDATE VIDEO STRUCTURE GROUP STATS ===")
 
@@ -607,7 +627,7 @@ def main():
         # =========================
         # STEP 12 – UPDATE VIDEO STRUCTURE BEST
         # =========================
-        if start_step <= 12:
+        if start_step <= 13:
             update_video_status_sync(video_id, VideoStatus.STEP_12_UPDATE_VIDEO_STRUCTURE_BEST)
             logger.info("=== STEP 12 – UPDATE VIDEO STRUCTURE BEST ===")
 
@@ -626,7 +646,7 @@ def main():
         # =========================
         # STEP 13 – BUILD REPORTS
         # =========================
-        if start_step <= 13:
+        if start_step <= 14:
             update_video_status_sync(video_id, VideoStatus.STEP_13_BUILD_REPORTS)
             logger.info("=== STEP 13 – BUILD REPORTS ===")
 
@@ -702,7 +722,7 @@ def main():
         else:
             logger.info("[SKIP] STEP 13")
 
-        if start_step <= 14:
+        if start_step <= 15:
             update_video_status_sync(video_id, VideoStatus.STEP_14_FINALIZE)
             logger.info("=== STEP 14 – FINALIZE PIPELINE (WAIT SPLIT) ===")
 
