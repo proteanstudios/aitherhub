@@ -12,6 +12,7 @@
   "report2Title": "Report 2: Insights",
   "statusNew": "Waiting for upload",
   "statusUploaded": "Upload completed",
+  "statusCompress": "Compressing video to 1080p...",
   "statusStep0": "Extracting frames...",
   "statusStep1": "Detecting phases...",
   "statusStep2": "Extracting metrics...",

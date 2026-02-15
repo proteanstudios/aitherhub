@@ -12,6 +12,7 @@
   "report2Title": "レポート 2：インサイト",
   "statusNew": "アップロード待ち",
   "statusUploaded": "アップロード完了",
+  "statusCompress": "動画を1080pに圧縮中...",
   "statusStep0": "フレーム抽出中...",
   "statusStep1": "フェーズ検出中...",
   "statusStep2": "メトリクス抽出中...",
