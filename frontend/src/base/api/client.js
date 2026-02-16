@@ -14,6 +14,20 @@ const apiClient = axios.create({
   },
 });
 
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach(prom => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
 const handleAutoLogout = () => {
   // First, perform logout (clear tokens and user data)
   AuthService.logout();
@@ -30,18 +44,16 @@ apiClient.interceptors.request.use(
       const existingToken = config.headers.Authorization.replace('Bearer ', '');
       if (!TokenManager.isValidJWT(existingToken) || TokenManager.isTokenExpired(existingToken)) {
         delete config.headers.Authorization;
-        handleAutoLogout();
-        return Promise.reject(new Error('Token expired - auto logout'));
+        // Don't auto logout here - let the refresh interceptor handle it
       }
     } else {
       const token = config.token || TokenManager.getToken();
       
       if (token) {
-        if (TokenManager.isTokenExpired(token)) {
-          handleAutoLogout();
-          return Promise.reject(new Error('Token expired - auto logout'));
+        if (!TokenManager.isTokenExpired(token)) {
+          config.headers.Authorization = `Bearer ${token}`;
         }
-        config.headers.Authorization = `Bearer ${token}`;
+        // Don't auto logout on expired token - let refresh handle it
       } else {
         if (!isAuthEndpoint(config.url)) {
           handleAutoLogout();
@@ -68,17 +80,10 @@ apiClient.interceptors.response.use(
 
     // Handle 401 Unauthorized
     if (error.response?.status === HTTP_STATUS.UNAUTHORIZED && !originalRequest._retry) {
-      originalRequest._retry = true;
-
       // Don't auto logout if this is an auth endpoint (login/register)
       // Let the component handle the error and display it in the modal
       const requestUrl = originalRequest?.url || '';
       const isAuthRequest = isAuthEndpoint(requestUrl);
-
-      const errorMessage = error.response?.data?.message || '';
-      const isSignatureError = errorMessage.toLowerCase().includes('signature') || 
-                              errorMessage.toLowerCase().includes('token') ||
-                              errorMessage.toLowerCase().includes('jwt');
 
       // If it's an auth endpoint (login/register), just reject the error
       // Don't try to refresh token or logout
@@ -86,16 +91,26 @@ apiClient.interceptors.response.use(
         return Promise.reject(error);
       }
 
-      if (isSignatureError) {
-        handleAutoLogout();
-        return Promise.reject(new Error('Token signature verification failed'));
+      // If already refreshing, queue this request
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then(token => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return apiClient(originalRequest);
+        }).catch(err => {
+          return Promise.reject(err);
+        });
       }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
 
       try {
         const refreshToken = TokenManager.getRefreshToken();
-        if (refreshToken) {
-          const response = await axios.post(`${API_CONFIG.BASE_URL}/auth/refresh`, {
-            refreshToken,
+        if (refreshToken && !TokenManager.isTokenExpired(refreshToken)) {
+          const response = await axios.post(`${API_CONFIG.BASE_URL}/api/v1/auth/refresh`, {
+            refresh_token: refreshToken,
           });
 
           const { token, refreshToken: newRefreshToken } = response.data;
@@ -105,16 +120,21 @@ apiClient.interceptors.response.use(
             TokenManager.setRefreshToken(newRefreshToken);
           }
           
+          isRefreshing = false;
+
           if (tokenStored) {
+            processQueue(null, token);
             originalRequest.headers.Authorization = `Bearer ${token}`;
             return apiClient(originalRequest);
           } else {
             throw new Error('Failed to store refreshed token');
           }
         } else {
-          throw new Error('No refresh token available');
+          throw new Error('No valid refresh token available');
         }
       } catch (refreshError) {
+        isRefreshing = false;
+        processQueue(refreshError, null);
         handleAutoLogout();
         return Promise.reject(refreshError);
       }

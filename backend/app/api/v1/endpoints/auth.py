@@ -10,8 +10,8 @@ from app.repository.auth_repo import (
     update_user_password,
     verify_user_password,
 )
-from app.schemas.auth_schema import RegisterRequest, LoginRequest, ChangePasswordRequest
-from app.utils.jwt import create_access_token, create_refresh_token
+from app.schemas.auth_schema import RegisterRequest, LoginRequest, ChangePasswordRequest, RefreshRequest
+from app.utils.jwt import create_access_token, create_refresh_token, decode_token
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ async def register(
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="このメールアドレスは既に登録されています",
+            detail="\u3053\u306e\u30e1\u30fc\u30eb\u30a2\u30c9\u30ec\u30b9\u306f\u65e2\u306b\u767b\u9332\u3055\u308c\u3066\u3044\u307e\u3059",
         )
 
     user = await create_user_with_password(
@@ -64,14 +64,14 @@ async def login(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="メールアドレスまたはパスワードが正しくありません",
+            detail="\u30e1\u30fc\u30eb\u30a2\u30c9\u30ec\u30b9\u307e\u305f\u306f\u30d1\u30b9\u30ef\u30fc\u30c9\u304c\u6b63\u3057\u304f\u3042\u308a\u307e\u305b\u3093",
         )
 
     valid = await verify_user_password(db, payload.email, payload.password)
     if not valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="メールアドレスまたはパスワードが正しくありません",
+            detail="\u30e1\u30fc\u30eb\u30a2\u30c9\u30ec\u30b9\u307e\u305f\u306f\u30d1\u30b9\u30ef\u30fc\u30c9\u304c\u6b63\u3057\u304f\u3042\u308a\u307e\u305b\u3093",
         )
 
     access_token = create_access_token(str(user.id))
@@ -85,6 +85,49 @@ async def login(
 
 
 
+@router.post("/refresh")
+async def refresh_token(
+    payload: RefreshRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Refresh access token using a valid refresh token.
+    Returns new access_token and refresh_token.
+    """
+    from jose import JWTError
+    try:
+        token_data = decode_token(payload.refresh_token)
+        user_id = token_data.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token",
+            )
+
+        from app.repository.auth_repo import get_user_by_id
+        user = await get_user_by_id(db, user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+            )
+
+        # Issue new tokens
+        new_access_token = create_access_token(str(user.id))
+        new_refresh_token = create_refresh_token(str(user.id))
+
+        return {
+            "token": new_access_token,
+            "refreshToken": new_refresh_token,
+            "token_type": "bearer",
+        }
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
+
 @router.get("/me", status_code=status.HTTP_200_OK)
 async def get_current_user_info(
     current_user: dict = Depends(get_current_user),
@@ -95,7 +138,7 @@ async def get_current_user_info(
     if not current_user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="認証に失敗しました",
+            detail="\u8a8d\u8a3c\u306b\u5931\u6557\u3057\u307e\u3057\u305f",
         )
 
     return {
@@ -127,7 +170,7 @@ async def change_password(
     if payload.new_password != payload.confirm_password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="新しいパスワードと確認パスワードが一致しません",
+            detail="\u65b0\u3057\u3044\u30d1\u30b9\u30ef\u30fc\u30c9\u3068\u78ba\u8a8d\u30d1\u30b9\u30ef\u30fc\u30c9\u304c\u4e00\u81f4\u3057\u307e\u305b\u3093",
         )
     
     # Verify current password
@@ -135,7 +178,7 @@ async def change_password(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="ユーザーが見つかりません",
+            detail="\u30e6\u30fc\u30b6\u30fc\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093",
         )
     
     # Verify current password is correct
@@ -143,10 +186,10 @@ async def change_password(
     if not valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="現在のパスワードが正しくありません",
+            detail="\u73fe\u5728\u306e\u30d1\u30b9\u30ef\u30fc\u30c9\u304c\u6b63\u3057\u304f\u3042\u308a\u307e\u305b\u3093",
         )
     
     # Update password
     await update_user_password(db, current_user["id"], payload.new_password)
     
-    return {"message": "パスワードの変更に成功しました"}
+    return {"message": "\u30d1\u30b9\u30ef\u30fc\u30c9\u306e\u5909\u66f4\u306b\u6210\u529f\u3057\u307e\u3057\u305f"}
