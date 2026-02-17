@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 import os
+import logging
 import asyncio
 import uuid as uuid_module
 
@@ -170,6 +171,7 @@ class VideoService:
         await enqueue_job(queue_payload)
 
         # Remove upload session record if present
+        _logger = logging.getLogger(__name__)
         if upload_id:
             try:
                 from uuid import UUID as _UUID
@@ -178,8 +180,28 @@ class VideoService:
                     delete(Upload).where(Upload.id == upload_uuid)
                 )
                 await db.commit()
+                _logger.info(f"Deleted upload record {upload_id} for user {user_id}")
+            except Exception as e:
+                _logger.warning(
+                    f"Failed to delete upload record {upload_id}: {e}. "
+                    "Will be cleaned up by check_upload_resume."
+                )
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
+
+        # Also clean up any other stale upload records for this user
+        try:
+            await db.execute(
+                delete(Upload).where(Upload.user_id == user_id)
+            )
+            await db.commit()
+            _logger.info(f"Cleaned up all upload records for user {user_id}")
+        except Exception:
+            try:
+                await db.rollback()
             except Exception:
-                # ignore failures to delete upload record
                 pass
 
         return {
