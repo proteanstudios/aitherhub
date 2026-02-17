@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 from pydantic import BaseModel
 
@@ -82,6 +82,9 @@ class UploadCompleteRequest(BaseModel):
     video_id: str
     filename: str
     upload_id: Optional[str] = None
+    upload_type: Optional[str] = "screen_recording"  # 'screen_recording' or 'clean_video'
+    excel_product_blob_url: Optional[str] = None
+    excel_trend_blob_url: Optional[str] = None
 
     class Config:
         schema_extra = {
@@ -89,7 +92,8 @@ class UploadCompleteRequest(BaseModel):
                 "email": "user@example.com",
                 "video_id": "550e8400-e29b-41d4-a716-446655440000",
                 "filename": "my_video.mp4",
-                "upload_id": "550e8400-e29b-41d4-a716-446655440001"
+                "upload_id": "550e8400-e29b-41d4-a716-446655440001",
+                "upload_type": "screen_recording"
             }
         }
 
@@ -110,9 +114,38 @@ class UploadCompleteResponse(BaseModel):
         }
 
 
+class GenerateExcelUploadURLRequest(BaseModel):
+    """Request schema for generating Excel file upload URLs"""
+    email: str
+    video_id: str
+    product_filename: str
+    trend_filename: str
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "email": "user@example.com",
+                "video_id": "550e8400-e29b-41d4-a716-446655440000",
+                "product_filename": "ryukyogoku_product.xlsx",
+                "trend_filename": "ryukyogoku_trend_stats.xlsx"
+            }
+        }
+
+
+class GenerateExcelUploadURLResponse(BaseModel):
+    """Response schema for Excel file upload URL generation"""
+    video_id: str
+    product_upload_url: str
+    product_blob_url: str
+    trend_upload_url: str
+    trend_blob_url: str
+    expires_at: datetime
+
+
 class VideoResponse(ModelBaseInfo):
     """Video response schema"""
     original_filename: Optional[str] = None
     status: str  # pending, processing, completed, failed
     duration: Optional[float] = None
     file_size: Optional[int] = None
+    upload_type: Optional[str] = "screen_recording"
