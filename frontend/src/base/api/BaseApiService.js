@@ -41,7 +41,7 @@ export default class BaseApiService {
         const token = TokenManager.getToken();
         if (token) {
           if (!TokenManager.isTokenExpired(token)) {
-            config.headers.Authorization = \`Bearer \${token}\`;
+            config.headers.Authorization = "Bearer " + token;
           }
           // Don't auto logout on expired token - let refresh handle it
         }
@@ -71,7 +71,7 @@ export default class BaseApiService {
             return new Promise((resolve, reject) => {
               failedQueue.push({ resolve, reject });
             }).then(token => {
-              originalRequest.headers.Authorization = \`Bearer \${token}\`;
+              originalRequest.headers.Authorization = "Bearer " + token;
               return this.client(originalRequest);
             }).catch(err => {
               return Promise.reject(err);
@@ -84,7 +84,7 @@ export default class BaseApiService {
           try {
             const refreshToken = TokenManager.getRefreshToken();
             if (refreshToken && !TokenManager.isTokenExpired(refreshToken)) {
-              const response = await axios.post(\`\${baseURL}/api/v1/auth/refresh\`, {
+              const response = await axios.post(baseURL + "/api/v1/auth/refresh", {
                 refresh_token: refreshToken,
               });
 
@@ -99,7 +99,7 @@ export default class BaseApiService {
 
               if (tokenStored) {
                 processQueue(null, token);
-                originalRequest.headers.Authorization = \`Bearer \${token}\`;
+                originalRequest.headers.Authorization = "Bearer " + token;
                 return this.client(originalRequest);
               } else {
                 throw new Error('Failed to store refreshed token');
