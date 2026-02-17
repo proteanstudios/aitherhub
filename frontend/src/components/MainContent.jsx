@@ -43,6 +43,11 @@ export default function MainContent({
   const [messageType, setMessageType] = useState("");
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [resumeUploadId, setResumeUploadId] = useState(null);
+  // Clean video upload states
+  const [uploadMode, setUploadMode] = useState(null); // null | 'screen_recording' | 'clean_video'
+  const [cleanVideoFile, setCleanVideoFile] = useState(null);
+  const [productExcelFile, setProductExcelFile] = useState(null);
+  const [trendExcelFile, setTrendExcelFile] = useState(null);
   const prevIsLoggedInRef = useRef(isLoggedIn);
   const resumeFileInputRef = useRef(null);
   const videoRequestIdRef = useRef(0);
@@ -168,6 +173,111 @@ export default function MainContent({
     setVideoData(null);
     setMessage("");
     setProgress(0);
+  };
+
+  const handleCleanVideoFileSelect = (e) => {
+    if (!isLoggedIn) {
+      setShowLoginModal(true);
+      return;
+    }
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("video/")) {
+      setMessageType("error");
+      setMessage(window.__t('selectValidVideoError'));
+      return;
+    }
+    setCleanVideoFile(file);
+    setMessage("");
+  };
+
+  const handleProductExcelSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      setMessageType("error");
+      setMessage("Excelファイル(.xlsx)を選択してください");
+      return;
+    }
+    setProductExcelFile(file);
+    setMessage("");
+  };
+
+  const handleTrendExcelSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      setMessageType("error");
+      setMessage("Excelファイル(.xlsx)を選択してください");
+      return;
+    }
+    setTrendExcelFile(file);
+    setMessage("");
+  };
+
+  const handleCleanVideoUpload = async () => {
+    if (!isLoggedIn) {
+      setShowLoginModal(true);
+      return;
+    }
+    if (!cleanVideoFile) {
+      toast.error("クリーン動画を選択してください");
+      return;
+    }
+    if (!productExcelFile || !trendExcelFile) {
+      toast.error("Excelファイル（productとtrend_stats）を両方選択してください");
+      return;
+    }
+    if (uploading) return;
+
+    setUploading(true);
+    setMessage("");
+    setProgress(0);
+
+    try {
+      const video_id = await UploadService.uploadCleanVideo(
+        cleanVideoFile,
+        productExcelFile,
+        trendExcelFile,
+        user.email,
+        (percentage) => {
+          setProgress(percentage);
+        },
+        ({ uploadId }) => {
+          const storageKey = buildResumeUploadStorageKey(user?.id, uploadId);
+          if (storageKey) {
+            activeResumeUploadStorageKeyRef.current = storageKey;
+            localStorage.setItem(storageKey, "active");
+          }
+        },
+      );
+      setMessageType("success");
+      setCleanVideoFile(null);
+      setProductExcelFile(null);
+      setTrendExcelFile(null);
+      setUploadMode(null);
+      setResumeUploadId(null);
+      setUploadedVideoId(video_id);
+      if (onUploadSuccess) {
+        onUploadSuccess(video_id);
+      }
+    } catch (error) {
+      const errorMsg = error?.message || window.__t('uploadFailedMessage');
+      toast.error(errorMsg);
+    } finally {
+      clearActiveResumeUploadStorageKey();
+      setUploading(false);
+    }
+  };
+
+  const handleCancelCleanVideo = () => {
+    setCleanVideoFile(null);
+    setProductExcelFile(null);
+    setTrendExcelFile(null);
+    setUploadMode(null);
+    setUploading(false);
+    setProgress(0);
+    setMessage("");
   };
 
   const handleResumeUpload = async () => {
@@ -759,56 +869,136 @@ export default function MainContent({
                             </div>
                           </div>
                         </>
+                      ) : uploadMode === 'clean_video' ? (
+                        <>
+                          <div className="flex flex-col items-center text-center space-y-4">
+                            <div className="text-3xl">🎬</div>
+                            <p className="text-white text-sm font-semibold">クリーン動画 + Excelデータ</p>
+
+                            {/* Clean Video File */}
+                            <div className="w-full">
+                              <label className="block text-left text-xs text-gray-400 mb-1">クリーン動画</label>
+                              <label className="w-full h-[38px] flex items-center justify-center bg-white/10 border border-white/30 rounded-md text-sm text-white cursor-pointer hover:bg-white/20 transition-colors">
+                                {cleanVideoFile ? cleanVideoFile.name : "動画を選択"}
+                                <input type="file" accept="video/*" onChange={handleCleanVideoFileSelect} className="hidden" />
+                              </label>
+                            </div>
+
+                            {/* Product Excel */}
+                            <div className="w-full">
+                              <label className="block text-left text-xs text-gray-400 mb-1">商品データ (product.xlsx)</label>
+                              <label className="w-full h-[38px] flex items-center justify-center bg-white/10 border border-white/30 rounded-md text-sm text-white cursor-pointer hover:bg-white/20 transition-colors">
+                                {productExcelFile ? productExcelFile.name : "Excelを選択"}
+                                <input type="file" accept=".xlsx,.xls" onChange={handleProductExcelSelect} className="hidden" />
+                              </label>
+                            </div>
+
+                            {/* Trend Stats Excel */}
+                            <div className="w-full">
+                              <label className="block text-left text-xs text-gray-400 mb-1">トレンドデータ (trend_stats.xlsx)</label>
+                              <label className="w-full h-[38px] flex items-center justify-center bg-white/10 border border-white/30 rounded-md text-sm text-white cursor-pointer hover:bg-white/20 transition-colors">
+                                {trendExcelFile ? trendExcelFile.name : "Excelを選択"}
+                                <input type="file" accept=".xlsx,.xls" onChange={handleTrendExcelSelect} className="hidden" />
+                              </label>
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                              <button
+                                onClick={handleCleanVideoUpload}
+                                disabled={uploading || !cleanVideoFile || !productExcelFile || !trendExcelFile}
+                                className="w-[143px] h-[41px] flex items-center justify-center bg-white text-[#7D01FF] border border-[#7D01FF] rounded-md leading-[28px] cursor-pointer hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                アップロード
+                              </button>
+                              <button
+                                onClick={handleCancelCleanVideo}
+                                className="w-[143px] h-[41px] bg-gray-300 text-gray-700 rounded-md text-sm cursor-pointer hover:bg-gray-100"
+                              >
+                                {window.__t('cancelButton')}
+                              </button>
+                            </div>
+                          </div>
+                        </>
                       ) : (
                         <>
                           <div className="flex flex-col items-center text-center space-y-6">
                             <div className="w-20 h-20 rounded-full bg-white flex items-center justify-center shadow-lg">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#5e29ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-upload-icon lucide-upload w-8 h-8 text-primary"><path d="M12 3v12" /><path d="m17 8-5-5-5 5" /><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /></svg>
+                              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#5e29ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8 text-primary"><path d="M12 3v12" /><path d="m17 8-5-5-5 5" /><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /></svg>
                             </div>
                             <h5 className="hidden md:inline text-white text-lg font-cabin text-center">
                               {window.__t('dragDropText')}
                             </h5>
-                            <label
-                              className="
-                        w-[143px] h-[41px]
-                        flex items-center justify-center
-                        bg-white text-[#7D01FF]
-                        border border-[#7D01FF]
-                        rounded-md
-                        text-[14px] leading-[28px]
-                        font-extralight
-                        cursor-pointer
-                        transition-transform duration-150 ease-out
-                        active:scale-[0.96]
-                        select-none
-                        hover:bg-gray-100
-                      "
-                              onMouseDown={(e) => {
-                                if (!isLoggedIn || checkingResume) {
-                                  e.preventDefault();
-                                  if (!isLoggedIn) setShowLoginModal(true);
-                                }
-                              }}
-                            >
-                              {window.__t('selectFileText')}
-                              <input
-                                type="file"
-                                accept="video/*"
-                                disabled={!isLoggedIn || checkingResume}
+                            <div className="flex flex-col sm:flex-row gap-3">
+                              <label
+                                className="
+                                  w-[180px] h-[41px]
+                                  flex items-center justify-center
+                                  bg-white text-[#7D01FF]
+                                  border border-[#7D01FF]
+                                  rounded-md
+                                  text-[13px] leading-[28px]
+                                  font-extralight
+                                  cursor-pointer
+                                  transition-transform duration-150 ease-out
+                                  active:scale-[0.96]
+                                  select-none
+                                  hover:bg-gray-100
+                                "
                                 onMouseDown={(e) => {
                                   if (!isLoggedIn || checkingResume) {
                                     e.preventDefault();
+                                    if (!isLoggedIn) setShowLoginModal(true);
                                   }
                                 }}
-                                onClick={(e) => {
-                                  if (!isLoggedIn || checkingResume) {
-                                    e.preventDefault();
+                              >
+                                画面収録アップ
+                                <input
+                                  type="file"
+                                  accept="video/*"
+                                  disabled={!isLoggedIn || checkingResume}
+                                  onMouseDown={(e) => {
+                                    if (!isLoggedIn || checkingResume) {
+                                      e.preventDefault();
+                                    }
+                                  }}
+                                  onClick={(e) => {
+                                    if (!isLoggedIn || checkingResume) {
+                                      e.preventDefault();
+                                    }
+                                  }}
+                                  onChange={(e) => {
+                                    setUploadMode('screen_recording');
+                                    handleFileSelect(e);
+                                  }}
+                                  className="hidden"
+                                />
+                              </label>
+                              <button
+                                className="
+                                  w-[180px] h-[41px]
+                                  flex items-center justify-center
+                                  bg-[#7D01FF] text-white
+                                  border border-[#7D01FF]
+                                  rounded-md
+                                  text-[13px] leading-[28px]
+                                  font-extralight
+                                  cursor-pointer
+                                  transition-transform duration-150 ease-out
+                                  active:scale-[0.96]
+                                  select-none
+                                  hover:bg-[#6a01d9]
+                                "
+                                onClick={() => {
+                                  if (!isLoggedIn) {
+                                    setShowLoginModal(true);
+                                    return;
                                   }
+                                  setUploadMode('clean_video');
                                 }}
-                                onChange={handleFileSelect}
-                                className="hidden"
-                              />
-                            </label>
+                              >
+                                クリーン動画アップ
+                              </button>
+                            </div>
                           </div>
                         </>
                       )}
