@@ -59,6 +59,31 @@ class VideoService:
             "expires_at": expiry,
         }
 
+    async def generate_excel_upload_urls(self, email: str, video_id: str, product_filename: str, trend_filename: str):
+        """Generate SAS upload URLs for Excel files (product + trend_stats)"""
+        # Generate upload URL for product Excel
+        _, product_upload_url, product_blob_url, expiry = await generate_upload_sas(
+            email=email,
+            video_id=video_id,
+            filename=f"excel/{product_filename}",
+        )
+
+        # Generate upload URL for trend_stats Excel
+        _, trend_upload_url, trend_blob_url, _ = await generate_upload_sas(
+            email=email,
+            video_id=video_id,
+            filename=f"excel/{trend_filename}",
+        )
+
+        return {
+            "video_id": video_id,
+            "product_upload_url": product_upload_url,
+            "product_blob_url": product_blob_url,
+            "trend_upload_url": trend_upload_url,
+            "trend_blob_url": trend_blob_url,
+            "expires_at": expiry,
+        }
+
     async def generate_download_url(self, email: str, video_id: str, filename: str | None = None, expires_in_minutes: int | None = None):
         """Generate SAS download URL for video file"""
         download_url, expiry = await generate_download_sas(
@@ -75,16 +100,20 @@ class VideoService:
 
     async def handle_upload(self, db, blob_url):
         """Handle video upload completion"""
-        # TODO: create job in database and enqueue for processing
-        # from app.repositories.video_repo import create_job
-        # from app.services.queue_service import enqueue_job
-        # job_id = "uuid_here"
-        # await create_job(db, job_id, blob_url)
-        # await enqueue_job(blob_url, job_id)
-        # return job_id
         pass
 
-    async def handle_upload_complete(self, user_id: int, email: str, video_id: str, original_filename: str, db: AsyncSession, upload_id: str | None = None) -> dict:
+    async def handle_upload_complete(
+        self,
+        user_id: int,
+        email: str,
+        video_id: str,
+        original_filename: str,
+        db: AsyncSession,
+        upload_id: str | None = None,
+        upload_type: str = "screen_recording",
+        excel_product_blob_url: str | None = None,
+        excel_trend_blob_url: str | None = None,
+    ) -> dict:
         """Handle video upload completion - save to database and remove upload session"""
         if not self.video_repository:
             raise RuntimeError("VideoRepository not initialized")
@@ -95,6 +124,9 @@ class VideoService:
             video_id=video_id,
             original_filename=original_filename,
             status="uploaded",
+            upload_type=upload_type,
+            excel_product_blob_url=excel_product_blob_url,
+            excel_trend_blob_url=excel_trend_blob_url,
         )
 
         # 2) Generate download SAS URL so worker can fetch the video
@@ -105,13 +137,37 @@ class VideoService:
             expires_in_minutes=1440,  # 24h for processing
         )
 
-        # 3) Enqueue a message so worker can start processing
-        await enqueue_job({
+        # 3) Build queue payload
+        queue_payload = {
             "video_id": str(video.id),
             "blob_url": download_url,  # SAS URL with read permission
             "original_filename": original_filename,
             "user_id": user_id,
-        })
+            "upload_type": upload_type,
+        }
+
+        # For clean_video uploads, generate download URLs for Excel files
+        if upload_type == "clean_video":
+            if excel_product_blob_url:
+                product_download_url, _ = await generate_download_sas(
+                    email=email,
+                    video_id=str(video.id),
+                    filename=f"excel/{excel_product_blob_url.split('/')[-1].split('?')[0]}",
+                    expires_in_minutes=1440,
+                )
+                queue_payload["excel_product_url"] = product_download_url
+
+            if excel_trend_blob_url:
+                trend_download_url, _ = await generate_download_sas(
+                    email=email,
+                    video_id=str(video.id),
+                    filename=f"excel/{excel_trend_blob_url.split('/')[-1].split('?')[0]}",
+                    expires_in_minutes=1440,
+                )
+                queue_payload["excel_trend_url"] = trend_download_url
+
+        # 4) Enqueue a message so worker can start processing
+        await enqueue_job(queue_payload)
 
         # Remove upload session record if present
         if upload_id:
@@ -131,4 +187,3 @@ class VideoService:
             "status": video.status,
             "message": "Video upload completed; queued for analysis",
         }
-

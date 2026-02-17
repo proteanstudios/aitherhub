@@ -1,5 +1,5 @@
 from contextlib import AbstractContextManager
-from typing import Callable
+from typing import Callable, Optional
 import uuid as _uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,16 @@ class VideoRepository(BaseRepository):
         self.session_factory = session_factory
         super().__init__(session_factory, Video)
 
-    async def create_video(self, user_id: int, video_id: str, original_filename: str, status: str = "uploaded") -> Video:
+    async def create_video(
+        self,
+        user_id: int,
+        video_id: str,
+        original_filename: str,
+        status: str = "uploaded",
+        upload_type: str = "screen_recording",
+        excel_product_blob_url: Optional[str] = None,
+        excel_trend_blob_url: Optional[str] = None,
+    ) -> Video:
         """Create a new video record"""
         session = self.session_factory()
         try:
@@ -24,6 +33,9 @@ class VideoRepository(BaseRepository):
                 user_id=user_id,
                 original_filename=original_filename,
                 status=status,
+                upload_type=upload_type,
+                excel_product_blob_url=excel_product_blob_url,
+                excel_trend_blob_url=excel_trend_blob_url,
             )
             session.add(video)
             await session.commit()
