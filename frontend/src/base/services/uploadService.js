@@ -6,8 +6,8 @@ import { openDB } from 'idb';
 
 const DB_NAME = 'VideoUploadDB';
 const STORE_NAME = 'uploads';
-const BLOCK_SIZE = 64 * 1024 * 1024; // 64MB blocks (was 4MB – reduces HTTP overhead for large files)
-const MAX_CONCURRENT_UPLOADS = 8;  // 8 parallel uploads (was 4)
+const BLOCK_SIZE = 4 * 1024 * 1024; // 4MB blocks
+const MAX_CONCURRENT_UPLOADS = 4;
 
 class UploadService extends BaseApiService {
   constructor() {
@@ -286,6 +286,68 @@ class UploadService extends BaseApiService {
   }
 
   /**
+   * Generate SAS upload URLs for Excel files
+   * @param {string} email - User email
+   * @param {string} video_id - Video ID
+   * @param {string} product_filename - Product Excel filename
+   * @param {string} trend_filename - Trend stats Excel filename
+   * @returns {Promise<{video_id, product_upload_url, product_blob_url, trend_upload_url, trend_blob_url, expires_at}>}
+   */
+  async generateExcelUploadUrls(email, video_id, product_filename, trend_filename) {
+    return await this.post(URL_CONSTANTS.GENERATE_EXCEL_UPLOAD_URL, {
+      email,
+      video_id,
+      product_filename,
+      trend_filename,
+    });
+  }
+
+  /**
+   * Upload a single Excel file to Azure Blob Storage
+   * @param {File} file - Excel file to upload
+   * @param {string} uploadUrl - SAS URL
+   * @returns {Promise<void>}
+   */
+  async uploadExcelToAzure(file, uploadUrl) {
+    const blockBlobClient = new BlockBlobClient(uploadUrl);
+    await blockBlobClient.uploadData(file, {
+      blobHTTPHeaders: {
+        blobContentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      },
+    });
+  }
+
+  /**
+   * Notify backend that upload is complete (with upload_type and excel URLs)
+   * @param {string} email - User email
+   * @param {string} video_id - Video ID
+   * @param {string} filename - Video file name
+   * @param {string} upload_id - Upload ID
+   * @param {string} upload_type - 'screen_recording' or 'clean_video'
+   * @param {string|null} excel_product_blob_url - Product Excel blob URL
+   * @param {string|null} excel_trend_blob_url - Trend Excel blob URL
+   * @returns {Promise<{video_id, status, message}>}
+   */
+  async uploadCompleteWithType(email, video_id, filename, upload_id, upload_type = 'screen_recording', excel_product_blob_url = null, excel_trend_blob_url = null) {
+    const token = TokenManager.getToken();
+    if (!token) {
+      throw new Error(window.__t('authTokenNotFound'));
+    }
+    if (TokenManager.isTokenExpired(token)) {
+      throw new Error(window.__t('sessionExpired'));
+    }
+    return await this.post(URL_CONSTANTS.UPLOAD_COMPLETE, {
+      email,
+      video_id,
+      filename,
+      upload_id,
+      upload_type,
+      excel_product_blob_url,
+      excel_trend_blob_url,
+    });
+  }
+
+  /**
    * Complete upload workflow: generate URL + upload to Azure + notify backend
    * @param {File} file - File to upload
    * @param {string} email - User email
@@ -321,58 +383,17 @@ class UploadService extends BaseApiService {
   }
 
   /**
-   * Generate SAS upload URLs for Excel files (product + trend_stats)
-   * @param {string} email - User email
-   * @param {string} videoId - Video ID to associate Excel files with
-   * @param {string} productFilename - Product Excel filename
-   * @param {string} trendFilename - Trend stats Excel filename
-   * @returns {Promise<{product_upload_url, trend_upload_url, product_blob_url, trend_blob_url}>}
-   */
-  async generateExcelUploadUrl(email, videoId, productFilename, trendFilename) {
-    return await this.post(URL_CONSTANTS.GENERATE_EXCEL_UPLOAD_URL, {
-      email,
-      video_id: videoId,
-      product_filename: productFilename,
-      trend_filename: trendFilename,
-    });
-  }
-
-
-  /**
-   * Upload a single Excel file to Azure Blob Storage
-   * @param {File} file - Excel file to upload
-   * @param {string} uploadUrl - SAS URL from backend
-   * @returns {Promise<void>}
-   */
-  async uploadExcelToAzure(file, uploadUrl) {
-    const blockBlobClient = new BlockBlobClient(uploadUrl);
-    const arrayBuffer = await file.arrayBuffer();
-    await blockBlobClient.uploadData(arrayBuffer, {
-      blobHTTPHeaders: {
-        blobContentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      },
-    });
-  }
-
-
-  /**
-   * Complete clean video upload workflow:
-   *   1. Generate video upload URL (reuse existing)
-   *   2. Upload video to Azure
-   *   3. Generate Excel upload URLs
-   *   4. Upload both Excel files to Azure
-   *   5. Notify backend upload is complete
-   *
+   * Complete clean video upload workflow: video + Excel files
    * @param {File} videoFile - Clean video file
-   * @param {File} productExcel - product.xlsx file
-   * @param {File} trendExcel - trend_stats.xlsx file
+   * @param {File} productExcel - Product Excel file
+   * @param {File} trendExcel - Trend stats Excel file
    * @param {string} email - User email
-   * @param {Function} onProgress - Callback for progress updates
+   * @param {Function} onProgress - Callback for progress updates (0-100)
    * @param {Function} onUploadInit - Callback when upload is initialized
    * @returns {Promise<string>} - video_id
    */
-  async handleCleanVideoUpload(videoFile, productExcel, trendExcel, email, onProgress, onUploadInit) {
-    // Step 1: Generate video upload URL (same as screen recording)
+  async uploadCleanVideo(videoFile, productExcel, trendExcel, email, onProgress, onUploadInit) {
+    // Step 1: Generate video upload URL
     const { video_id, upload_id, upload_url } = await this.generateUploadUrl(email, videoFile.name);
 
     if (onUploadInit) {
@@ -392,29 +413,50 @@ class UploadService extends BaseApiService {
       timestamp: Date.now(),
     });
 
-    // Step 2: Upload video to Azure
-    await this.uploadToAzure(videoFile, upload_url, upload_id, onProgress);
+    // Step 2: Upload video (0-80% of progress)
+    await this.uploadToAzure(videoFile, upload_url, upload_id, (percentage) => {
+      if (onProgress) onProgress(Math.round(percentage * 0.8));
+    });
 
     // Step 3: Generate Excel upload URLs
-    const excelUrls = await this.generateExcelUploadUrl(
+    let product_blob_url = null;
+    let trend_blob_url = null;
+
+    if (productExcel && trendExcel) {
+      if (onProgress) onProgress(82);
+      const excelUrls = await this.generateExcelUploadUrls(
+        email,
+        video_id,
+        productExcel.name,
+        trendExcel.name
+      );
+
+      // Step 4: Upload Excel files (80-95% of progress)
+      if (onProgress) onProgress(85);
+      await this.uploadExcelToAzure(productExcel, excelUrls.product_upload_url);
+      product_blob_url = excelUrls.product_blob_url;
+
+      if (onProgress) onProgress(90);
+      await this.uploadExcelToAzure(trendExcel, excelUrls.trend_upload_url);
+      trend_blob_url = excelUrls.trend_blob_url;
+
+      if (onProgress) onProgress(95);
+    }
+
+    // Step 5: Notify backend of completion with upload_type and excel URLs
+    await this.uploadCompleteWithType(
       email,
       video_id,
-      productExcel.name,
-      trendExcel.name,
+      videoFile.name,
+      upload_id,
+      'clean_video',
+      product_blob_url,
+      trend_blob_url
     );
 
-    // Step 4: Upload both Excel files
-    await Promise.all([
-      this.uploadExcelToAzure(productExcel, excelUrls.product_upload_url),
-      this.uploadExcelToAzure(trendExcel, excelUrls.trend_upload_url),
-    ]);
-
-    // Step 5: Notify backend that upload is complete (with upload_type = clean_video)
-    await this.uploadComplete(email, video_id, videoFile.name, upload_id);
-
+    if (onProgress) onProgress(100);
     return video_id;
   }
-
 }
 
 export default new UploadService();
