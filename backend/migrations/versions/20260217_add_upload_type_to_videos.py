@@ -1,7 +1,7 @@
 """add upload_type to videos
 
 Revision ID: 20260217_upload_type
-Revises: 3ce20344bb0b
+Revises: g1h2i3j4
 Create Date: 2026-02-17 10:00:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '20260217_upload_type'
-down_revision = '3ce20344bb0b'
+down_revision = 'g1h2i3j4'
 branch_labels = None
 depends_on = None
 
