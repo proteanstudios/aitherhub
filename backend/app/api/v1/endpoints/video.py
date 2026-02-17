@@ -17,6 +17,8 @@ from app.schema.video_schema import (
     UploadCompleteRequest,
     UploadCompleteResponse,
     VideoResponse,
+    GenerateExcelUploadURLRequest,
+    GenerateExcelUploadURLResponse,
 )
 from app.services.video_service import VideoService
 from app.repository.video_repository import VideoRepository
@@ -98,12 +100,35 @@ async def upload_complete(
             original_filename=payload.filename,
             db=db,
             upload_id=payload.upload_id,
+            upload_type=payload.upload_type or "screen_recording",
+            excel_product_blob_url=payload.excel_product_blob_url,
+            excel_trend_blob_url=payload.excel_trend_blob_url,
         )
         return UploadCompleteResponse(**result)
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to complete upload: {exc}")
+
+
+@router.post("/generate-excel-upload-url", response_model=GenerateExcelUploadURLResponse)
+async def generate_excel_upload_url(
+    payload: GenerateExcelUploadURLRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """Generate SAS upload URLs for Excel files (product + trend_stats)"""
+    try:
+        service = VideoService()
+        result = await service.generate_excel_upload_urls(
+            email=payload.email,
+            video_id=payload.video_id,
+            product_filename=payload.product_filename,
+            trend_filename=payload.trend_filename,
+        )
+        return GenerateExcelUploadURLResponse(**result)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to generate Excel upload URLs: {exc}")
 
 
 @router.get("/uploads/check/{user_id}")
@@ -145,7 +170,6 @@ async def clear_user_uploads(
         if current_user and current_user.get("id") != user_id:
             raise HTTPException(status_code=403, detail="Forbidden")
 
-        # Delete all upload records for this user
         result = await db.execute(
             select(Upload).where(Upload.user_id == user_id)
         )
@@ -182,7 +206,6 @@ async def get_videos_by_user(
     This endpoint requires authentication and only allows a user to fetch their own videos.
     """
     try:
-        # Enforce that a user can only access their own videos
         if current_user and current_user.get("id") != user_id:
             raise HTTPException(status_code=403, detail="Forbidden")
 
@@ -225,8 +248,8 @@ async def stream_video_status(
         - heartbeat: Boolean indicating heartbeat message (sent every 30 seconds)
 
     Example SSE events:
-        data: {"video_id": "...", "status": "STEP_3_TRANSCRIBE_AUDIO", "progress": 40, "message": "音声書き起こし中...", "updated_at": "2026-01-20T..."}
-        data: {"heartbeat": true, "timestamp": "2026-01-20T...", "poll_count": 15}
+        data: {\"video_id\": \"...\", \"status\": \"STEP_3_TRANSCRIBE_AUDIO\", \"progress\": 40, \"message\": \"\u97f3\u58f0\u66f8\u304d\u8d77\u3053\u3057\u4e2d...\", \"updated_at\": \"2026-01-20T...\"}
+        data: {\"heartbeat\": true, \"timestamp\": \"2026-01-20T...\", \"poll_count\": 15}
     """
 
     async def event_generator():
@@ -378,7 +401,6 @@ async def get_video_detail(
         }
 
         report1_items = []
-        # Lấy email từ bảng users dựa vào user_id của video
         email = None
         if hasattr(video, "user_id") and video.user_id:
             sql_user = text("""
@@ -388,8 +410,6 @@ async def get_video_detail(
             user_row = ures.fetchone()
             if user_row and hasattr(user_row, "email"):
                 email = user_row.email
-        # Nếu không có email, bỏ qua video_clip_url
-        # Đồng bộ video_clip_url với SAS URL động
         from app.services.video_service import VideoService
         video_service = VideoService()
         for r in insight_rows:
@@ -405,7 +425,6 @@ async def get_video_detail(
                     te_str = f"{te:.1f}"
                     filename = f"{ts_str}_{te_str}.mp4"
 
-                    # First, try to find the video_phases record matching this phase
                     sql_phase_check = text("""
                         SELECT id, sas_token, sas_expireddate
                         FROM video_phases
@@ -420,7 +439,6 @@ async def get_video_detail(
                         sas_token = getattr(phase_row, "sas_token", None)
                         sas_expire = getattr(phase_row, "sas_expireddate", None)
                         if sas_token and sas_expire:
-                            # Handle naive vs aware datetimes safely
                             if sas_expire.tzinfo is not None and sas_expire.tzinfo.utcoffset(sas_expire) is not None:
                                 now = datetime.now(timezone.utc)
                                 sas_expire_cmp = sas_expire.astimezone(timezone.utc)
@@ -429,7 +447,6 @@ async def get_video_detail(
                                 sas_expire_cmp = sas_expire
 
                             if sas_expire_cmp >= now:
-                                # Existing valid SAS — reuse
                                 video_clip_url = sas_token
                                 need_generate = False
 
@@ -443,7 +460,6 @@ async def get_video_detail(
                             )
                             video_clip_url = _replace_blob_url_to_cdn(download_url_result.get("download_url"))
 
-                            # Persist new SAS info back to video_phases if we have a matching row
                             if video_clip_url and phase_row:
                                 expires_at = download_url_result.get("expires_at")
                                 if isinstance(expires_at, str):
@@ -491,9 +507,6 @@ async def get_video_detail(
 
         report3 = []
         if latest:
-            # If content is a JSON string (starts with '{' or '['), parse it and
-            # extract `video_insights`. Otherwise treat `content` as legacy
-            # text and return it as a single report item.
             parsed = latest.content
             try:
                 if isinstance(parsed, str):
@@ -514,7 +527,6 @@ async def get_video_detail(
                             "content": item.get("content"),
                         })
                 else:
-                    # legacy text report
                     report3.append({
                         "title": latest.title,
                         "content": latest.content,
