@@ -18,6 +18,9 @@ from app.schema.video_schema import (
     UploadCompleteResponse,
     GenerateExcelUploadURLRequest,
     GenerateExcelUploadURLResponse,
+    RenameVideoRequest,
+    RenameVideoResponse,
+    DeleteVideoResponse,
     VideoResponse,
 )
 from app.services.video_service import VideoService
@@ -279,6 +282,63 @@ async def get_videos_by_user(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to fetch videos: {exc}")
 
+
+
+@router.delete("/{video_id}", response_model=DeleteVideoResponse)
+async def delete_video(
+    video_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """Delete a video and its related data (only owner can delete)."""
+    try:
+        user_id = current_user["id"]
+        video_repo = VideoRepository(lambda: db)
+
+        # Delete related records first (video_phases, video_insights, etc.)
+        await db.execute(text("DELETE FROM video_phases WHERE video_id = :vid"), {"vid": video_id})
+        await db.execute(text("DELETE FROM video_insights WHERE video_id = :vid"), {"vid": video_id})
+        await db.commit()
+
+        # Delete the video record
+        deleted = await video_repo.delete_video(video_id=video_id, user_id=user_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Video not found or not owned by user")
+
+        return DeleteVideoResponse(id=video_id, message="Video deleted successfully")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete video: {exc}")
+
+
+@router.patch("/{video_id}/rename", response_model=RenameVideoResponse)
+async def rename_video(
+    video_id: str,
+    payload: RenameVideoRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """Rename a video (only owner can rename)."""
+    try:
+        user_id = current_user["id"]
+        video_repo = VideoRepository(lambda: db)
+        video = await video_repo.rename_video(
+            video_id=video_id, user_id=user_id, new_name=payload.name
+        )
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found or not owned by user")
+
+        return RenameVideoResponse(
+            id=str(video.id),
+            original_filename=video.original_filename,
+            message="Video renamed successfully",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to rename video: {exc}")
 
 
 @router.get("/{video_id}/status/stream")

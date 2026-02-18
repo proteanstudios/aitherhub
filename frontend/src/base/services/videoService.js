@@ -187,6 +187,26 @@ class VideoService extends BaseApiService {
     return { cancel: () => controller.abort() };
   }
 
+  async deleteVideo(videoId) {
+    try {
+      const response = await this.delete(`/api/v1/videos/${videoId}`);
+      return response;
+    } catch (error) {
+      console.error('Failed to delete video:', error);
+      throw error;
+    }
+  }
+
+  async renameVideo(videoId, newName) {
+    try {
+      const response = await this.patch(`/api/v1/videos/${videoId}/rename`, { name: newName });
+      return response;
+    } catch (error) {
+      console.error('Failed to rename video:', error);
+      throw error;
+    }
+  }
+
   async getChatHistory(videoId) {
     try {
       const response = await this.get(`/api/v1/chat/history?video_id=${encodeURIComponent(videoId)}`);

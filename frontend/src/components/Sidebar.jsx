@@ -11,7 +11,7 @@ import ForgotPasswordModal from "./modals/ForgotPasswordModal";
 import AuthService from "../base/services/userService";
 import VideoService from "../base/services/videoService";
 
-import { ChevronDown, LogOut, Settings, User, X } from "lucide-react";
+import { ChevronDown, LogOut, Settings, User, X, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +27,59 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
   const [videos, setVideos] = useState([]);
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState(null);
+  const [menuOpenVideoId, setMenuOpenVideoId] = useState(null);
+  const [renamingVideoId, setRenamingVideoId] = useState(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [deleteConfirmVideoId, setDeleteConfirmVideoId] = useState(null);
+  const menuRef = useRef(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setMenuOpenVideoId(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleDeleteVideo = async (videoId) => {
+    try {
+      await VideoService.deleteVideo(videoId);
+      setVideos((prev) => prev.filter((v) => v.id !== videoId));
+      setDeleteConfirmVideoId(null);
+      setMenuOpenVideoId(null);
+      if (selectedVideoId === videoId) {
+        setSelectedVideoId(null);
+        navigate('/');
+        if (onVideoSelect) onVideoSelect(null);
+        if (onNewAnalysis) onNewAnalysis();
+      }
+    } catch (error) {
+      console.error("Failed to delete video:", error);
+      alert("動画の削除に失敗しました");
+    }
+  };
+
+  const handleRenameVideo = async (videoId) => {
+    const newName = renameValue.trim();
+    if (!newName) return;
+    try {
+      await VideoService.renameVideo(videoId, newName);
+      setVideos((prev) =>
+        prev.map((v) =>
+          v.id === videoId ? { ...v, original_filename: newName } : v
+        )
+      );
+      setRenamingVideoId(null);
+      setRenameValue("");
+      setMenuOpenVideoId(null);
+    } catch (error) {
+      console.error("Failed to rename video:", error);
+      alert("名前の変更に失敗しました");
+    }
+  };
 
   // Sync selectedVideoId when video is selected from outside (e.g., after upload)
   useEffect(() => {
@@ -274,17 +327,63 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                       </div>
                     )}
                     {filteredVideos.map((video) => (
-                      <div className={`w-full min-h-10 flex items-center gap-2 font-semibold cursor-pointer text-black p-2 rounded-lg text-left transition-all duration-200 ease-out ${selectedVideoId === video.id
+                      <div className={`group relative w-full min-h-10 flex items-center gap-2 font-semibold cursor-pointer text-black p-2 rounded-lg text-left transition-all duration-200 ease-out ${selectedVideoId === video.id
                         ? "bg-purple-100 text-purple-700"
                         : "hover:text-gray-400 hover:bg-gray-100"
                         }`} key={video.id}
-                        onClick={() => handleVideoClick(video)}>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="min-w-[16px]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-video-icon lucide-video"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
-                        <span
-                          className={`text-sm font-medium text-[#6b7280] block truncate`}
-                        >
-                          {video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`}
-                        </span>
+                        onClick={() => { if (renamingVideoId !== video.id && deleteConfirmVideoId !== video.id) handleVideoClick(video); }}>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="min-w-[16px]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
+
+                        {renamingVideoId === video.id ? (
+                          <input
+                            autoFocus
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleRenameVideo(video.id);
+                              if (e.key === "Escape") { setRenamingVideoId(null); setRenameValue(""); }
+                            }}
+                            onBlur={() => handleRenameVideo(video.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-sm font-medium text-gray-700 bg-white border border-purple-300 rounded px-1 py-0.5 outline-none focus:ring-2 focus:ring-purple-400 w-full"
+                          />
+                        ) : deleteConfirmVideoId === video.id ? (
+                          <div className="flex items-center gap-2 w-full" onClick={(e) => e.stopPropagation()}>
+                            <span className="text-xs text-red-500">削除しますか？</span>
+                            <button onClick={() => handleDeleteVideo(video.id)} className="text-xs bg-red-500 text-white px-2 py-0.5 rounded hover:bg-red-600">削除</button>
+                            <button onClick={() => setDeleteConfirmVideoId(null)} className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded hover:bg-gray-300">取消</button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="text-sm font-medium text-[#6b7280] block truncate flex-1">
+                              {video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`}
+                            </span>
+                            <div className="relative" ref={menuOpenVideoId === video.id ? menuRef : null}>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setMenuOpenVideoId(menuOpenVideoId === video.id ? null : video.id); }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-200"
+                              >
+                                <MoreHorizontal className="w-4 h-4 text-gray-500" />
+                              </button>
+                              {menuOpenVideoId === video.id && (
+                                <div className="absolute right-0 top-8 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px]">
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setRenamingVideoId(video.id); setRenameValue(video.original_filename || ""); setMenuOpenVideoId(null); }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" /> 名前を変更
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setDeleteConfirmVideoId(video.id); setMenuOpenVideoId(null); }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" /> 削除
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </>
+                        )}
                       </div>
                     ))}
                   </div>

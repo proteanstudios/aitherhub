@@ -134,4 +134,9 @@ export default class BaseApiService {
     const res = await this.client.delete(url, config);
     return res.data;
   }
+
+  async patch(url, data, config = {}) {
+    const res = await this.client.patch(url, data, config);
+    return res.data;
+  }
 }

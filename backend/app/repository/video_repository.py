@@ -66,3 +66,42 @@ class VideoRepository(BaseRepository):
             return result.scalars().all()
         finally:
             await session.close()
+
+    async def delete_video(self, video_id: str, user_id: int) -> bool:
+        """Delete a video record by ID (only if owned by user)"""
+        session = self.session_factory()
+        try:
+            result = await session.execute(
+                select(Video).filter(
+                    Video.id == _uuid.UUID(video_id),
+                    Video.user_id == user_id,
+                )
+            )
+            video = result.scalar_one_or_none()
+            if not video:
+                return False
+            await session.delete(video)
+            await session.commit()
+            return True
+        finally:
+            await session.close()
+
+    async def rename_video(self, video_id: str, user_id: int, new_name: str) -> Video | None:
+        """Rename a video (only if owned by user)"""
+        session = self.session_factory()
+        try:
+            result = await session.execute(
+                select(Video).filter(
+                    Video.id == _uuid.UUID(video_id),
+                    Video.user_id == user_id,
+                )
+            )
+            video = result.scalar_one_or_none()
+            if not video:
+                return None
+            video.original_filename = new_name
+            await session.commit()
+            await session.refresh(video)
+            return video
+        finally:
+            await session.close()

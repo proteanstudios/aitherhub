@@ -142,6 +142,24 @@ class GenerateExcelUploadURLResponse(BaseModel):
     expires_at: datetime
 
 
+class RenameVideoRequest(BaseModel):
+    """Request schema for renaming a video"""
+    name: str
+
+
+class RenameVideoResponse(BaseModel):
+    """Response schema for renaming a video"""
+    id: str
+    original_filename: str
+    message: str
+
+
+class DeleteVideoResponse(BaseModel):
+    """Response schema for deleting a video"""
+    id: str
+    message: str
+
+
 class VideoResponse(ModelBaseInfo):
     """Video response schema"""
     original_filename: Optional[str] = None
