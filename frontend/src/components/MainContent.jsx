@@ -631,7 +631,7 @@ export default function MainContent({
     // Optimistic transition after upload complete:
     // keep upload step completed and immediately show first analysis step loading
     // while waiting for backend status stream/API response.
-    if (activeProcessingVideoId) return "STEP_0_EXTRACT_FRAMES";
+    if (activeProcessingVideoId) return "STEP_COMPRESS_1080P";
     return "NEW";
   }, [uploading, videoData?.status, activeProcessingVideoId]);
   const stableProcessingVideoTitle = useMemo(() => {

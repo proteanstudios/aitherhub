@@ -2,10 +2,8 @@ import { memo, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import VideoService from '../base/services/videoService';
 
 const normalizeProcessingStatus = (status) => {
-  if (status === 'uploaded' || status === 'STEP_COMPRESS_1080P') {
-    // Skip compression step – go straight to analysis.
-    // Compression runs in background and is not shown to the user.
-    return 'STEP_0_EXTRACT_FRAMES';
+  if (status === 'uploaded') {
+    return 'STEP_COMPRESS_1080P';
   }
   return status;
 };
@@ -48,7 +46,8 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
     const statusMap = {
       NEW: 0,
       uploaded: 0,
-      STEP_0_EXTRACT_FRAMES: 1,
+      STEP_COMPRESS_1080P: 1,
+      STEP_0_EXTRACT_FRAMES: 5,
       STEP_1_DETECT_PHASES: 10,
       STEP_2_EXTRACT_METRICS: 20,
       STEP_3_TRANSCRIBE_AUDIO: 35,
@@ -74,6 +73,7 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
     const ceilingMap = {
       NEW: 0,
       uploaded: 1,
+      STEP_COMPRESS_1080P: 5,
       STEP_0_EXTRACT_FRAMES: 10,
       STEP_1_DETECT_PHASES: 20,
       STEP_2_EXTRACT_METRICS: 34,
@@ -314,6 +314,7 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
 
   // Analysis steps are shown in a 5-row window while upload step stays fixed above.
   const analysisSteps = [
+    { key: 'STEP_COMPRESS_1080P', label: window.__t('statusCompress') || '動画圧縮中...' },
     { key: 'STEP_0_EXTRACT_FRAMES', label: window.__t('statusStep0') || 'フレーム抽出中...' },
     { key: 'STEP_1_DETECT_PHASES', label: window.__t('statusStep1') || 'フェーズ検出中...' },
     { key: 'STEP_2_EXTRACT_METRICS', label: window.__t('statusStep2') || 'メトリクス抽出中...' },
