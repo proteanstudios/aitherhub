@@ -6,17 +6,89 @@ and returns structured data for report generation.
 import os
 import logging
 import requests
+from urllib.parse import urlparse
 
 logger = logging.getLogger("process_video")
 
+AZURE_STORAGE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING", "")
+
+
+def _parse_conn_str(conn_str: str) -> dict:
+    """Parse AccountName and AccountKey from Azure Storage connection string."""
+    parts = conn_str.split(";")
+    out = {"AccountName": None, "AccountKey": None}
+    for p in parts:
+        if p.startswith("AccountName="):
+            out["AccountName"] = p.split("=", 1)[1]
+        if p.startswith("AccountKey="):
+            out["AccountKey"] = p.split("=", 1)[1]
+    return out
+
+
+def _ensure_sas_token(blob_url: str) -> str:
+    """
+    Ensure the blob URL has a SAS token for authentication.
+    If no SAS token is present, generate one using the connection string.
+    """
+    if not blob_url:
+        return blob_url
+
+    # Already has SAS token
+    if "?" in blob_url and ("sig=" in blob_url or "se=" in blob_url):
+        return blob_url
+
+    # No SAS token → generate one
+    logger.info("[EXCEL] No SAS token in URL, generating one...")
+    try:
+        from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+        from datetime import datetime, timedelta
+
+        conn = _parse_conn_str(AZURE_STORAGE_CONNECTION_STRING)
+        account_name = conn["AccountName"]
+        account_key = conn["AccountKey"]
+
+        if not account_name or not account_key:
+            logger.warning("[EXCEL] No Azure credentials available for SAS generation")
+            return blob_url
+
+        # Parse blob URL to extract container and blob path
+        parsed = urlparse(blob_url)
+        path_parts = parsed.path.lstrip("/").split("/", 1)
+        if len(path_parts) < 2:
+            logger.warning("[EXCEL] Cannot parse blob path from URL: %s", blob_url)
+            return blob_url
+
+        container_name = path_parts[0]
+        blob_name = path_parts[1]
+
+        expiry = datetime.utcnow() + timedelta(minutes=60)
+        sas = generate_blob_sas(
+            account_name=account_name,
+            container_name=container_name,
+            blob_name=blob_name,
+            account_key=account_key,
+            permission=BlobSasPermissions(read=True),
+            expiry=expiry,
+        )
+        url_with_sas = f"{blob_url}?{sas}"
+        logger.info("[EXCEL] SAS token generated successfully")
+        return url_with_sas
+
+    except Exception as e:
+        logger.warning("[EXCEL] Failed to generate SAS token: %s", e)
+        return blob_url
+
 
 def download_excel(blob_url: str, dest_path: str) -> bool:
-    """Download an Excel file from Azure Blob URL."""
+    """Download an Excel file from Azure Blob URL (with auto SAS token)."""
     if not blob_url:
         return False
     try:
+        # Ensure URL has SAS token for authentication
+        url = _ensure_sas_token(blob_url)
+
         os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-        with requests.get(blob_url, stream=True, timeout=60) as r:
+        with requests.get(url, stream=True, timeout=60) as r:
             r.raise_for_status()
             with open(dest_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=8192):
