@@ -219,20 +219,53 @@ def compress_to_1080p(
     # -vf scale=-2:1080 → scale to 1080p height, width auto (divisible by 2)
     # If video is already ≤ 1080p, scale filter will be a no-op effectively,
     # but we still benefit from re-encoding at lower bitrate
-    cmd = [
-        FFMPEG,
-        "-y",
-        "-i", input_path,
-        "-vf", "scale=-2:'min(1080,ih)'",  # Don't upscale if already < 1080p
-        "-c:v", "libx264",
-        "-preset", preset,
-        "-crf", str(crf),
-        "-c:a", "aac",
-        "-b:a", "128k",
-        "-movflags", "+faststart",
-        "-max_muxing_queue_size", "1024",
-        output_path,
-    ]
+    # Try NVENC (GPU) first, fallback to libx264 (CPU)
+    use_nvenc = False
+    try:
+        probe = subprocess.run(
+            [FFMPEG, "-hide_banner", "-encoders"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if "h264_nvenc" in (probe.stdout or ""):
+            use_nvenc = True
+            logger.info("[COMPRESS] NVENC available → using GPU encoding")
+    except Exception:
+        pass
+
+    if use_nvenc:
+        cmd = [
+            FFMPEG,
+            "-y",
+            "-hwaccel", "cuda",
+            "-i", input_path,
+            "-vf", "scale=-2:'min(1080,ih)'",
+            "-c:v", "h264_nvenc",
+            "-preset", "p4",          # NVENC preset (p1=fastest, p7=best quality)
+            "-rc", "vbr",
+            "-cq", str(crf),          # quality level (similar to CRF)
+            "-b:v", "0",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-movflags", "+faststart",
+            "-max_muxing_queue_size", "1024",
+            output_path,
+        ]
+    else:
+        logger.info("[COMPRESS] NVENC not available → using CPU encoding")
+        cmd = [
+            FFMPEG,
+            "-y",
+            "-i", input_path,
+            "-vf", "scale=-2:'min(1080,ih)'",
+            "-c:v", "libx264",
+            "-preset", preset,
+            "-crf", str(crf),
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-movflags", "+faststart",
+            "-max_muxing_queue_size", "1024",
+            output_path,
+        ]
 
     try:
         logger.info("[COMPRESS] FFmpeg command: %s", " ".join(cmd))

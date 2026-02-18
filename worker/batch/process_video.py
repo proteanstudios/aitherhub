@@ -3,6 +3,7 @@ import argparse
 import json
 import shutil
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dotenv import load_dotenv
 from ultralytics import YOLO
@@ -71,14 +72,14 @@ from db_ops import (
     get_video_excel_urls_sync,
 )
 
-from excel_parser import load_excel_data, match_sales_to_phase
-
 from video_structure_features import build_video_structure_features
 from video_structure_grouping import assign_video_structure_group
 from video_structure_group_stats import recompute_video_structure_group_stats
 from best_video_pipeline import process_best_video
 
+from excel_parser import load_excel_data, match_sales_to_phase
 from video_status import VideoStatus
+from video_compressor import compress_and_replace
 
 
 # =========================
@@ -156,6 +157,9 @@ def status_to_step_index(status: str | None):
         return 0
     if status == VideoStatus.DONE:
         return len(STEP_ORDER)
+    # Handle legacy STEP_COMPRESS_1080P status → restart from 0
+    if status == VideoStatus.STEP_COMPRESS_1080P:
+        return 0
     if status in STEP_ORDER:
         return STEP_ORDER.index(status)
     return 0
@@ -274,23 +278,7 @@ def fire_split_async(args, video_id, video_path, phase_source):
     logger.info("[ASYNC] script = %s", split_script)
     logger.info("[ASYNC] video_id = %s | source = %s", video_id, phase_source)
 
-    # os.makedirs("logs", exist_ok=True)
-    # err_log = open("logs/split_spawn.log", "ab")
-
     url = args.blob_url if getattr(args, "blob_url", None) else video_path
-
-     # ===== debug =====
-    # if video_id == "20b59f1d-6589-4fc7-79b7-796ba56a2439":
-    #     url = (
-    #         "https://kyogokuvideos.blob.core.windows.net/"
-    #         "videos/"
-    #         "abc@gmail.com/"
-    #         "20b59f1d-6589-4fc7-79b7-796ba56a2439/"
-    #         "source.mp4"
-    #     )
-    #     logger.warning("[TEMP] Force blob_url = %s", url)
-    # # ===== END TEMP =====
-
 
     subprocess.Popen(
         [
@@ -300,6 +288,35 @@ def fire_split_async(args, video_id, video_path, phase_source):
             "--video-path", video_path,
             "--phase-source", phase_source,
             "--blob-url", url,
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+    )
+
+
+# =========================
+# Background compression helper
+# =========================
+
+def fire_compress_async(video_path, blob_url, video_id):
+    """
+    Fire compression as a background subprocess.
+    Compression runs independently and does NOT block the analysis pipeline.
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    compress_script = os.path.join(script_dir, "compress_background.py")
+
+    logger.info("[ASYNC] Fire background compression")
+    logger.info("[ASYNC] video_path = %s", video_path)
+
+    subprocess.Popen(
+        [
+            sys.executable,
+            compress_script,
+            "--video-path", video_path,
+            "--video-id", video_id,
+            "--blob-url", blob_url or "",
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -373,19 +390,62 @@ def main():
 
             if os.path.exists(ART_ROOT):
                 logger.info("[CLEAN] Remove old artifact folder")
-                # shutil.rmtree(video_root(video_id), ignore_errors=True)
                 shutil.rmtree(ART_ROOT, ignore_errors=True)
                 os.makedirs(ART_ROOT, exist_ok=True)
 
         # =========================
-        # STEP 0 – EXTRACT FRAMES
+        # BACKGROUND COMPRESSION (non-blocking)
+        # =========================
+        if start_step <= 0:
+            blob_url_for_compress = args.blob_url if getattr(args, "blob_url", None) else None
+            update_video_status_sync(video_id, VideoStatus.STEP_COMPRESS_1080P)
+            logger.info("=== FIRE BACKGROUND COMPRESSION (non-blocking) ===")
+            fire_compress_async(video_path, blob_url_for_compress, video_id)
+
+        # =========================
+        # STEP 0 + STEP 3 – PARALLEL: EXTRACT FRAMES & AUDIO TRANSCRIPTION
         # =========================
         frame_dir = frames_dir(video_id)
+        ad = audio_dir(video_id)
+        atd = audio_text_dir(video_id)
 
         if start_step <= 0:
             update_video_status_sync(video_id, VideoStatus.STEP_0_EXTRACT_FRAMES)
+            logger.info("=== STEP 0+3 PARALLEL – EXTRACT FRAMES & AUDIO TRANSCRIPTION ===")
+
+            def _do_extract_frames():
+                logger.info("[PARALLEL] Starting frame extraction (fps=1)")
+                extract_frames(
+                    video_path=video_path,
+                    fps=1,
+                    frames_root=video_root(video_id),
+                )
+                logger.info("[PARALLEL] Frame extraction DONE")
+
+            def _do_audio_transcription():
+                logger.info("[PARALLEL] Starting audio extraction + transcription")
+                extract_audio_chunks(video_path, ad)
+                transcribe_audio_chunks(ad, atd)
+                logger.info("[PARALLEL] Audio transcription DONE")
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                fut_frames = pool.submit(_do_extract_frames)
+                fut_audio = pool.submit(_do_audio_transcription)
+
+                # Wait for both to complete
+                for fut in as_completed([fut_frames, fut_audio]):
+                    try:
+                        fut.result()
+                    except Exception as e:
+                        logger.error("[PARALLEL] Task failed: %s", e)
+                        raise
+
+            logger.info("=== STEP 0+3 PARALLEL COMPLETE ===")
+
+        elif start_step <= 1:
+            # Only frames needed (audio already done in a previous run)
+            update_video_status_sync(video_id, VideoStatus.STEP_0_EXTRACT_FRAMES)
             logger.info("=== STEP 0 – EXTRACT FRAMES ===")
-            # if not os.path.exists(frame_dir) or not os.listdir(frame_dir):
             extract_frames(
                 video_path=video_path,
                 fps=1,
@@ -401,7 +461,11 @@ def main():
             update_video_status_sync(video_id, VideoStatus.STEP_1_DETECT_PHASES)
 
             logger.info("=== STEP 1 – PHASE DETECTION (YOLO) ===")
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            logger.info(f"[YOLO] Using device: {device}")
             model = YOLO("yolov8n.pt", verbose=False)
+            model.to(device)
             keyframes, rep_frames, total_frames = detect_phases(
                 frame_dir=frame_dir,
                 model=model,
@@ -439,16 +503,17 @@ def main():
             phase_stats = None
 
         # =========================
-        # STEP 3 – AUDIO → TEXT
+        # STEP 3 – AUDIO → TEXT (already done in parallel above if start_step <= 0)
         # =========================
-        ad = audio_dir(video_id)
-        atd = audio_text_dir(video_id)
-
-        if start_step <= 3:
+        if start_step > 0 and start_step <= 3:
+            # Only run if we're resuming and audio wasn't done in parallel
             update_video_status_sync(video_id, VideoStatus.STEP_3_TRANSCRIBE_AUDIO)
             logger.info("=== STEP 3 – AUDIO TO TEXT ===")
             extract_audio_chunks(video_path, ad)
             transcribe_audio_chunks(ad, atd)
+        elif start_step <= 0:
+            # Already done in parallel above
+            logger.info("[SKIP] STEP 3 (already done in parallel)")
         else:
             logger.info("[SKIP] STEP 3")
 
@@ -507,7 +572,6 @@ def main():
                 )
                 p["sales_data"] = sales_info
             logger.info("[EXCEL] Sales data merged into %d phases", len(phase_units))
-
         if excel_data and excel_data.get("has_product_data"):
             logger.info("[EXCEL] Product data available: %d products", len(excel_data["products"]))
 
