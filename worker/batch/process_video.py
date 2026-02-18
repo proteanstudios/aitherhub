@@ -77,7 +77,7 @@ from video_structure_grouping import assign_video_structure_group
 from video_structure_group_stats import recompute_video_structure_group_stats
 from best_video_pipeline import process_best_video
 
-from excel_parser import load_excel_data, match_sales_to_phase
+from excel_parser import load_excel_data, match_sales_to_phase, build_phase_stats_from_csv
 from csv_slot_filter import get_important_time_ranges, filter_phases_by_importance
 from video_status import VideoStatus
 from video_compressor import compress_and_replace
@@ -521,17 +521,31 @@ def main():
                 phase_importance = None
 
         # =========================
-        # STEP 2 – PHASE METRICS (filtered by CSV importance)
+        # STEP 2 – PHASE METRICS
         # =========================
         if start_step <= 2:
             update_video_status_sync(video_id, VideoStatus.STEP_2_EXTRACT_METRICS)
             logger.info("=== STEP 2 – PHASE METRICS ===")
-            phase_stats = extract_phase_stats(
-                keyframes=keyframes,
-                total_frames=total_frames,
-                frame_dir=frame_dir,
-                phase_importance=phase_importance,
-            )
+
+            # クリーン動画 + CSVトレンドデータあり → GPT Vision不要、CSVで代替
+            if excel_data and excel_data.get("has_trend_data"):
+                logger.info("[STEP2] Clean video with CSV data → skipping GPT Vision entirely")
+                logger.info("[STEP2] Using CSV trend data for viewer_count / like_count")
+                phase_stats = build_phase_stats_from_csv(
+                    trends=excel_data["trends"],
+                    keyframes=keyframes,
+                    total_frames=total_frames,
+                )
+                logger.info("[STEP2] CSV-based stats built for %d phases (0 API calls)", len(phase_stats))
+            else:
+                # 画面収録 or CSVなし → 従来のGPT Vision読み取り
+                logger.info("[STEP2] Screen recording mode → using GPT Vision")
+                phase_stats = extract_phase_stats(
+                    keyframes=keyframes,
+                    total_frames=total_frames,
+                    frame_dir=frame_dir,
+                    phase_importance=phase_importance,
+                )
         else:
             logger.info("[SKIP] STEP 2")
             phase_stats = None

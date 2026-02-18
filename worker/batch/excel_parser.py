@@ -278,3 +278,166 @@ def match_sales_to_phase(trends: list[dict], start_sec: float, end_sec: float) -
         "orders": phase_orders if phase_orders > 0 else None,
         "products_sold": list(set(products_sold)),
     }
+
+
+def build_phase_stats_from_csv(
+    trends: list[dict],
+    keyframes: list[int],
+    total_frames: int,
+    video_start_time_sec: float | None = None,
+) -> list[dict]:
+    """
+    STEP 2 代替 – CSVトレンドデータからphase_statsを生成。
+    GPT Vision APIを一切呼ばずに、CSVの数値をそのまま使う。
+
+    クリーン動画の場合、TikTokのUIが映っていないため
+    画面からのOCR読み取りは不要。CSVに全データがある。
+
+    Returns:
+        extract_phase_stats() と同じ形式のリスト:
+        [{
+            "phase_index": int,
+            "phase_start_frame": int,
+            "phase_end_frame": int,
+            "phase_start_used_frame": int,
+            "start": {"viewer_count": int|None, "like_count": int|None},
+            "phase_end_used_frame": int,
+            "end": {"viewer_count": int|None, "like_count": int|None},
+        }]
+    """
+    from csv_slot_filter import _parse_time_to_seconds, _detect_time_key, _find_key
+
+    extended = [0] + keyframes + [total_frames]
+
+    # CSVの時刻カラムを検出
+    time_key = _detect_time_key(trends)
+    if not time_key:
+        logger.warning("[CSV_STATS] No time column found, returning empty stats")
+        return _build_empty_stats(extended)
+
+    # CSVの各エントリを秒数に変換してソート
+    timed_entries = []
+    for entry in trends:
+        t_sec = _parse_time_to_seconds(entry.get(time_key))
+        if t_sec is not None:
+            timed_entries.append({"time_sec": t_sec, "entry": entry})
+    timed_entries.sort(key=lambda x: x["time_sec"])
+
+    if not timed_entries:
+        logger.warning("[CSV_STATS] No valid time entries found")
+        return _build_empty_stats(extended)
+
+    # 動画開始時刻の推定
+    if video_start_time_sec is None:
+        video_start_time_sec = timed_entries[0]["time_sec"]
+
+    # viewer_count / like_count のカラム名を検出
+    sample = trends[0]
+    viewer_key = _find_key(sample, ["观看人数", "viewers", "viewer_count", "観看人数"])
+    like_key = _find_key(sample, ["点赞数", "likes", "like_count", "いいね数"])
+
+    logger.info(
+        "[CSV_STATS] Building phase stats from CSV: "
+        "time_key=%s, viewer_key=%s, like_key=%s, "
+        "video_start=%d sec, %d entries",
+        time_key, viewer_key, like_key,
+        video_start_time_sec, len(timed_entries),
+    )
+
+    results = []
+    for i in range(len(extended) - 1):
+        phase_start_frame = extended[i]
+        phase_end_frame = extended[i + 1] - 1
+        phase_idx = i + 1
+
+        # フレーム番号を動画内秒数に変換（fps=1前提）
+        phase_start_sec = float(phase_start_frame)
+        phase_end_sec = float(phase_end_frame)
+
+        # フェーズの開始/終了に最も近いCSVエントリを見つける
+        start_metrics = _find_nearest_csv_metrics(
+            timed_entries, phase_start_sec + video_start_time_sec,
+            viewer_key, like_key,
+        )
+        end_metrics = _find_nearest_csv_metrics(
+            timed_entries, phase_end_sec + video_start_time_sec,
+            viewer_key, like_key,
+        )
+
+        results.append({
+            "phase_index": phase_idx,
+            "phase_start_frame": phase_start_frame,
+            "phase_start_used_frame": phase_start_frame,
+            "start": start_metrics,
+            "phase_end_frame": phase_end_frame,
+            "phase_end_used_frame": phase_end_frame,
+            "end": end_metrics,
+        })
+
+    logger.info("[CSV_STATS] Built stats for %d phases (0 API calls)", len(results))
+    return results
+
+
+def _find_nearest_csv_metrics(
+    timed_entries: list[dict],
+    target_sec: float,
+    viewer_key: str | None,
+    like_key: str | None,
+) -> dict | None:
+    """
+    target_secに最も近いCSVエントリからviewer_count/like_countを取得。
+    """
+    if not timed_entries:
+        return None
+
+    best_entry = None
+    best_diff = float("inf")
+
+    for te in timed_entries:
+        diff = abs(te["time_sec"] - target_sec)
+        if diff < best_diff:
+            best_diff = diff
+            best_entry = te["entry"]
+
+    if best_entry is None:
+        return None
+
+    viewer_count = None
+    like_count = None
+
+    if viewer_key:
+        try:
+            val = best_entry.get(viewer_key)
+            if val is not None:
+                viewer_count = int(float(val))
+        except (ValueError, TypeError):
+            pass
+
+    if like_key:
+        try:
+            val = best_entry.get(like_key)
+            if val is not None:
+                like_count = int(float(val))
+        except (ValueError, TypeError):
+            pass
+
+    if viewer_count is not None or like_count is not None:
+        return {"viewer_count": viewer_count, "like_count": like_count}
+
+    return None
+
+
+def _build_empty_stats(extended: list[int]) -> list[dict]:
+    """CSVデータが不足している場合の空のphase_statsを生成"""
+    results = []
+    for i in range(len(extended) - 1):
+        results.append({
+            "phase_index": i + 1,
+            "phase_start_frame": extended[i],
+            "phase_start_used_frame": extended[i],
+            "start": None,
+            "phase_end_frame": extended[i + 1] - 1,
+            "phase_end_used_frame": extended[i + 1] - 1,
+            "end": None,
+        })
+    return results
