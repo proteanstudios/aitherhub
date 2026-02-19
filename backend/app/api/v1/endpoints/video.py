@@ -4,7 +4,7 @@ import uuid as uuid_module
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select
@@ -1346,6 +1346,7 @@ async def rate_phase(
     video_id: str,
     phase_index: int,
     request_body: dict,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -1418,30 +1419,24 @@ async def rate_phase(
                 await db.rollback()
                 logger.warning(f"Could not update video_phases for rating: {db_err}")
 
-        # Update Qdrant quality_score for RAG learning
-        try:
-            from app.services.rag.knowledge_store import update_quality_score_with_comment
-            update_quality_score_with_comment(
-                video_id=video_id,
-                phase_index=phase_index,
-                rating=rating,
-                comment=comment,
-            )
-        except ImportError:
-            # Fallback to old function without comment
+        # Update Qdrant quality_score for RAG learning (in background for faster response)
+        def _update_qdrant_bg(vid, pidx, r, c):
             try:
-                from app.services.rag.knowledge_store import update_quality_score
-                # Map 1-5 to old rating system: 1-2 = negative, 4-5 = positive, 3 = neutral
-                old_rating = 1 if rating >= 4 else (-1 if rating <= 2 else 0)
-                update_quality_score(
-                    video_id=video_id,
-                    phase_index=phase_index,
-                    rating=old_rating,
+                from app.services.rag.knowledge_store import update_quality_score_with_comment
+                update_quality_score_with_comment(
+                    video_id=vid, phase_index=pidx, rating=r, comment=c,
                 )
+            except ImportError:
+                try:
+                    from app.services.rag.knowledge_store import update_quality_score
+                    old_rating = 1 if r >= 4 else (-1 if r <= 2 else 0)
+                    update_quality_score(video_id=vid, phase_index=pidx, rating=old_rating)
+                except Exception as rag_err:
+                    logger.warning(f"Could not update Qdrant quality_score: {rag_err}")
             except Exception as rag_err:
                 logger.warning(f"Could not update Qdrant quality_score: {rag_err}")
-        except Exception as rag_err:
-            logger.warning(f"Could not update Qdrant quality_score: {rag_err}")
+
+        background_tasks.add_task(_update_qdrant_bg, video_id, phase_index, rating, comment)
 
         logger.info(f"Phase rated: video={video_id}, phase={phase_index}, rating={rating}, comment={comment[:50] if comment else ''}")
 

@@ -154,50 +154,46 @@ export default function VideoDetail({ videoData }) {
     };
   }, [videoData?.id]);
 
-  const handleRatePhase = async (phaseIndex, rating) => {
+  const handleRatePhase = (phaseIndex, rating) => {
     if (!videoData?.id) return;
     const comment = ratingComments[phaseIndex] || '';
+    // Optimistic update: immediately reflect in UI
     setPhaseRatings(prev => ({
       ...prev,
-      [phaseIndex]: { rating, saving: true, saved: false },
+      [phaseIndex]: { rating, saving: false, saved: true },
     }));
-    try {
-      await VideoService.ratePhase(videoData.id, phaseIndex, rating, comment);
-      setPhaseRatings(prev => ({
-        ...prev,
-        [phaseIndex]: { rating, saving: false, saved: true },
-      }));
-    } catch (err) {
-      console.error('Failed to rate phase:', err);
-      setPhaseRatings(prev => ({
-        ...prev,
-        [phaseIndex]: { rating, saving: false, saved: false },
-      }));
-    }
+    // Fire-and-forget: save in background
+    VideoService.ratePhase(videoData.id, phaseIndex, rating, comment)
+      .catch(err => {
+        console.error('Failed to rate phase:', err);
+        // Revert on failure
+        setPhaseRatings(prev => ({
+          ...prev,
+          [phaseIndex]: { ...prev[phaseIndex], saved: false },
+        }));
+      });
   };
 
-  const handleSaveComment = async (phaseIndex) => {
+  const handleSaveComment = (phaseIndex) => {
     if (!videoData?.id) return;
     const currentRating = phaseRatings[phaseIndex]?.rating;
     if (!currentRating) return;
     const comment = ratingComments[phaseIndex] || '';
+    // Optimistic update: immediately show saved
     setPhaseRatings(prev => ({
       ...prev,
-      [phaseIndex]: { ...prev[phaseIndex], saving: true },
+      [phaseIndex]: { ...prev[phaseIndex], saving: false, saved: true },
     }));
-    try {
-      await VideoService.ratePhase(videoData.id, phaseIndex, currentRating, comment);
-      setPhaseRatings(prev => ({
-        ...prev,
-        [phaseIndex]: { ...prev[phaseIndex], saving: false, saved: true },
-      }));
-    } catch (err) {
-      console.error('Failed to save comment:', err);
-      setPhaseRatings(prev => ({
-        ...prev,
-        [phaseIndex]: { ...prev[phaseIndex], saving: false },
-      }));
-    }
+    // Fire-and-forget: save in background
+    VideoService.ratePhase(videoData.id, phaseIndex, currentRating, comment)
+      .catch(err => {
+        console.error('Failed to save comment:', err);
+        // Revert on failure
+        setPhaseRatings(prev => ({
+          ...prev,
+          [phaseIndex]: { ...prev[phaseIndex], saved: false },
+        }));
+      });
   };
 
   const handleClipGeneration = async (item, phaseIndex) => {
