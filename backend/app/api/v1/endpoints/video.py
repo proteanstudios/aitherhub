@@ -1240,8 +1240,10 @@ async def list_clips(
 ):
     """List all clips for a video."""
     try:
+        user_id = user.get("user_id") or user.get("id")
+
         sql = text("""
-            SELECT id, phase_index, time_start, time_end, status, clip_url, created_at
+            SELECT id, phase_index, time_start, time_end, status, clip_url, sas_token, sas_expireddate, created_at
             FROM video_clips
             WHERE video_id = :video_id
             ORDER BY phase_index ASC, created_at DESC
@@ -1265,7 +1267,66 @@ async def list_clips(
                 "status": row.status,
             }
             if row.status == "completed" and row.clip_url:
-                clip["clip_url"] = _replace_blob_url_to_cdn(row.clip_url)
+                # Generate or reuse SAS download URL (same logic as get_clip_status)
+                clip_download_url = None
+
+                # Check if existing SAS is still valid
+                if row.sas_token and row.sas_expireddate:
+                    now = datetime.now(timezone.utc)
+                    expiry = row.sas_expireddate
+                    if expiry.tzinfo is None:
+                        expiry = expiry.replace(tzinfo=timezone.utc)
+                    if expiry > now:
+                        clip_download_url = row.sas_token
+
+                if not clip_download_url:
+                    # Generate new SAS URL for clip
+                    try:
+                        clip_url = row.clip_url
+                        parts = clip_url.split("/")
+                        container_idx = parts.index("videos") if "videos" in parts else -1
+                        if container_idx >= 0 and container_idx + 1 < len(parts):
+                            blob_path = "/".join(parts[container_idx + 1:])
+                            from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+                            import os as _os
+                            conn_str = _os.getenv("AZURE_STORAGE_CONNECTION_STRING", "")
+                            account_name = ""
+                            account_key = ""
+                            for p in conn_str.split(";"):
+                                if p.startswith("AccountName="):
+                                    account_name = p.split("=", 1)[1]
+                                if p.startswith("AccountKey="):
+                                    account_key = p.split("=", 1)[1]
+
+                            if account_name and account_key:
+                                expiry_dt = datetime.now(timezone.utc) + timedelta(hours=24)
+                                sas = generate_blob_sas(
+                                    account_name=account_name,
+                                    container_name="videos",
+                                    blob_name=blob_path,
+                                    account_key=account_key,
+                                    permission=BlobSasPermissions(read=True),
+                                    expiry=expiry_dt,
+                                )
+                                clip_download_url = f"https://{account_name}.blob.core.windows.net/videos/{blob_path}?{sas}"
+                                clip_download_url = _replace_blob_url_to_cdn(clip_download_url)
+
+                                # Cache the SAS token
+                                update_sql = text("""
+                                    UPDATE video_clips
+                                    SET sas_token = :sas_token, sas_expireddate = :expiry
+                                    WHERE id = :id
+                                """)
+                                await db.execute(update_sql, {
+                                    "sas_token": clip_download_url,
+                                    "expiry": expiry_dt,
+                                    "id": row.id,
+                                })
+                                await db.commit()
+                    except Exception as e:
+                        logger.warning(f"Failed to generate clip SAS in list: {e}")
+
+                clip["clip_url"] = clip_download_url or _replace_blob_url_to_cdn(row.clip_url)
             clips.append(clip)
 
         return {"clips": clips}
