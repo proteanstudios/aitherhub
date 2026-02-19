@@ -322,12 +322,14 @@ async def get_videos_by_user_with_clips(
         if current_user and current_user.get("id") != user_id:
             raise HTTPException(status_code=403, detail="Forbidden")
 
-        # Get videos with clip counts in a single query
+        # Get videos with clip counts + sales/duration summary in a single query
         sql = text("""
             SELECT v.id, v.original_filename, v.status, v.duration, v.file_size,
                    v.upload_type, v.created_at, v.updated_at,
                    COALESCE(c.clip_count, 0) as clip_count,
-                   COALESCE(c.completed_count, 0) as completed_clip_count
+                   COALESCE(c.completed_count, 0) as completed_clip_count,
+                   p.total_gmv,
+                   p.max_time_end
             FROM videos v
             LEFT JOIN (
                 SELECT video_id,
@@ -336,6 +338,13 @@ async def get_videos_by_user_with_clips(
                 FROM video_clips
                 GROUP BY video_id
             ) c ON v.id = c.video_id
+            LEFT JOIN (
+                SELECT video_id,
+                       SUM(COALESCE(gmv, 0)) as total_gmv,
+                       MAX(time_end) as max_time_end
+                FROM video_phases
+                GROUP BY video_id
+            ) p ON v.id = p.video_id
             WHERE v.user_id = :user_id
             ORDER BY v.created_at DESC
         """)
@@ -355,6 +364,8 @@ async def get_videos_by_user_with_clips(
                 "updated_at": row.updated_at.isoformat() if row.updated_at else None,
                 "clip_count": row.clip_count,
                 "completed_clip_count": row.completed_clip_count,
+                "total_gmv": float(row.total_gmv) if row.total_gmv and float(row.total_gmv) > 0 else None,
+                "stream_duration": float(row.max_time_end) if row.max_time_end else (float(row.duration) if row.duration else None),
             })
 
         return videos
