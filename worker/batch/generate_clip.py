@@ -367,6 +367,175 @@ def transcribe_audio(audio_path: str) -> list:
 
 
 # =========================
+# Person detection + scene filtering
+# =========================
+
+YOLO_MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "/home/azureuser/yolov8n.pt")
+
+
+def detect_person_intervals(video_path: str, sample_fps: float = 2.0, confidence: float = 0.4) -> list:
+    """
+    Detect time intervals where a person is visible using YOLOv8.
+    Samples frames at `sample_fps` rate and returns merged intervals.
+    Returns list of (start_sec, end_sec) tuples.
+    """
+    try:
+        import cv2
+        from ultralytics import YOLO
+    except ImportError as e:
+        logger.warning(f"Person detection dependencies not available: {e}")
+        return None  # Return None to signal detection is unavailable
+
+    if not os.path.exists(YOLO_MODEL_PATH):
+        logger.warning(f"YOLO model not found at {YOLO_MODEL_PATH}")
+        return None
+
+    logger.info(f"Running person detection on {video_path} (sample_fps={sample_fps})")
+    model = YOLO(YOLO_MODEL_PATH)
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        logger.error("Failed to open video for person detection")
+        return None
+
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    duration = total_frames / fps
+    frame_interval = max(1, int(fps / sample_fps))  # Sample every N frames
+
+    person_frames = []  # List of timestamps where person is detected
+    frame_idx = 0
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        if frame_idx % frame_interval == 0:
+            timestamp = frame_idx / fps
+            results = model(frame, verbose=False, classes=[0])  # class 0 = person
+            if results and len(results[0].boxes) > 0:
+                # Check if any detection has sufficient confidence
+                for box in results[0].boxes:
+                    if box.conf[0] >= confidence:
+                        person_frames.append(timestamp)
+                        break
+
+        frame_idx += 1
+
+    cap.release()
+
+    if not person_frames:
+        logger.warning("No person detected in any frame")
+        return []
+
+    logger.info(f"Person detected in {len(person_frames)} sampled frames out of {frame_idx // frame_interval} total")
+
+    # Merge nearby timestamps into continuous intervals
+    # Allow gap of up to 1.5 seconds between person detections
+    max_gap = 1.5 / sample_fps * sample_fps + 0.5  # ~2 seconds tolerance
+    intervals = []
+    interval_start = person_frames[0]
+    prev_time = person_frames[0]
+
+    for t in person_frames[1:]:
+        if t - prev_time > max_gap:
+            # Close current interval with small padding
+            intervals.append((max(0, interval_start - 0.3), min(duration, prev_time + 0.5)))
+            interval_start = t
+        prev_time = t
+
+    # Close last interval
+    intervals.append((max(0, interval_start - 0.3), min(duration, prev_time + 0.5)))
+
+    # Merge overlapping intervals
+    merged = [intervals[0]]
+    for start, end in intervals[1:]:
+        if start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+
+    logger.info(f"Person visible in {len(merged)} intervals: {merged}")
+    return merged
+
+
+def concatenate_intervals(video_path: str, intervals: list, output_path: str) -> bool:
+    """
+    Concatenate only the specified time intervals from the video.
+    Uses FFmpeg concat demuxer for seamless joining.
+    """
+    if not intervals:
+        return False
+
+    work_dir = os.path.dirname(output_path)
+    segment_files = []
+
+    # Cut each interval into a separate file
+    for i, (start, end) in enumerate(intervals):
+        seg_path = os.path.join(work_dir, f"person_seg_{i}.mp4")
+        duration = end - start
+        if duration < 0.5:  # Skip very short segments
+            continue
+
+        cmd = [
+            FFMPEG_BIN, "-y",
+            "-ss", str(start),
+            "-i", video_path,
+            "-t", str(duration),
+            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+            seg_path,
+        ]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=120)
+            segment_files.append(seg_path)
+        except Exception as e:
+            logger.error(f"Failed to cut person interval {i}: {e}")
+
+    if not segment_files:
+        return False
+
+    if len(segment_files) == 1:
+        # Only one segment, just rename
+        os.rename(segment_files[0], output_path)
+        return True
+
+    # Create concat file list
+    concat_list_path = os.path.join(work_dir, "person_concat.txt")
+    with open(concat_list_path, "w") as f:
+        for seg_path in segment_files:
+            f.write(f"file '{seg_path}'\n")
+
+    # Concatenate using FFmpeg concat demuxer
+    cmd = [
+        FFMPEG_BIN, "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", concat_list_path,
+        "-c", "copy",
+        "-movflags", "+faststart",
+        output_path,
+    ]
+
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=300)
+        logger.info(f"Concatenated {len(segment_files)} person segments")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to concatenate person segments: {e}")
+        return False
+    finally:
+        # Cleanup temp segments
+        for seg_path in segment_files:
+            if os.path.exists(seg_path):
+                os.remove(seg_path)
+        if os.path.exists(concat_list_path):
+            os.remove(concat_list_path)
+
+
+# =========================
 # Video processing (crop + subtitles)
 # =========================
 
@@ -678,6 +847,22 @@ def generate_clip(clip_id: str, video_id: str, blob_url: str, time_start: float,
         logger.info("Cutting segment...")
         if not cut_segment(source_path, segment_path, time_start, time_end):
             raise RuntimeError("Failed to cut segment")
+
+        # 2.5. Person detection: remove scenes without people
+        person_intervals = detect_person_intervals(segment_path)
+        if person_intervals is not None:  # None means detection unavailable
+            if len(person_intervals) == 0:
+                logger.warning("No person detected in entire segment, using original")
+                # Keep original segment as-is
+            else:
+                filtered_path = os.path.join(work_dir, "segment_filtered.mp4")
+                if concatenate_intervals(segment_path, person_intervals, filtered_path):
+                    logger.info(f"Filtered segment: kept {len(person_intervals)} person intervals")
+                    segment_path = filtered_path  # Use filtered version
+                else:
+                    logger.warning("Failed to filter person intervals, using original segment")
+        else:
+            logger.info("Person detection not available, using original segment")
 
         # 3. Extract audio and transcribe
         audio_path = os.path.join(work_dir, "audio.wav")
