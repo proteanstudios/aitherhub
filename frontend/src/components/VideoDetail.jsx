@@ -6,6 +6,7 @@ import VideoPreviewModal from "./modals/VideoPreviewModal";
 import VideoService from "../base/services/videoService";
 import "../assets/css/sidebar.css";
 import AnalyticsSection from "./AnalyticsSection";
+import ClipSection from "./ClipSection";
 
 export default function VideoDetail({ videoData }) {
   const markdownTableStyles = `
@@ -506,6 +507,9 @@ export default function VideoDetail({ videoData }) {
         </div>
         {/* SCROLL AREA */}
         <div className="flex-1 overflow-y-auto scrollbar-custom text-left px-0 md:px-4 md:mb-0">
+          {/* Clip Section - show generated clips at the top */}
+          <ClipSection videoData={videoData} clipStates={clipStates} reports1={videoData?.reports_1} />
+
           {/* Analytics Section - above report */}
           <AnalyticsSection reports1={videoData?.reports_1} videoData={videoData} />
 

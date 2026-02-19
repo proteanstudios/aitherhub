@@ -285,6 +285,65 @@ async def get_videos_by_user(
 
 
 
+
+@router.get("/user/{user_id}/with-clips")
+async def get_videos_by_user_with_clips(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """
+    Return list of videos for the given `user_id` with clip counts.
+    This is used by the sidebar to show clip availability indicators.
+    """
+    try:
+        if current_user and current_user.get("id") != user_id:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+        # Get videos with clip counts in a single query
+        sql = text("""
+            SELECT v.id, v.original_filename, v.status, v.duration, v.file_size,
+                   v.upload_type, v.created_at, v.updated_at,
+                   COALESCE(c.clip_count, 0) as clip_count,
+                   COALESCE(c.completed_count, 0) as completed_clip_count
+            FROM videos v
+            LEFT JOIN (
+                SELECT video_id,
+                       COUNT(DISTINCT phase_index) as clip_count,
+                       COUNT(DISTINCT CASE WHEN status = 'completed' THEN phase_index END) as completed_count
+                FROM video_clips
+                GROUP BY video_id
+            ) c ON v.id = c.video_id
+            WHERE v.user_id = :user_id
+            ORDER BY v.created_at DESC
+        """)
+        result = await db.execute(sql, {"user_id": user_id})
+        rows = result.fetchall()
+
+        videos = []
+        for row in rows:
+            videos.append({
+                "id": str(row.id),
+                "original_filename": row.original_filename,
+                "status": row.status,
+                "duration": row.duration,
+                "file_size": row.file_size,
+                "upload_type": row.upload_type,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                "clip_count": row.clip_count,
+                "completed_clip_count": row.completed_clip_count,
+            })
+
+        return videos
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(f"Failed to fetch videos with clips: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch videos: {exc}")
+
+
 @router.delete("/{video_id}", response_model=DeleteVideoResponse)
 async def delete_video(
     video_id: str,

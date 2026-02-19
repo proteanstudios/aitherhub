@@ -9,7 +9,8 @@ class VideoService extends BaseApiService {
 
   async getVideosByUser(userId) {
     try {
-      const response = await this.get(`/api/v1/videos/user/${userId}`);
+      // Try the new endpoint with clip counts first
+      const response = await this.get(`/api/v1/videos/user/${userId}/with-clips`);
       if (Array.isArray(response)) {
         return response;
       } else if (response?.data && Array.isArray(response.data)) {
@@ -19,23 +20,32 @@ class VideoService extends BaseApiService {
       }
       return [];
     } catch (error) {
-      if (error.response?.status === 404 || error.response?.status === 501) {
-        return [
-          {
-            "id": "1",
-            "original_filename": "富士山.mp4",
-            "status": "completed",
-            "created_at": "2026-01-08T00:00:00.000Z"
-          },          
-          {
-            "id": "2",
-            "original_filename": "video 2",
-            "status": "processing",
-            "created_at": "2026-01-08T00:00:00.000Z"
-          },
-        ];
+      // Fallback to original endpoint without clip counts
+      try {
+        const fallback = await this.get(`/api/v1/videos/user/${userId}`);
+        if (Array.isArray(fallback)) return fallback;
+        if (fallback?.data && Array.isArray(fallback.data)) return fallback.data;
+        if (fallback?.videos && Array.isArray(fallback.videos)) return fallback.videos;
+        return [];
+      } catch (fallbackError) {
+        if (fallbackError.response?.status === 404 || fallbackError.response?.status === 501) {
+          return [
+            {
+              "id": "1",
+              "original_filename": "富士山.mp4",
+              "status": "completed",
+              "created_at": "2026-01-08T00:00:00.000Z"
+            },          
+            {
+              "id": "2",
+              "original_filename": "video 2",
+              "status": "processing",
+              "created_at": "2026-01-08T00:00:00.000Z"
+            },
+          ];
+        }
+        return [];
       }
-      return [];
     }
   }
 

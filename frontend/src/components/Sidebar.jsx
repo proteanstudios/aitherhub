@@ -11,7 +11,7 @@ import ForgotPasswordModal from "./modals/ForgotPasswordModal";
 import AuthService from "../base/services/userService";
 import VideoService from "../base/services/videoService";
 
-import { ChevronDown, LogOut, Settings, User, X, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, LogOut, Settings, User, X, MoreHorizontal, Pencil, Trash2, Scissors } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -365,9 +365,17 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                           </div>
                         ) : (
                           <>
-                            <span className="text-sm font-medium text-[#6b7280] block truncate flex-1">
-                              {video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`}
-                            </span>
+                            <div className="flex flex-col flex-1 min-w-0">
+                              <span className="text-sm font-medium text-[#6b7280] block truncate">
+                                {video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`}
+                              </span>
+                              {video.completed_clip_count > 0 && (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-purple-600 mt-0.5">
+                                  <Scissors className="w-3 h-3" />
+                                  {video.completed_clip_count}件の切り抜き
+                                </span>
+                              )}
+                            </div>
                             <div className="relative" ref={menuOpenVideoId === video.id ? menuRef : null}>
                               <button
                                 onClick={(e) => { e.stopPropagation(); setMenuOpenVideoId(menuOpenVideoId === video.id ? null : video.id); }}

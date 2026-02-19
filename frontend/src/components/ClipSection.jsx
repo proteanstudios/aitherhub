@@ -1,0 +1,156 @@
+import { useState, useEffect, useMemo } from "react";
+import VideoService from "../base/services/videoService";
+
+/**
+ * ClipSection – displays generated clip videos at the top of the video detail page.
+ * Shows clip cards with download buttons, status indicators, and metadata.
+ *
+ * Props:
+ *   videoData – the full video detail object
+ *   clipStates – current clip generation states from parent
+ *   reports1 – array of phase objects (for phase labels)
+ */
+export default function ClipSection({ videoData, clipStates, reports1 }) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Get completed clips from clipStates
+  const completedClips = useMemo(() => {
+    if (!clipStates) return [];
+    return Object.entries(clipStates)
+      .filter(([, state]) => state.status === "completed" && state.clip_url)
+      .map(([phaseIndex, state]) => {
+        const idx = parseInt(phaseIndex, 10);
+        const phase = reports1?.[idx];
+        return {
+          phaseIndex: idx,
+          clip_url: state.clip_url,
+          time_start: phase?.time_start,
+          time_end: phase?.time_end,
+          insight: phase?.insight,
+        };
+      })
+      .sort((a, b) => a.phaseIndex - b.phaseIndex);
+  }, [clipStates, reports1]);
+
+  // Don't render if no completed clips
+  if (completedClips.length === 0) return null;
+
+  const formatTime = (seconds) => {
+    if (seconds == null || isNaN(seconds)) return "--:--";
+    const s = Math.round(Number(seconds));
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  };
+
+  const formatDuration = (start, end) => {
+    if (start == null || end == null) return "";
+    const dur = Math.round(Number(end) - Number(start));
+    if (dur <= 0) return "";
+    const m = Math.floor(dur / 60);
+    const s = dur % 60;
+    if (m > 0) return `${m}分${s}秒`;
+    return `${s}秒`;
+  };
+
+  return (
+    <div className="w-full mt-6 mx-auto mb-4">
+      <div className="rounded-2xl bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-200">
+        {/* Header */}
+        <div
+          onClick={() => setCollapsed((s) => !s)}
+          className="flex items-center justify-between p-5 cursor-pointer hover:bg-purple-100/50 transition-all duration-200 rounded-t-2xl"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-sm">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>
+              </svg>
+            </div>
+            <div>
+              <div className="text-gray-900 text-xl font-semibold flex items-center gap-2">
+                切り抜き動画
+                <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-purple-500 to-pink-500 text-white">
+                  {completedClips.length}件
+                </span>
+              </div>
+              <div className="text-gray-500 text-sm mt-1">
+                TikTok・Reels向け縦型ショート動画
+              </div>
+            </div>
+          </div>
+          <button type="button" className="text-gray-400 p-2 rounded focus:outline-none transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="1.5"
+              className={`w-6 h-6 transform transition-transform duration-200 ${!collapsed ? "rotate-180" : ""}`}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Content */}
+        {!collapsed && (
+          <div className="px-5 pb-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {completedClips.map((clip) => (
+                <div
+                  key={clip.phaseIndex}
+                  className="bg-white rounded-xl border border-purple-100 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden group"
+                >
+                  {/* Clip card header - phase indicator */}
+                  <div className="bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 flex items-center justify-between">
+                    <span className="text-white text-xs font-medium">
+                      フェーズ {clip.phaseIndex + 1}
+                    </span>
+                    <span className="text-white/80 text-xs">
+                      {formatTime(clip.time_start)} - {formatTime(clip.time_end)}
+                    </span>
+                  </div>
+
+                  {/* Clip card body */}
+                  <div className="p-4">
+                    {/* Duration badge */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 text-xs">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        {formatDuration(clip.time_start, clip.time_end)}
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-pink-50 text-pink-600 text-xs">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
+                        </svg>
+                        9:16
+                      </span>
+                    </div>
+
+                    {/* Insight preview */}
+                    {clip.insight && (
+                      <p className="text-gray-600 text-xs leading-relaxed line-clamp-2 mb-3">
+                        {clip.insight.substring(0, 80)}{clip.insight.length > 80 ? "..." : ""}
+                      </p>
+                    )}
+
+                    {/* Download button */}
+                    <a
+                      href={clip.clip_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm font-medium hover:from-purple-600 hover:to-pink-600 transition-all shadow-sm hover:shadow-md group-hover:shadow-lg"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                      ダウンロード
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
