@@ -182,7 +182,7 @@ async def check_upload_resume(
             await db.commit()
             return {"upload_resume": False}
 
-        # Check 2: If a Video record exists for this user that was created
+        # Check 2: If any Video record exists for this user that was created
         # around the same time or after the Upload record, the upload has
         # already completed successfully — clean up and return false.
         video_result = await db.execute(
@@ -213,6 +213,28 @@ async def check_upload_resume(
                 await db.delete(upload)
                 await db.commit()
                 return {"upload_resume": False}
+
+        # Check 3: If any video for this user is currently being processed
+        # (not in a terminal state), the upload was successful and processing
+        # is underway — no need to show resume dialog.
+        processing_result = await db.execute(
+            select(Video)
+            .where(
+                Video.user_id == user_id,
+                Video.status.notin_(["NEW", "DONE", "ERROR", "uploaded"]),
+            )
+            .limit(1)
+        )
+        processing_video = processing_result.scalar_one_or_none()
+        if processing_video:
+            logger.info(
+                f"Upload {upload.id} has a video in processing "
+                f"(video {processing_video.id} status={processing_video.status}). "
+                f"Cleaning up upload record."
+            )
+            await db.delete(upload)
+            await db.commit()
+            return {"upload_resume": False}
 
         return {"upload_resume": True, "upload_id": str(upload.id)}
     except HTTPException:
