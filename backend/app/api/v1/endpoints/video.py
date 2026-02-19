@@ -745,6 +745,9 @@ async def get_video_detail(
             "id": str(video.id),
             "original_filename": video.original_filename,
             "status": video.status,
+            "upload_type": getattr(video, 'upload_type', None),
+            "excel_product_blob_url": getattr(video, 'excel_product_blob_url', None),
+            "excel_trend_blob_url": getattr(video, 'excel_trend_blob_url', None),
             "reports_1": report1_items,
             "report3": report3,
         }

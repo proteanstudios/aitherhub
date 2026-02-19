@@ -5,6 +5,7 @@ import ChatInput from "./ChatInput";
 import VideoPreviewModal from "./modals/VideoPreviewModal";
 import VideoService from "../base/services/videoService";
 import "../assets/css/sidebar.css";
+import AnalyticsSection from "./AnalyticsSection";
 
 export default function VideoDetail({ videoData }) {
   const markdownTableStyles = `
@@ -412,6 +413,9 @@ export default function VideoDetail({ videoData }) {
         </div>
         {/* SCROLL AREA */}
         <div className="flex-1 overflow-y-auto scrollbar-custom text-left px-0 md:px-4 md:mb-0">
+          {/* Analytics Section - above report */}
+          <AnalyticsSection reports1={videoData?.reports_1} videoData={videoData} />
+
           <div className="w-full mt-6 mx-auto">
             <div className="rounded-2xl bg-gray-50 border border-gray-200">
               <div onClick={() => setReportCollapsed((s) => !s)} className="flex items-center justify-between p-5 cursor-pointer hover:bg-gray-100 transform transition-all duration-200">
