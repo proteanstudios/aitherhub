@@ -82,13 +82,13 @@ FILLER_WORDS = {
     "こう", "こうね",
 }
 
-# TikTok subtitle styles
+# TikTok subtitle styles – randomly selected per clip (large font, reference-matched sizing)
 SUBTITLE_STYLES = [
     {
         "name": "bold_white",
-        "fontsize": 48,
+        "fontsize": 72,
         "fontcolor": "white",
-        "borderw": 4,
+        "borderw": 6,
         "bordercolor": "black",
         "shadowx": 2,
         "shadowy": 2,
@@ -96,9 +96,9 @@ SUBTITLE_STYLES = [
     },
     {
         "name": "yellow_pop",
-        "fontsize": 52,
+        "fontsize": 74,
         "fontcolor": "yellow",
-        "borderw": 5,
+        "borderw": 6,
         "bordercolor": "black",
         "shadowx": 3,
         "shadowy": 3,
@@ -106,9 +106,9 @@ SUBTITLE_STYLES = [
     },
     {
         "name": "cyan_glow",
-        "fontsize": 46,
+        "fontsize": 70,
         "fontcolor": "#00FFFF",
-        "borderw": 4,
+        "borderw": 6,
         "bordercolor": "#003333",
         "shadowx": 2,
         "shadowy": 2,
@@ -116,23 +116,23 @@ SUBTITLE_STYLES = [
     },
     {
         "name": "pink_bold",
-        "fontsize": 50,
+        "fontsize": 72,
         "fontcolor": "#FF69B4",
-        "borderw": 5,
+        "borderw": 6,
         "bordercolor": "black",
         "shadowx": 2,
         "shadowy": 2,
         "shadowcolor": "black@0.5",
     },
     {
-        "name": "green_fresh",
-        "fontsize": 48,
-        "fontcolor": "#00FF88",
-        "borderw": 4,
-        "bordercolor": "#002200",
-        "shadowx": 2,
-        "shadowy": 2,
-        "shadowcolor": "black@0.5",
+        "name": "white_pink_outline",
+        "fontsize": 72,
+        "fontcolor": "white",
+        "borderw": 6,
+        "bordercolor": "#FF6B9D",
+        "shadowx": 0,
+        "shadowy": 0,
+        "shadowcolor": "black@0.0",
     },
 ]
 
@@ -322,8 +322,8 @@ def transcribe_audio(audio_path: str) -> list:
                         current_line.append(w_text)
                         char_count += len(w_text)
 
-                        # Break line at ~12 characters for readability
-                        if char_count >= 12:
+                        # Break line at ~8 characters for readability (larger font)
+                        if char_count >= 8:
                             segments.append({
                                 "start": current_start,
                                 "end": word.get("end", 0),
@@ -576,7 +576,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{JP_FONT_NAME},{fontsize},{fontcolor_ass},&H000000FF,{bordercolor_ass},&H80000000,-1,0,0,0,100,100,0,0,1,{outline},{shadow},2,40,40,180,1
+Style: Default,{JP_FONT_NAME},{fontsize},{fontcolor_ass},&H000000FF,{bordercolor_ass},&H00000000,-1,0,0,0,100,100,2,0,1,{outline},0,2,40,40,320,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -747,9 +747,9 @@ def create_vertical_clip_drawtext(
             f":fontsize={fontsize}"
             f":fontcolor={fontcolor}"
             f":borderw={borderw}"
-            f":bordercolor=black"
+            f":bordercolor={style.get('bordercolor', '#FF6B9D')}"
             f":x=(w-text_w)/2"
-            f":y=h*0.75"
+            f":y=h*0.68"
             f":enable='between(t,{start},{end})'"
         )
 
