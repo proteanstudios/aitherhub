@@ -123,7 +123,17 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
       setLoadingVideos(true);
       try {
         const videoList = await VideoService.getVideosByUser(userId);
-        setVideos(videoList || []);
+        // Deduplicate: keep only the latest video per original_filename
+        const seen = new Map();
+        const deduped = [];
+        for (const v of (videoList || [])) {
+          const key = v.original_filename || v.id;
+          if (!seen.has(key)) {
+            seen.set(key, true);
+            deduped.push(v);
+          }
+        }
+        setVideos(deduped);
       } catch (error) {
         console.error("Error fetching videos:", error);
         setVideos([]);
