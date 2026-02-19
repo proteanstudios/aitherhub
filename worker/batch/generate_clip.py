@@ -64,6 +64,24 @@ WHISPER_ENDPOINT = os.getenv("WHISPER_ENDPOINT")
 AZURE_KEY = os.getenv("AZURE_OPENAI_KEY")
 FFMPEG_BIN = os.getenv("FFMPEG_PATH", "ffmpeg")
 
+# Font configuration – Noto Sans CJK JP (installed via fonts-noto-cjk package)
+JP_FONT_DIR = "/usr/share/fonts/opentype/noto"
+JP_FONT_FILE = os.path.join(JP_FONT_DIR, "NotoSansCJK-Black.ttc")
+JP_FONT_NAME = "Noto Sans CJK JP Black"  # Name as registered in fontconfig
+
+# Japanese filler words to remove from subtitles
+FILLER_WORDS = {
+    "えー", "えーと", "えっと", "えーっと",
+    "あー", "あのー", "あの", "あのね",
+    "うー", "うーん", "うん", "んー", "ん",
+    "まあ", "まぁ", "まー",
+    "そのー", "その",
+    "なんか", "なんかね",
+    "ほら", "ほらね",
+    "ねー", "ねえ",
+    "こう", "こうね",
+}
+
 # TikTok subtitle styles
 SUBTITLE_STYLES = [
     {
@@ -293,6 +311,11 @@ def transcribe_audio(audio_path: str) -> list:
                         if not w_text:
                             continue
 
+                        # Skip filler words
+                        if w_text in FILLER_WORDS:
+                            logger.debug(f"Skipping filler word: {w_text}")
+                            continue
+
                         if current_start is None:
                             current_start = word.get("start", 0)
 
@@ -384,7 +407,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Noto Sans JP Black,{fontsize},{fontcolor_ass},&H000000FF,{bordercolor_ass},&H80000000,-1,0,0,0,100,100,0,0,1,{outline},{shadow},2,40,40,180,1
+Style: Default,{JP_FONT_NAME},{fontsize},{fontcolor_ass},&H000000FF,{bordercolor_ass},&H80000000,-1,0,0,0,100,100,0,0,1,{outline},{shadow},2,40,40,180,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -470,11 +493,12 @@ def create_vertical_clip(
     logger.info(f"Created ASS subtitle file: {ass_path}")
 
     # FFmpeg command: crop → scale → burn subtitles
-    # Use fontsdir for Noto Sans JP
+    # Use fontsdir to point FFmpeg to the Noto Sans CJK JP font directory
+    ass_path_escaped = ass_path.replace("'", "'\\''")
     filter_complex = (
         f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
         f"scale={target_w}:{target_h}:flags=lanczos,"
-        f"ass='{ass_path}'"
+        f"ass='{ass_path_escaped}':fontsdir='{JP_FONT_DIR}'"
     )
 
     cmd = [
@@ -532,12 +556,25 @@ def create_vertical_clip_drawtext(
         f"scale={target_w}:{target_h}:flags=lanczos",
     ]
 
+    # Use the Noto Sans CJK JP font file for drawtext
+    font_file = JP_FONT_FILE
+    if not os.path.exists(font_file):
+        logger.warning(f"Font file not found: {font_file}, trying fc-match")
+        try:
+            result = subprocess.run(["fc-match", "Noto Sans CJK JP:style=Black", "-f", "%{file}"],
+                                   capture_output=True, text=True, timeout=5)
+            if result.returncode == 0 and result.stdout.strip():
+                font_file = result.stdout.strip()
+        except Exception:
+            pass
+
     for seg in segments:
         text = seg["text"].replace("'", "'\\''").replace(":", "\\:")
         start = seg["start"]
         end = seg["end"]
         vf_parts.append(
             f"drawtext=text='{text}'"
+            f":fontfile='{font_file}'"
             f":fontsize={fontsize}"
             f":fontcolor={fontcolor}"
             f":borderw={borderw}"
