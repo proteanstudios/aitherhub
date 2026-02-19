@@ -124,3 +124,80 @@ async def get_dashboard_stats_public(
     if x_admin_key != expected_key:
         raise HTTPException(status_code=403, detail="Invalid admin credentials")
     return await _get_dashboard_data(db)
+
+
+@router.get("/feedbacks")
+async def get_all_feedbacks(
+    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get all phase feedbacks (ratings + comments) across all users and videos.
+    Returns a list sorted by most recent first.
+    """
+    expected_key = f"{ADMIN_ID}:{ADMIN_PASS}"
+    if x_admin_key != expected_key:
+        raise HTTPException(status_code=403, detail="Invalid admin credentials")
+
+    try:
+        sql = text("""
+            SELECT
+                vp.video_id,
+                vp.phase_index,
+                vp.time_start,
+                vp.time_end,
+                vp.summary,
+                vp.user_rating,
+                vp.user_comment,
+                vp.rated_at,
+                vp.importance_score,
+                v.original_filename,
+                v.user_id,
+                u.email as user_email
+            FROM video_phases vp
+            JOIN videos v ON vp.video_id = CAST(v.id AS TEXT)
+            LEFT JOIN users u ON v.user_id = u.id
+            WHERE vp.user_rating IS NOT NULL
+            ORDER BY vp.rated_at DESC NULLS LAST
+        """)
+        result = await db.execute(sql)
+        rows = result.fetchall()
+
+        feedbacks = []
+        for r in rows:
+            feedbacks.append({
+                "video_id": r.video_id,
+                "phase_index": r.phase_index,
+                "time_start": r.time_start,
+                "time_end": r.time_end,
+                "summary": r.summary[:200] if r.summary else None,
+                "user_rating": r.user_rating,
+                "user_comment": r.user_comment,
+                "rated_at": str(r.rated_at) if r.rated_at else None,
+                "importance_score": r.importance_score,
+                "video_name": r.original_filename,
+                "user_id": r.user_id,
+                "user_email": r.user_email,
+            })
+
+        # Summary stats
+        total = len(feedbacks)
+        avg_rating = sum(f["user_rating"] for f in feedbacks) / total if total > 0 else 0
+        rating_dist = {i: 0 for i in range(1, 6)}
+        for f in feedbacks:
+            if f["user_rating"] in rating_dist:
+                rating_dist[f["user_rating"]] += 1
+        with_comments = sum(1 for f in feedbacks if f.get("user_comment"))
+
+        return {
+            "summary": {
+                "total_feedbacks": total,
+                "average_rating": round(avg_rating, 2),
+                "rating_distribution": rating_dist,
+                "with_comments": with_comments,
+            },
+            "feedbacks": feedbacks,
+        }
+    except Exception as e:
+        logger.exception(f"Failed to fetch feedbacks: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch feedbacks: {e}")
