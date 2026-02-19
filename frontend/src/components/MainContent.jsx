@@ -56,6 +56,7 @@ export default function MainContent({
   const activeResumeUploadStorageKeyRef = useRef(null);
   const prevSelectedVideoIdRef = useRef(selectedVideoId);
   const processingVideoTitleRef = useRef("");
+  const [duplicateVideo, setDuplicateVideo] = useState(null); // { id, original_filename } of existing video
 
   useEffect(() => {
     console.log("[MainContent] user", user);
@@ -122,6 +123,7 @@ export default function MainContent({
       setCleanVideoFile(null);
       setProductExcelFile(null);
       setTrendExcelFile(null);
+      setDuplicateVideo(null);
     }
     if (!prev && isLoggedIn) {
       setMessage("");
@@ -156,7 +158,21 @@ export default function MainContent({
     }
   }, [isLoggedIn, user?.id]);
 
-  const handleFileSelect = (e) => {
+  const checkDuplicateVideo = async (filename) => {
+    try {
+      const userId = user?.id || user?.email;
+      if (!userId) return null;
+      const videoList = await VideoService.getVideosByUser(userId);
+      if (!Array.isArray(videoList)) return null;
+      const match = videoList.find(v => v.original_filename === filename);
+      return match || null;
+    } catch (e) {
+      console.warn('Duplicate check failed:', e);
+      return null;
+    }
+  };
+
+  const handleFileSelect = async (e) => {
     if (!isLoggedIn) {
       setShowLoginModal(true);
       return;
@@ -171,6 +187,15 @@ export default function MainContent({
       return;
     }
 
+    // Check for duplicate
+    const existing = await checkDuplicateVideo(file.name);
+    if (existing) {
+      setDuplicateVideo(existing);
+      setSelectedFile(file);
+      return;
+    }
+
+    setDuplicateVideo(null);
     setSelectedFile(file);
     setResumeUploadId(null);
     setUploadedVideoId(null);
@@ -180,9 +205,17 @@ export default function MainContent({
   };
 
   // Clean video file handlers
-  const handleCleanVideoFileSelect = (e) => {
+  const handleCleanVideoFileSelect = async (e) => {
     const file = e.target.files?.[0];
     if (file && file.type.startsWith("video/")) {
+      // Check for duplicate
+      const existing = await checkDuplicateVideo(file.name);
+      if (existing) {
+        setDuplicateVideo(existing);
+        setCleanVideoFile(file);
+        return;
+      }
+      setDuplicateVideo(null);
       setCleanVideoFile(file);
     }
   };
@@ -244,6 +277,7 @@ export default function MainContent({
     setCleanVideoFile(null);
     setProductExcelFile(null);
     setTrendExcelFile(null);
+    setDuplicateVideo(null);
     setUploadMode(null);
     setUploading(false);
     setProgress(0);
@@ -434,6 +468,7 @@ export default function MainContent({
 
   const handleCancel = () => {
     setSelectedFile(null);
+    setDuplicateVideo(null);
     setUploading(false);
     setProgress(0);
     setUploadedVideoId(null);
@@ -446,7 +481,7 @@ export default function MainContent({
     e.stopPropagation();
   };
 
-  const handleDrop = (e) => {
+  const handleDrop = async (e) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -463,6 +498,14 @@ export default function MainContent({
         setMessage(window.__t('selectValidVideoError'));
         return;
       }
+      // Check for duplicate
+      const existing = await checkDuplicateVideo(file.name);
+      if (existing) {
+        setDuplicateVideo(existing);
+        setSelectedFile(file);
+        return;
+      }
+      setDuplicateVideo(null);
       setSelectedFile(file);
       setUploadedVideoId(null);
       setVideoData(null);
@@ -780,7 +823,55 @@ export default function MainContent({
                       onDragOver={handleDragOver}
                       onDrop={handleDrop}
                     >
-                      {selectedFile ? (
+                      {selectedFile && duplicateVideo ? (
+                        <>
+                          <div className="flex flex-col items-center text-center space-y-4">
+                            <div className="w-14 h-14 rounded-full bg-amber-50 flex items-center justify-center">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-gray-800">
+                                この動画はすでに解析済みです
+                              </p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                「{duplicateVideo.original_filename}」の解析結果が見つかりました
+                              </p>
+                            </div>
+                            <div className="flex flex-col sm:flex-row gap-2 w-full max-w-xs">
+                              <button
+                                onClick={() => {
+                                  const vid = duplicateVideo.id;
+                                  setSelectedFile(null);
+                                  setDuplicateVideo(null);
+                                  navigate(`/video/${vid}`);
+                                }}
+                                className="flex-1 h-[41px] flex items-center justify-center bg-[#7D01FF] text-white rounded-md text-sm cursor-pointer hover:bg-[#6a01d9] transition-colors"
+                              >
+                                解析結果を見る
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDuplicateVideo(null);
+                                  setResumeUploadId(null);
+                                  setUploadedVideoId(null);
+                                  setVideoData(null);
+                                  setMessage("");
+                                  setProgress(0);
+                                }}
+                                className="flex-1 h-[41px] flex items-center justify-center bg-white text-gray-600 border border-gray-300 rounded-md text-sm cursor-pointer hover:bg-gray-50 transition-colors"
+                              >
+                                再解析する
+                              </button>
+                              <button
+                                onClick={handleCancel}
+                                className="flex-1 h-[41px] bg-gray-200 text-gray-500 rounded-md text-sm cursor-pointer hover:bg-gray-300 transition-colors"
+                              >
+                                キャンセル
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      ) : selectedFile ? (
                         <>
                           <div className="flex flex-col items-center text-center space-y-6">
                             <div className="text-4xl">🎬</div>
@@ -835,6 +926,52 @@ export default function MainContent({
                                 className="w-[143px] h-[41px] bg-gray-300 text-gray-700 rounded-md text-sm hover:bg-gray-100"
                               >
                                 {window.__t('skipButton') || 'Skip'}
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      ) : uploadMode === 'clean_video' && duplicateVideo ? (
+                        <>
+                          <div className="flex flex-col items-center text-center space-y-4">
+                            <div className="w-14 h-14 rounded-full bg-amber-50 flex items-center justify-center">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-gray-800">
+                                この動画はすでに解析済みです
+                              </p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                「{duplicateVideo.original_filename}」の解析結果が見つかりました
+                              </p>
+                            </div>
+                            <div className="flex flex-col sm:flex-row gap-2 w-full max-w-xs">
+                              <button
+                                onClick={() => {
+                                  const vid = duplicateVideo.id;
+                                  setCleanVideoFile(null);
+                                  setProductExcelFile(null);
+                                  setTrendExcelFile(null);
+                                  setDuplicateVideo(null);
+                                  setUploadMode(null);
+                                  navigate(`/video/${vid}`);
+                                }}
+                                className="flex-1 h-[41px] flex items-center justify-center bg-[#7D01FF] text-white rounded-md text-sm cursor-pointer hover:bg-[#6a01d9] transition-colors"
+                              >
+                                解析結果を見る
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDuplicateVideo(null);
+                                }}
+                                className="flex-1 h-[41px] flex items-center justify-center bg-white text-gray-600 border border-gray-300 rounded-md text-sm cursor-pointer hover:bg-gray-50 transition-colors"
+                              >
+                                再解析する
+                              </button>
+                              <button
+                                onClick={handleCancelCleanVideo}
+                                className="flex-1 h-[41px] bg-gray-200 text-gray-500 rounded-md text-sm cursor-pointer hover:bg-gray-300 transition-colors"
+                              >
+                                キャンセル
                               </button>
                             </div>
                           </div>
