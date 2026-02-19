@@ -177,14 +177,26 @@ async def debug_schema(
             results[table] = [row[0] for row in r.fetchall()]
         except Exception as e:
             results[table] = f"Error: {e}"
-    # Also get sample time_end values
+    # Get sample time data and row count
+    try:
+        r = await db.execute(text("SELECT COUNT(*) FROM video_phases"))
+        results["video_phases_count"] = r.scalar()
+    except Exception as e:
+        results["video_phases_count"] = f"Error: {e}"
     try:
         r = await db.execute(text(
-            "SELECT time_end FROM video_phases WHERE time_end IS NOT NULL AND time_end != '' LIMIT 10"
+            "SELECT time_start, time_end FROM video_phases LIMIT 10"
         ))
-        results["time_end_samples"] = [row[0] for row in r.fetchall()]
+        results["time_samples"] = [{"start": row[0], "end": row[1]} for row in r.fetchall()]
     except Exception as e:
-        results["time_end_samples"] = f"Error: {e}"
+        results["time_samples"] = f"Error: {e}"
+    try:
+        r = await db.execute(text(
+            "SELECT time_start, time_end FROM video_phases WHERE time_end IS NOT NULL LIMIT 10"
+        ))
+        results["time_non_null"] = [{"start": row[0], "end": row[1]} for row in r.fetchall()]
+    except Exception as e:
+        results["time_non_null"] = f"Error: {e}"
     return results
 
 
