@@ -267,6 +267,7 @@ async def update_video_phase_csv_metrics(
     conversion_rate: float = 0,
     gpm: float = 0,
     importance_score: float = 0,
+    product_names: str = None,
 ):
     sql = text("""
         UPDATE video_phases
@@ -281,6 +282,7 @@ async def update_video_phase_csv_metrics(
             conversion_rate = :conversion_rate,
             gpm = :gpm,
             importance_score = :importance_score,
+            product_names = :product_names,
             updated_at = now()
         WHERE video_id = :video_id
           AND phase_index = :phase_index
@@ -301,6 +303,7 @@ async def update_video_phase_csv_metrics(
             "conversion_rate": conversion_rate,
             "gpm": gpm,
             "importance_score": importance_score,
+            "product_names": product_names,
         })
         await session.commit()
 

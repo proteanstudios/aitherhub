@@ -712,6 +712,9 @@ def main():
                             phase_gpm = max(phase_gpm, gv)
                         phase_score = max(phase_score, score_map.get(t, 0))
 
+                # sales_dataから商品名を取得
+                phase_product_names = sales_info.get("products_sold", []) if sales_info else []
+
                 # phase_unitにCSV指標を追加
                 p["csv_metrics"] = {
                     "gmv": phase_gmv,
@@ -727,11 +730,14 @@ def main():
                     "importance_score": phase_score,
                 }
 
-                # DBに保存
+                # DBに保存（product_namesはJSON配列文字列として保存）
+                import json as _json
+                product_names_json = _json.dumps(phase_product_names, ensure_ascii=False) if phase_product_names else None
                 try:
                     update_video_phase_csv_metrics_sync(
                         video_id=str(video_id),
                         phase_index=p["phase_index"],
+                        product_names=product_names_json,
                         **p["csv_metrics"],
                     )
                 except Exception as e:

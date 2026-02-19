@@ -516,7 +516,8 @@ async def get_video_detail(
                    COALESCE(product_clicks, 0) as product_clicks,
                    COALESCE(conversion_rate, 0) as conversion_rate,
                    COALESCE(gpm, 0) as gpm,
-                   COALESCE(importance_score, 0) as importance_score
+                   COALESCE(importance_score, 0) as importance_score,
+                   product_names
             FROM video_phases
             WHERE video_id = :video_id
         """)
@@ -539,6 +540,7 @@ async def get_video_detail(
                 "conversion_rate": r.conversion_rate,
                 "gpm": r.gpm,
                 "importance_score": r.importance_score,
+                "product_names": r.product_names,
             }
             for r in phase_rows
         }
@@ -634,6 +636,15 @@ async def get_video_detail(
                 except Exception:
                     video_clip_url = None
 
+            # Parse product_names JSON string into list
+            product_names_raw = pm.get("product_names")
+            product_names_list = []
+            if product_names_raw:
+                try:
+                    product_names_list = json.loads(product_names_raw) if isinstance(product_names_raw, str) else product_names_raw
+                except (json.JSONDecodeError, TypeError):
+                    product_names_list = []
+
             report1_items.append({
                 "phase_index": int(r.phase_index),
                 "phase_description": pm.get("phase_description"),
@@ -653,6 +664,7 @@ async def get_video_detail(
                     "conversion_rate": pm.get("conversion_rate", 0),
                     "gpm": pm.get("gpm", 0),
                     "importance_score": pm.get("importance_score", 0),
+                    "product_names": product_names_list,
                 },
             })
 
