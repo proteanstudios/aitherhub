@@ -270,6 +270,70 @@ def update_quality_score(
     )
 
 
+def update_quality_score_with_comment(
+    video_id: str,
+    phase_index: int,
+    rating: int,
+    comment: str = "",
+    client: QdrantClient = None,
+):
+    """
+    Update the quality score based on a 1-5 star rating and optional comment.
+
+    Maps the 1-5 rating to a quality_score:
+        1 -> -1.0 (very poor / irrelevant)
+        2 -> -0.5
+        3 ->  0.0 (neutral)
+        4 ->  0.5
+        5 ->  1.0 (excellent / highly relevant)
+
+    Also stores the user comment for future RAG context.
+    """
+    if client is None:
+        client = get_qdrant_client()
+
+    point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{video_id}_{phase_index}"))
+
+    points = client.retrieve(
+        collection_name=COLLECTION_NAME,
+        ids=[point_id],
+        with_payload=True,
+    )
+
+    if not points:
+        logger.warning(f"Point not found for rating update: {point_id}")
+        return
+
+    current = points[0].payload
+    feedback_count = current.get("feedback_count", 0)
+
+    # Map 1-5 to -1.0 to 1.0
+    new_score = (rating - 3) / 2.0  # 1->-1.0, 2->-0.5, 3->0.0, 4->0.5, 5->1.0
+
+    update_payload = {
+        "quality_score": new_score,
+        "feedback_count": feedback_count + 1,
+        "user_rating": rating,
+        "rated_at": datetime.utcnow().isoformat(),
+    }
+
+    if comment:
+        update_payload["user_comment"] = comment[:2000]
+
+    client.set_payload(
+        collection_name=COLLECTION_NAME,
+        payload=update_payload,
+        points=[point_id],
+    )
+
+    logger.info(
+        f"Updated quality score with comment for {point_id}: "
+        f"rating={rating}, score={new_score:.2f}, "
+        f"comment={comment[:50] if comment else 'none'} "
+        f"(feedback #{feedback_count + 1})"
+    )
+
+
 def _build_sales_context(
     sales_data: Optional[Dict],
     set_products: Optional[List[Dict]],

@@ -522,6 +522,27 @@ class VideoService extends BaseApiService {
       return { clips: [] };
     }
   }
+
+  /**
+   * Rate a specific phase of a video (1-5 stars + optional comment).
+   * @param {string} videoId
+   * @param {number} phaseIndex
+   * @param {number} rating - 1 to 5
+   * @param {string} [comment] - optional feedback comment
+   * @returns {Promise<Object>}
+   */
+  async ratePhase(videoId, phaseIndex, rating, comment = '') {
+    try {
+      const response = await this.put(`/api/v1/videos/${videoId}/phases/${phaseIndex}/rating`, {
+        rating,
+        comment,
+      });
+      return response;
+    } catch (error) {
+      console.warn('Failed to rate phase:', error);
+      throw error;
+    }
+  }
 }
 
 export default new VideoService();

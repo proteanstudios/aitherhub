@@ -106,6 +106,28 @@ export default function VideoDetail({ videoData }) {
   const [clipStates, setClipStates] = useState({});
   const clipPollingRef = useRef({});
 
+  // Phase rating state: { [phaseIndex]: { rating, comment, saving, saved } }
+  const [phaseRatings, setPhaseRatings] = useState({});
+  const [ratingComments, setRatingComments] = useState({});
+
+  // Initialize ratings from existing data
+  useEffect(() => {
+    if (!videoData?.reports_1) return;
+    const initialRatings = {};
+    const initialComments = {};
+    for (const item of videoData.reports_1) {
+      const key = item.phase_index ?? 0;
+      if (item.user_rating) {
+        initialRatings[key] = { rating: item.user_rating, saving: false, saved: true };
+      }
+      if (item.user_comment) {
+        initialComments[key] = item.user_comment;
+      }
+    }
+    if (Object.keys(initialRatings).length > 0) setPhaseRatings(initialRatings);
+    if (Object.keys(initialComments).length > 0) setRatingComments(initialComments);
+  }, [videoData?.reports_1]);
+
   // Load existing clip statuses when video loads
   useEffect(() => {
     if (!videoData?.id) return;
@@ -131,6 +153,52 @@ export default function VideoDetail({ videoData }) {
       Object.values(clipPollingRef.current).forEach(clearInterval);
     };
   }, [videoData?.id]);
+
+  const handleRatePhase = async (phaseIndex, rating) => {
+    if (!videoData?.id) return;
+    const comment = ratingComments[phaseIndex] || '';
+    setPhaseRatings(prev => ({
+      ...prev,
+      [phaseIndex]: { rating, saving: true, saved: false },
+    }));
+    try {
+      await VideoService.ratePhase(videoData.id, phaseIndex, rating, comment);
+      setPhaseRatings(prev => ({
+        ...prev,
+        [phaseIndex]: { rating, saving: false, saved: true },
+      }));
+    } catch (err) {
+      console.error('Failed to rate phase:', err);
+      setPhaseRatings(prev => ({
+        ...prev,
+        [phaseIndex]: { rating, saving: false, saved: false },
+      }));
+    }
+  };
+
+  const handleSaveComment = async (phaseIndex) => {
+    if (!videoData?.id) return;
+    const currentRating = phaseRatings[phaseIndex]?.rating;
+    if (!currentRating) return;
+    const comment = ratingComments[phaseIndex] || '';
+    setPhaseRatings(prev => ({
+      ...prev,
+      [phaseIndex]: { ...prev[phaseIndex], saving: true },
+    }));
+    try {
+      await VideoService.ratePhase(videoData.id, phaseIndex, currentRating, comment);
+      setPhaseRatings(prev => ({
+        ...prev,
+        [phaseIndex]: { ...prev[phaseIndex], saving: false, saved: true },
+      }));
+    } catch (err) {
+      console.error('Failed to save comment:', err);
+      setPhaseRatings(prev => ({
+        ...prev,
+        [phaseIndex]: { ...prev[phaseIndex], saving: false },
+      }));
+    }
+  };
 
   const handleClipGeneration = async (item, phaseIndex) => {
     if (!videoData?.id) return;
@@ -782,6 +850,85 @@ export default function VideoDetail({ videoData }) {
                                     </div>
                                   </div>
                                 )}
+
+                                {/* Phase Rating Section */}
+                                <div className="pt-3 mt-3 border-t border-gray-200">
+                                  <div className="flex items-start gap-4">
+                                    <div className="text-amber-500">
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" className="w-4 h-4 flex-shrink-0">
+                                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                                      </svg>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-amber-600 font-medium text-xs mb-2">このフェーズを採点</div>
+                                      <div className="flex items-center gap-1">
+                                        {[1, 2, 3, 4, 5].map((star) => {
+                                          const currentRating = phaseRatings[itemKey]?.rating || 0;
+                                          const isSaving = phaseRatings[itemKey]?.saving;
+                                          return (
+                                            <button
+                                              key={star}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (!isSaving) handleRatePhase(itemKey, star);
+                                              }}
+                                              disabled={isSaving}
+                                              className={`p-0.5 transition-all duration-150 ${
+                                                isSaving ? 'opacity-50 cursor-not-allowed' : 'hover:scale-110 cursor-pointer'
+                                              }`}
+                                              title={`${star}点`}
+                                            >
+                                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+                                                fill={star <= currentRating ? '#f59e0b' : 'none'}
+                                                stroke={star <= currentRating ? '#f59e0b' : '#d1d5db'}
+                                                strokeWidth="1.5"
+                                                className="w-5 h-5"
+                                              >
+                                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                                              </svg>
+                                            </button>
+                                          );
+                                        })}
+                                        {phaseRatings[itemKey]?.saving && (
+                                          <div className="ml-2 w-3 h-3 rounded-full border-2 border-gray-300 border-t-amber-500 animate-spin" />
+                                        )}
+                                        {phaseRatings[itemKey]?.saved && !phaseRatings[itemKey]?.saving && (
+                                          <span className="ml-2 text-[10px] text-green-500 font-medium">保存済み</span>
+                                        )}
+                                      </div>
+                                      {/* Comment input - shown after rating */}
+                                      {phaseRatings[itemKey]?.rating && (
+                                        <div className="mt-2 flex items-start gap-2">
+                                          <input
+                                            type="text"
+                                            placeholder="コメント（任意）"
+                                            value={ratingComments[itemKey] || ''}
+                                            onChange={(e) => {
+                                              e.stopPropagation();
+                                              setRatingComments(prev => ({ ...prev, [itemKey]: e.target.value }));
+                                            }}
+                                            onClick={(e) => e.stopPropagation()}
+                                            onKeyDown={(e) => {
+                                              e.stopPropagation();
+                                              if (e.key === 'Enter') handleSaveComment(itemKey);
+                                            }}
+                                            className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 focus:border-amber-400 placeholder-gray-300"
+                                          />
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleSaveComment(itemKey);
+                                            }}
+                                            disabled={phaseRatings[itemKey]?.saving}
+                                            className="text-xs px-3 py-1.5 rounded-lg bg-amber-500 text-white font-medium hover:bg-amber-600 transition-colors disabled:opacity-50"
+                                          >
+                                            保存
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
 
                                 {/* TikTok Clip Generation Button */}
                                 {item.time_start != null && item.time_end != null && (() => {

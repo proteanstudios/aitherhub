@@ -578,7 +578,9 @@ async def get_video_detail(
                    COALESCE(conversion_rate, 0) as conversion_rate,
                    COALESCE(gpm, 0) as gpm,
                    COALESCE(importance_score, 0) as importance_score,
-                   product_names
+                   product_names,
+                   user_rating,
+                   user_comment
             FROM video_phases
             WHERE video_id = :video_id
         """)
@@ -627,6 +629,8 @@ async def get_video_detail(
                 "gpm": r.gpm,
                 "importance_score": r.importance_score,
                 "product_names": getattr(r, 'product_names', None) if has_product_names else None,
+                "user_rating": getattr(r, 'user_rating', None),
+                "user_comment": getattr(r, 'user_comment', None),
             }
             phase_map[r.phase_index] = entry
 
@@ -737,6 +741,8 @@ async def get_video_detail(
                 "time_end": time_end,
                 "insight": r.insight,
                 "video_clip_url": video_clip_url,
+                "user_rating": pm.get("user_rating"),
+                "user_comment": pm.get("user_comment"),
                 "csv_metrics": {
                     "gmv": pm.get("gmv", 0),
                     "order_count": pm.get("order_count", 0),
@@ -1267,3 +1273,128 @@ async def list_clips(
     except Exception as exc:
         logger.exception(f"Failed to list clips: {exc}")
         raise HTTPException(status_code=500, detail=f"Failed to list clips: {exc}")
+
+
+
+# ──────────────────────────────────────────────────────────────
+# Phase Rating (Human Feedback)
+# ──────────────────────────────────────────────────────────────
+
+@router.put("/{video_id}/phases/{phase_index}/rating")
+async def rate_phase(
+    video_id: str,
+    phase_index: int,
+    request_body: dict,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Save a human rating (1-5) and optional comment for a specific phase.
+    Also updates the quality_score in Qdrant for RAG learning.
+
+    Body:
+    {
+        "rating": 1-5,
+        "comment": "optional text"
+    }
+    """
+    try:
+        user_id = user.get("user_id") or user.get("id")
+        rating = request_body.get("rating")
+        comment = request_body.get("comment", "")
+
+        if rating is None or not isinstance(rating, int) or rating < 1 or rating > 5:
+            raise HTTPException(status_code=400, detail="rating must be an integer between 1 and 5")
+
+        # Verify video belongs to user
+        video_repo = VideoRepository(lambda: db)
+        video = await video_repo.get_video_by_id(video_id)
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        if str(getattr(video, "user_id", None)) != str(user_id):
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+        # Map rating (1-5) to importance_score (0.0-1.0)
+        importance_score = (rating - 1) / 4.0  # 1->0.0, 2->0.25, 3->0.5, 4->0.75, 5->1.0
+
+        # Update video_phases with user rating, comment, and importance_score
+        # Use try-except for graceful fallback if columns don't exist yet
+        try:
+            sql_update = text("""
+                UPDATE video_phases
+                SET user_rating = :rating,
+                    user_comment = :comment,
+                    importance_score = :importance_score,
+                    rated_at = NOW(),
+                    updated_at = NOW()
+                WHERE video_id = :video_id AND phase_index = :phase_index
+            """)
+            await db.execute(sql_update, {
+                "rating": rating,
+                "comment": comment,
+                "importance_score": importance_score,
+                "video_id": video_id,
+                "phase_index": phase_index,
+            })
+            await db.commit()
+        except Exception as db_err:
+            await db.rollback()
+            # Fallback: try without user_rating/user_comment columns
+            try:
+                sql_fallback = text("""
+                    UPDATE video_phases
+                    SET importance_score = :importance_score,
+                        updated_at = NOW()
+                    WHERE video_id = :video_id AND phase_index = :phase_index
+                """)
+                await db.execute(sql_fallback, {
+                    "importance_score": importance_score,
+                    "video_id": video_id,
+                    "phase_index": phase_index,
+                })
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                logger.warning(f"Could not update video_phases for rating: {db_err}")
+
+        # Update Qdrant quality_score for RAG learning
+        try:
+            from app.services.rag.knowledge_store import update_quality_score_with_comment
+            update_quality_score_with_comment(
+                video_id=video_id,
+                phase_index=phase_index,
+                rating=rating,
+                comment=comment,
+            )
+        except ImportError:
+            # Fallback to old function without comment
+            try:
+                from app.services.rag.knowledge_store import update_quality_score
+                # Map 1-5 to old rating system: 1-2 = negative, 4-5 = positive, 3 = neutral
+                old_rating = 1 if rating >= 4 else (-1 if rating <= 2 else 0)
+                update_quality_score(
+                    video_id=video_id,
+                    phase_index=phase_index,
+                    rating=old_rating,
+                )
+            except Exception as rag_err:
+                logger.warning(f"Could not update Qdrant quality_score: {rag_err}")
+        except Exception as rag_err:
+            logger.warning(f"Could not update Qdrant quality_score: {rag_err}")
+
+        logger.info(f"Phase rated: video={video_id}, phase={phase_index}, rating={rating}, comment={comment[:50] if comment else ''}")
+
+        return {
+            "success": True,
+            "video_id": video_id,
+            "phase_index": phase_index,
+            "rating": rating,
+            "comment": comment,
+            "importance_score": importance_score,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(f"Failed to rate phase: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to rate phase: {exc}")
