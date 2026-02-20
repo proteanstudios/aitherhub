@@ -400,14 +400,24 @@ export default function AnalyticsSection({ reports1, videoData }) {
     // Get all display columns (exclude internal ones)
     const displayKeys = keys.filter(k => k && !k.startsWith("col_"));
 
+    // Sort items by GMV/revenue descending
+    const sortedItems = revenueKey
+      ? [...products].sort((a, b) => {
+          const aVal = typeof a[revenueKey] === 'number' ? a[revenueKey] : 0;
+          const bVal = typeof b[revenueKey] === 'number' ? b[revenueKey] : 0;
+          return bVal - aVal;
+        })
+      : products;
+
     return {
-      items: products,
+      items: sortedItems,
       nameKey,
       priceKey,
       quantityKey,
       revenueKey,
       categoryKey,
       displayKeys,
+      top5: sortedItems.slice(0, 5),
     };
   }, [excelData]);
 
@@ -566,6 +576,77 @@ export default function AnalyticsSection({ reports1, videoData }) {
                 </div>
                 {!productCollapsed && (
                   <div className="px-4 pb-4">
+                    {/* ── Top 5 Products Ranking ── */}
+                    {excelProducts.revenueKey && excelProducts.top5.length > 0 && (
+                      <div className="mb-4">
+                        <div className="flex items-center gap-1.5 mb-3">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                          </svg>
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">GMV TOP 5</span>
+                        </div>
+                        <div className="space-y-2">
+                          {excelProducts.top5.map((product, i) => {
+                            const gmvVal = typeof product[excelProducts.revenueKey] === 'number' ? product[excelProducts.revenueKey] : 0;
+                            const maxGmv = typeof excelProducts.top5[0]?.[excelProducts.revenueKey] === 'number' ? excelProducts.top5[0][excelProducts.revenueKey] : 1;
+                            const barWidth = maxGmv > 0 ? Math.max((gmvVal / maxGmv) * 100, 8) : 8;
+                            const rankColors = [
+                              'from-amber-400 to-amber-500',
+                              'from-gray-300 to-gray-400',
+                              'from-orange-300 to-orange-400',
+                              'from-emerald-200 to-emerald-300',
+                              'from-emerald-200 to-emerald-300',
+                            ];
+                            const rankBgColors = [
+                              'bg-amber-50 border-amber-200',
+                              'bg-gray-50 border-gray-200',
+                              'bg-orange-50 border-orange-200',
+                              'bg-white border-gray-100',
+                              'bg-white border-gray-100',
+                            ];
+                            const rankTextColors = [
+                              'text-amber-700',
+                              'text-gray-600',
+                              'text-orange-700',
+                              'text-gray-600',
+                              'text-gray-600',
+                            ];
+                            const productName = product[excelProducts.nameKey] || '-';
+                            const displayName = productName.length > 30 ? productName.slice(0, 30) + '...' : productName;
+                            const salesCount = excelProducts.quantityKey ? product[excelProducts.quantityKey] : null;
+                            return (
+                              <div key={i} className={`flex items-center gap-3 p-2.5 rounded-lg border ${rankBgColors[i]} transition-all hover:shadow-sm`}>
+                                <div className={`flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br ${rankColors[i]} flex items-center justify-center`}>
+                                  <span className="text-xs font-bold text-white">{i + 1}</span>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className={`text-sm font-medium truncate ${rankTextColors[i]}`} title={productName}>
+                                      {displayName}
+                                    </span>
+                                    <span className="text-sm font-bold text-gray-800 flex-shrink-0">
+                                      {gmvVal >= 10000 ? `¥${(gmvVal / 10000).toFixed(1)}万` : `¥${Math.round(gmvVal).toLocaleString()}`}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                      <div
+                                        className={`h-full rounded-full bg-gradient-to-r ${rankColors[i]} transition-all duration-500`}
+                                        style={{ width: `${barWidth}%` }}
+                                      />
+                                    </div>
+                                    {salesCount != null && typeof salesCount === 'number' && salesCount > 0 && (
+                                      <span className="text-[10px] text-gray-400 flex-shrink-0">{salesCount}個</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {/* ── Full Product Table ── */}
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>

@@ -369,6 +369,14 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                               <span className="text-sm font-medium text-[#6b7280] block truncate">
                                 {video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`}
                               </span>
+                              {video.top_products && video.top_products.length > 0 && (
+                                <div className="flex items-center gap-1 mt-0.5">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 text-emerald-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                                  <span className="text-[10px] text-emerald-600 truncate" title={video.top_products.join(' / ')}>
+                                    {video.top_products.map(p => p.length > 15 ? p.slice(0, 15) + '...' : p).join(' / ')}
+                                  </span>
+                                </div>
+                              )}
                               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                 {video.total_gmv != null && video.total_gmv > 0 && (
                                   <span className="inline-flex items-center gap-0.5 text-[10px] text-orange-600">
