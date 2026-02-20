@@ -23,6 +23,8 @@ from app.schema.video_schema import (
     RenameVideoResponse,
     DeleteVideoResponse,
     VideoResponse,
+    BatchUploadCompleteRequest,
+    BatchUploadCompleteResponse,
 )
 from app.services.video_service import VideoService
 from app.repository.video_repository import VideoRepository
@@ -108,12 +110,54 @@ async def upload_complete(
             upload_type=payload.upload_type or "screen_recording",
             excel_product_blob_url=payload.excel_product_blob_url,
             excel_trend_blob_url=payload.excel_trend_blob_url,
+            time_offset_seconds=payload.time_offset_seconds or 0,
         )
         return UploadCompleteResponse(**result)
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to complete upload: {exc}")
+
+
+@router.post("/batch-upload-complete", response_model=BatchUploadCompleteResponse)
+async def batch_upload_complete(
+    payload: BatchUploadCompleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """Handle batch upload completion - multiple videos sharing the same Excel files"""
+    try:
+        if current_user["email"] != payload.email:
+            raise HTTPException(status_code=403, detail="Email does not match current user")
+
+        video_repo = VideoRepository(lambda: db)
+        service = VideoService(video_repository=video_repo)
+
+        video_ids = []
+        for v in payload.videos:
+            result = await service.handle_upload_complete(
+                user_id=current_user["id"],
+                email=payload.email,
+                video_id=v.video_id,
+                original_filename=v.filename,
+                db=db,
+                upload_id=v.upload_id,
+                upload_type="clean_video",
+                excel_product_blob_url=payload.excel_product_blob_url,
+                excel_trend_blob_url=payload.excel_trend_blob_url,
+                time_offset_seconds=v.time_offset_seconds or 0,
+            )
+            video_ids.append(result["video_id"])
+
+        return BatchUploadCompleteResponse(
+            video_ids=video_ids,
+            status="uploaded",
+            message=f"{len(video_ids)} videos queued for analysis",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to complete batch upload: {exc}")
 
 
 @router.post("/generate-excel-upload-url", response_model=GenerateExcelUploadURLResponse)

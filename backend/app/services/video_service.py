@@ -118,6 +118,7 @@ class VideoService:
         upload_type: str = "screen_recording",
         excel_product_blob_url: str | None = None,
         excel_trend_blob_url: str | None = None,
+        time_offset_seconds: float = 0,
     ) -> dict:
         """Handle video upload completion - save to database and remove upload session"""
         if not self.video_repository:
@@ -132,6 +133,7 @@ class VideoService:
             upload_type=upload_type,
             excel_product_blob_url=excel_product_blob_url,
             excel_trend_blob_url=excel_trend_blob_url,
+            time_offset_seconds=time_offset_seconds,
         )
 
         # 2) Generate download SAS URL so worker can fetch the video
@@ -149,6 +151,7 @@ class VideoService:
             "original_filename": original_filename,
             "user_id": user_id,
             "upload_type": upload_type,
+            "time_offset_seconds": time_offset_seconds,
         }
 
         # For clean_video uploads, generate download URLs for Excel files

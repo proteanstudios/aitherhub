@@ -46,6 +46,7 @@ export default function MainContent({
   // Clean video upload states
   const [uploadMode, setUploadMode] = useState(null); // null | 'screen_recording' | 'clean_video'
   const [cleanVideoFile, setCleanVideoFile] = useState(null);
+  const [cleanVideoFiles, setCleanVideoFiles] = useState([]); // multiple video files for batch upload
   const [productExcelFile, setProductExcelFile] = useState(null);
   const [trendExcelFile, setTrendExcelFile] = useState(null);
   const prevIsLoggedInRef = useRef(isLoggedIn);
@@ -126,6 +127,7 @@ export default function MainContent({
       setMessageType("");
       setUploadMode(null);
       setCleanVideoFile(null);
+      setCleanVideoFiles([]);
       setProductExcelFile(null);
       setTrendExcelFile(null);
       setDuplicateVideo(null);
@@ -209,7 +211,7 @@ export default function MainContent({
     setProgress(0);
   };
 
-  // Clean video file handlers
+  // Clean video file handlers (single file - legacy)
   const handleCleanVideoFileSelect = async (e) => {
     const file = e.target.files?.[0];
     if (file && file.type.startsWith("video/")) {
@@ -225,6 +227,27 @@ export default function MainContent({
     }
   };
 
+  // Multiple clean video files handler (batch upload)
+  const handleCleanVideoFilesSelect = (e) => {
+    const files = Array.from(e.target.files || []);
+    const videoFiles = files.filter(f => f.type.startsWith("video/"));
+    if (videoFiles.length > 0) {
+      // Sort by filename to maintain order (part1, part2, etc.)
+      videoFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      setCleanVideoFiles(videoFiles);
+      setCleanVideoFile(videoFiles[0]); // set first for compatibility
+      setDuplicateVideo(null);
+    }
+  };
+
+  const handleRemoveCleanVideoFile = (index) => {
+    setCleanVideoFiles(prev => {
+      const updated = prev.filter((_, i) => i !== index);
+      setCleanVideoFile(updated[0] || null);
+      return updated;
+    });
+  };
+
   const handleProductExcelSelect = (e) => {
     const file = e.target.files?.[0];
     if (file) setProductExcelFile(file);
@@ -236,38 +259,83 @@ export default function MainContent({
   };
 
   const handleCleanVideoUpload = async () => {
-    if (!isLoggedIn || !cleanVideoFile || !productExcelFile || !trendExcelFile || uploading) return;
+    const filesToUpload = cleanVideoFiles.length > 0 ? cleanVideoFiles : (cleanVideoFile ? [cleanVideoFile] : []);
+    if (!isLoggedIn || filesToUpload.length === 0 || !productExcelFile || !trendExcelFile || uploading) return;
 
     setUploading(true);
     setMessage("");
     setProgress(0);
 
     try {
-      const video_id = await UploadService.uploadCleanVideo(
-        cleanVideoFile,
-        productExcelFile,
-        trendExcelFile,
-        user.email,
-        (percentage) => {
-          setProgress(percentage);
-        },
-        ({ uploadId }) => {
-          const storageKey = buildResumeUploadStorageKey(user?.id, uploadId);
-          if (storageKey) {
-            activeResumeUploadStorageKeyRef.current = storageKey;
-            localStorage.setItem(storageKey, "active");
+      if (filesToUpload.length === 1) {
+        // Single video: use existing flow
+        const video_id = await UploadService.uploadCleanVideo(
+          filesToUpload[0],
+          productExcelFile,
+          trendExcelFile,
+          user.email,
+          (percentage) => {
+            setProgress(percentage);
+          },
+          ({ uploadId }) => {
+            const storageKey = buildResumeUploadStorageKey(user?.id, uploadId);
+            if (storageKey) {
+              activeResumeUploadStorageKeyRef.current = storageKey;
+              localStorage.setItem(storageKey, "active");
+            }
+          },
+        );
+        setMessageType("success");
+        setCleanVideoFile(null);
+        setCleanVideoFiles([]);
+        setProductExcelFile(null);
+        setTrendExcelFile(null);
+        setUploadMode(null);
+        setResumeUploadId(null);
+        setUploadedVideoId(video_id);
+        if (onUploadSuccess) {
+          onUploadSuccess(video_id);
+        }
+      } else {
+        // Multiple videos: use batch upload with auto time offsets
+        // Auto-calculate time offsets: we don't know durations upfront,
+        // so we set offset=0 for all and let the user optionally adjust.
+        // For now, offset is 0 for all (user can set manually if needed).
+        const videoItems = filesToUpload.map((file, idx) => ({
+          file,
+          timeOffsetSeconds: 0, // Will be enhanced later with duration detection
+        }));
+
+        const videoIds = await UploadService.batchUploadCleanVideos(
+          videoItems,
+          productExcelFile,
+          trendExcelFile,
+          user.email,
+          (percentage) => {
+            setProgress(percentage);
+          },
+          ({ uploadId }) => {
+            const storageKey = buildResumeUploadStorageKey(user?.id, uploadId);
+            if (storageKey) {
+              activeResumeUploadStorageKeyRef.current = storageKey;
+              localStorage.setItem(storageKey, "active");
+            }
+          },
+        );
+        setMessageType("success");
+        setCleanVideoFile(null);
+        setCleanVideoFiles([]);
+        setProductExcelFile(null);
+        setTrendExcelFile(null);
+        setUploadMode(null);
+        setResumeUploadId(null);
+        // Navigate to first video
+        if (videoIds.length > 0) {
+          setUploadedVideoId(videoIds[0]);
+          if (onUploadSuccess) {
+            onUploadSuccess(videoIds[0]);
           }
-        },
-      );
-      setMessageType("success");
-      setCleanVideoFile(null);
-      setProductExcelFile(null);
-      setTrendExcelFile(null);
-      setUploadMode(null);
-      setResumeUploadId(null);
-      setUploadedVideoId(video_id);
-      if (onUploadSuccess) {
-        onUploadSuccess(video_id);
+        }
       }
     } catch (error) {
       console.error('[Upload] Upload failed:', error);
@@ -286,6 +354,7 @@ export default function MainContent({
 
   const handleCancelCleanVideo = () => {
     setCleanVideoFile(null);
+    setCleanVideoFiles([]);
     setProductExcelFile(null);
     setTrendExcelFile(null);
     setDuplicateVideo(null);
@@ -1005,13 +1074,36 @@ export default function MainContent({
                             <div className="text-3xl">🎬</div>
                             <p className="text-gray-800 text-sm font-semibold">クリーン動画 + Excelデータ</p>
 
-                            {/* Clean Video File */}
+                            {/* Clean Video Files (multiple) */}
                             <div className="w-full">
-                              <label className="block text-left text-xs text-gray-400 mb-1">クリーン動画</label>
+                              <label className="block text-left text-xs text-gray-400 mb-1">クリーン動画（複数選択可）</label>
                               <label className="w-full h-[38px] flex items-center justify-center bg-gray-100 border border-gray-300 rounded-md text-sm text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors">
-                                {cleanVideoFile ? cleanVideoFile.name : "動画を選択"}
-                                <input type="file" accept="video/*" onChange={handleCleanVideoFileSelect} className="hidden" />
+                                {cleanVideoFiles.length > 1
+                                  ? `${cleanVideoFiles.length}本の動画を選択中`
+                                  : cleanVideoFile
+                                    ? cleanVideoFile.name
+                                    : "動画を選択"}
+                                <input type="file" accept="video/*" multiple onChange={handleCleanVideoFilesSelect} className="hidden" />
                               </label>
+                              {/* Show file list when multiple files selected */}
+                              {cleanVideoFiles.length > 1 && (
+                                <div className="mt-2 space-y-1 max-h-[120px] overflow-y-auto">
+                                  {cleanVideoFiles.map((f, idx) => (
+                                    <div key={idx} className="flex items-center justify-between bg-white border border-gray-200 rounded px-2 py-1 text-xs">
+                                      <span className="text-gray-700 truncate flex-1 text-left">
+                                        {idx + 1}. {f.name}
+                                        <span className="text-gray-400 ml-1">({(f.size / 1024 / 1024).toFixed(0)}MB)</span>
+                                      </span>
+                                      <button
+                                        onClick={() => handleRemoveCleanVideoFile(idx)}
+                                        className="ml-2 text-red-400 hover:text-red-600 text-xs flex-shrink-0"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
 
                             {/* Product Excel */}
@@ -1032,13 +1124,19 @@ export default function MainContent({
                               </label>
                             </div>
 
+                            {cleanVideoFiles.length > 1 && (
+                              <p className="text-xs text-gray-400">
+                                同じExcelデータが全{cleanVideoFiles.length}本の動画に適用されます
+                              </p>
+                            )}
+
                             <div className="flex gap-2 pt-2">
                               <button
                                 onClick={handleCleanVideoUpload}
-                                disabled={uploading || !cleanVideoFile || !productExcelFile || !trendExcelFile}
+                                disabled={uploading || (!cleanVideoFile && cleanVideoFiles.length === 0) || !productExcelFile || !trendExcelFile}
                                 className="w-[143px] h-[41px] flex items-center justify-center bg-white text-[#7D01FF] border border-[#7D01FF] rounded-md leading-[28px] cursor-pointer hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                アップロード
+                                {cleanVideoFiles.length > 1 ? `${cleanVideoFiles.length}本アップロード` : 'アップロード'}
                               </button>
                               <button
                                 onClick={handleCancelCleanVideo}

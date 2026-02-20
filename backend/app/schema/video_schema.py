@@ -85,6 +85,7 @@ class UploadCompleteRequest(BaseModel):
     upload_type: Optional[str] = "screen_recording"  # 'screen_recording' or 'clean_video'
     excel_product_blob_url: Optional[str] = None
     excel_trend_blob_url: Optional[str] = None
+    time_offset_seconds: Optional[float] = 0  # offset within CSV timeline (seconds)
 
     class Config:
         schema_extra = {
@@ -93,7 +94,8 @@ class UploadCompleteRequest(BaseModel):
                 "video_id": "550e8400-e29b-41d4-a716-446655440000",
                 "filename": "my_video.mp4",
                 "upload_id": "550e8400-e29b-41d4-a716-446655440001",
-                "upload_type": "screen_recording"
+                "upload_type": "screen_recording",
+                "time_offset_seconds": 0
             }
         }
 
@@ -157,6 +159,42 @@ class RenameVideoResponse(BaseModel):
 class DeleteVideoResponse(BaseModel):
     """Response schema for deleting a video"""
     id: str
+    message: str
+
+
+class BatchVideoItem(BaseModel):
+    """A single video in a batch upload"""
+    video_id: str
+    filename: str
+    upload_id: Optional[str] = None
+    time_offset_seconds: Optional[float] = 0  # offset within CSV timeline (seconds)
+
+
+class BatchUploadCompleteRequest(BaseModel):
+    """Request schema for batch upload completion (multiple videos sharing same Excel)"""
+    email: str
+    videos: List[BatchVideoItem]
+    excel_product_blob_url: Optional[str] = None
+    excel_trend_blob_url: Optional[str] = None
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "email": "user@example.com",
+                "videos": [
+                    {"video_id": "id-1", "filename": "part1.mp4", "time_offset_seconds": 0},
+                    {"video_id": "id-2", "filename": "part2.mp4", "time_offset_seconds": 36000},
+                ],
+                "excel_product_blob_url": "https://...",
+                "excel_trend_blob_url": "https://..."
+            }
+        }
+
+
+class BatchUploadCompleteResponse(BaseModel):
+    """Response schema for batch upload completion"""
+    video_ids: List[str]
+    status: str
     message: str
 
 

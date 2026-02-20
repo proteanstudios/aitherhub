@@ -9,6 +9,7 @@ export const URL_CONSTANTS = {
   GENERATE_UPLOAD_URL: "/api/v1/videos/generate-upload-url",
   GENERATE_EXCEL_UPLOAD_URL: "/api/v1/videos/generate-excel-upload-url",
   UPLOAD_COMPLETE: "/api/v1/videos/upload-complete",
+  BATCH_UPLOAD_COMPLETE: "/api/v1/videos/batch-upload-complete",
   UPLOAD_RESUME_CHECK: "/api/v1/videos/uploads/check",
   UPLOADS_CLEAR: "/api/v1/videos/uploads/clear",
   GET_USER_VIDEOS: "/api/v1/videos/user",

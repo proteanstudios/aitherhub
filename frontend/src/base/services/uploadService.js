@@ -493,6 +493,102 @@ class UploadService extends BaseApiService {
     if (onProgress) onProgress(100);
     return video_id;
   }
+
+  /**
+   * Batch upload multiple clean videos sharing the same Excel files.
+   * @param {Array<{file: File, timeOffsetSeconds: number}>} videoItems - Video files with time offsets
+   * @param {File} productExcel - Product Excel file
+   * @param {File} trendExcel - Trend stats Excel file
+   * @param {string} email - User email
+   * @param {Function} onProgress - Callback for overall progress (0-100)
+   * @param {Function} onUploadInit - Callback when first upload is initialized
+   * @returns {Promise<string[]>} - array of video_ids
+   */
+  async batchUploadCleanVideos(videoItems, productExcel, trendExcel, email, onProgress, onUploadInit) {
+    const totalVideos = videoItems.length;
+    // Progress allocation: videos 0-75%, excel 75-90%, completion 90-100%
+    const videoProgressShare = 75;
+    const excelProgressShare = 15;
+
+    // Step 1: Upload all videos to Azure
+    const uploadedVideos = [];
+    for (let i = 0; i < totalVideos; i++) {
+      const { file, timeOffsetSeconds } = videoItems[i];
+      const { video_id, upload_id, upload_url } = await this.generateUploadUrl(email, file.name);
+
+      if (i === 0 && onUploadInit) {
+        onUploadInit({ uploadId: upload_id, videoId: video_id });
+      }
+
+      await this.saveUploadMetadata({
+        uploadId: upload_id,
+        uploadUrl: upload_url,
+        videoId: video_id,
+        fileName: file.name,
+        fileSize: file.size,
+        blockIds: [],
+        uploadedBlocks: [],
+        contentType: 'video/mp4',
+        timestamp: Date.now(),
+      });
+
+      const baseProgress = (i / totalVideos) * videoProgressShare;
+      const perVideoShare = videoProgressShare / totalVideos;
+
+      await this.uploadToAzure(file, upload_url, upload_id, (percentage) => {
+        const overall = baseProgress + (percentage / 100) * perVideoShare;
+        if (onProgress) onProgress(Math.round(overall));
+      });
+
+      uploadedVideos.push({ video_id, upload_id, filename: file.name, timeOffsetSeconds });
+    }
+
+    // Step 2: Upload Excel files (shared across all videos, use first video_id)
+    let product_blob_url = null;
+    let trend_blob_url = null;
+
+    if (productExcel && trendExcel && uploadedVideos.length > 0) {
+      if (onProgress) onProgress(videoProgressShare + 2);
+      const excelUrls = await this.generateExcelUploadUrls(
+        email,
+        uploadedVideos[0].video_id,
+        productExcel.name,
+        trendExcel.name
+      );
+
+      if (onProgress) onProgress(videoProgressShare + 5);
+      await this.uploadExcelToAzure(productExcel, excelUrls.product_upload_url);
+      product_blob_url = excelUrls.product_blob_url;
+
+      if (onProgress) onProgress(videoProgressShare + 10);
+      await this.uploadExcelToAzure(trendExcel, excelUrls.trend_upload_url);
+      trend_blob_url = excelUrls.trend_blob_url;
+
+      if (onProgress) onProgress(videoProgressShare + excelProgressShare);
+    }
+
+    // Step 3: Notify backend with batch-upload-complete
+    const batchPayload = {
+      email,
+      videos: uploadedVideos.map(v => ({
+        video_id: v.video_id,
+        filename: v.filename,
+        upload_id: v.upload_id,
+        time_offset_seconds: v.timeOffsetSeconds || 0,
+      })),
+      excel_product_blob_url: product_blob_url,
+      excel_trend_blob_url: trend_blob_url,
+    };
+
+    await this.retryWithBackoff(
+      () => this.post(URL_CONSTANTS.BATCH_UPLOAD_COMPLETE, batchPayload),
+      MAX_RETRIES,
+      'batchUploadComplete'
+    );
+
+    if (onProgress) onProgress(100);
+    return uploadedVideos.map(v => v.video_id);
+  }
 }
 
 export default new UploadService();

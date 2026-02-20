@@ -24,6 +24,7 @@ class VideoRepository(BaseRepository):
         upload_type: str = "screen_recording",
         excel_product_blob_url: Optional[str] = None,
         excel_trend_blob_url: Optional[str] = None,
+        time_offset_seconds: float = 0,
     ) -> Video:
         """Create a new video record"""
         session = self.session_factory()
@@ -36,6 +37,7 @@ class VideoRepository(BaseRepository):
                 upload_type=upload_type,
                 excel_product_blob_url=excel_product_blob_url,
                 excel_trend_blob_url=excel_trend_blob_url,
+                time_offset_seconds=time_offset_seconds,
             )
             session.add(video)
             await session.commit()

@@ -356,10 +356,13 @@ def main():
         # LOAD EXCEL DATA (if clean video)
         # =========================
         excel_data = None
+        time_offset_seconds = 0
         try:
             excel_urls = get_video_excel_urls_sync(video_id)
             if excel_urls and excel_urls.get("upload_type") == "clean_video":
                 logger.info("[EXCEL] Clean video detected, loading Excel data...")
+                time_offset_seconds = excel_urls.get("time_offset_seconds", 0)
+                logger.info("[EXCEL] Time offset for this video: %.1f seconds", time_offset_seconds)
                 excel_data = load_excel_data(video_id, excel_urls)
                 logger.info(
                     "[EXCEL] Loaded: %d products, %d trend entries",
@@ -536,6 +539,7 @@ def main():
                     trends=excel_data["trends"],
                     keyframes=keyframes,
                     total_frames=total_frames,
+                    video_start_time_sec=time_offset_seconds if time_offset_seconds else None,
                 )
                 logger.info("[STEP2] CSV-based stats built for %d phases (0 API calls)", len(phase_stats))
             else:
@@ -659,7 +663,12 @@ def main():
                         timed_entries.append({"time_sec": t_sec, "entry": entry})
                 timed_entries.sort(key=lambda x: x["time_sec"])
 
-            video_start_sec = timed_entries[0]["time_sec"] if timed_entries else 0
+            # video_start_sec: CSVの最初のタイムスタンプ
+            # time_offset_seconds: この動画がCSVタイムライン内のどこから始まるか
+            csv_first_sec = timed_entries[0]["time_sec"] if timed_entries else 0
+            video_start_sec = csv_first_sec + time_offset_seconds
+            logger.info("[CSV_METRICS] csv_first=%s, time_offset=%s, video_start=%s",
+                        csv_first_sec, time_offset_seconds, video_start_sec)
 
             # スコア付きスロットをtime_secでインデックス化
             score_map = {s["time_sec"]: s["score"] for s in scored_slots}
@@ -669,8 +678,10 @@ def main():
                 start_sec = tr.get("start_sec", 0)
                 end_sec = tr.get("end_sec", 0)
 
-                # 従来のsales_dataマッチ
-                sales_info = match_sales_to_phase(trends, start_sec, end_sec)
+                # 従来のsales_dataマッチ（time_offsetを加算してCSVタイムラインに合わせる）
+                offset_start = start_sec + time_offset_seconds
+                offset_end = end_sec + time_offset_seconds
+                sales_info = match_sales_to_phase(trends, offset_start, offset_end)
                 p["sales_data"] = sales_info
 
                 # CSVの該当タイムスロットを見つけて指標を取得
