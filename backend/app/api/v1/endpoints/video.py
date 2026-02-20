@@ -330,7 +330,8 @@ async def get_videos_by_user_with_clips(
                    COALESCE(c.completed_count, 0) as completed_clip_count,
                    p.total_gmv,
                    p.max_time_end,
-                   COALESCE(m.memo_count, 0) as memo_count
+                   COALESCE(m.memo_count, 0) as memo_count,
+                   v.top_products as top_products_json
             FROM videos v
             LEFT JOIN (
                 SELECT video_id,
@@ -360,50 +361,18 @@ async def get_videos_by_user_with_clips(
         result = await db.execute(sql, {"user_id": user_id})
         rows = result.fetchall()
 
-        video_ids = [str(r.id) for r in rows]
-
-        # Fetch top 2 products per video (by GMV) in a single batch query
-        top_products_map = {}  # video_id -> [product_name, ...]
-        if video_ids:
-            products_sql = text("""
-                SELECT video_id, product_names, gmv
-                FROM video_phases
-                WHERE video_id = ANY(:video_ids::uuid[])
-                  AND product_names IS NOT NULL
-                  AND product_names != ''
-                  AND product_names != '[]'
-                  AND gmv > 0
-                ORDER BY gmv DESC
-            """)
-            prod_result = await db.execute(products_sql, {"video_ids": video_ids})
-            prod_rows = prod_result.fetchall()
-
-            import json as _json
-            for pr in prod_rows:
-                vid = str(pr.video_id)
-                if vid not in top_products_map:
-                    top_products_map[vid] = {}
-                try:
-                    names = _json.loads(pr.product_names) if pr.product_names else []
-                except (ValueError, TypeError):
-                    names = []
-                for name in names:
-                    name = name.strip() if isinstance(name, str) else str(name)
-                    if name and name not in top_products_map[vid]:
-                        top_products_map[vid][name] = float(pr.gmv or 0)
-
-            # For each video, sort products by GMV and take top 2
-            for vid in top_products_map:
-                sorted_products = sorted(
-                    top_products_map[vid].items(),
-                    key=lambda x: x[1],
-                    reverse=True
-                )
-                top_products_map[vid] = [p[0] for p in sorted_products[:2]]
+        import json as _json
 
         videos = []
         for row in rows:
             vid = str(row.id)
+            # Parse cached top_products from videos table
+            top_prods = []
+            if row.top_products_json:
+                try:
+                    top_prods = _json.loads(row.top_products_json)
+                except (ValueError, TypeError):
+                    top_prods = []
             videos.append({
                 "id": vid,
                 "original_filename": row.original_filename,
@@ -416,7 +385,7 @@ async def get_videos_by_user_with_clips(
                 "total_gmv": float(row.total_gmv) if row.total_gmv and float(row.total_gmv) > 0 else None,
                 "stream_duration": float(row.max_time_end) if row.max_time_end else None,
                 "memo_count": row.memo_count,
-                "top_products": top_products_map.get(vid, []),
+                "top_products": top_prods,
             })
 
         return videos
@@ -997,6 +966,43 @@ async def get_video_product_data(
                 products = await _parse_excel(product_blob_url)
                 response_data["products"] = products
                 response_data["has_product_data"] = len(products) > 0
+
+                # Cache top 2 products by GMV in videos table
+                if products:
+                    try:
+                        # Detect GMV and name columns
+                        gmv_key = None
+                        name_key = None
+                        sample = products[0]
+                        for k in sample.keys():
+                            kl = k.lower() if k else ""
+                            if "gmv" in kl:
+                                gmv_key = k
+                            if "商品名" in k or "product" in kl or "name" in kl:
+                                name_key = k
+                        if gmv_key and name_key:
+                            sorted_products = sorted(
+                                products,
+                                key=lambda x: float(x.get(gmv_key, 0) or 0),
+                                reverse=True,
+                            )
+                            top2 = []
+                            for p in sorted_products[:2]:
+                                pname = p.get(name_key, "")
+                                if pname:
+                                    # Truncate long product names
+                                    pname = str(pname)[:50]
+                                    top2.append(pname)
+                            if top2:
+                                import json as _json
+                                await db.execute(
+                                    text("UPDATE videos SET top_products = :tp WHERE id = :vid"),
+                                    {"tp": _json.dumps(top2, ensure_ascii=False), "vid": video_id},
+                                )
+                                await db.commit()
+                                logger.info(f"Cached top_products for video {video_id}: {top2}")
+                    except Exception as cache_err:
+                        logger.warning(f"Failed to cache top_products: {cache_err}")
             except Exception as e:
                 logger.warning(f"Failed to parse product Excel: {e}")
 
