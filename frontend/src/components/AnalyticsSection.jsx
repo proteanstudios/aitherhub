@@ -390,23 +390,29 @@ export default function AnalyticsSection({ reports1, videoData }) {
     const products = excelData.products;
     const keys = Object.keys(products[0] || {});
 
-    // Detect column names
-    const nameKey = keys.find(k => /商品名|product_name|name|商品/.test(k.toLowerCase())) || keys[0];
-    const priceKey = keys.find(k => /価格|price|单价|金额/.test(k.toLowerCase()));
+    // Detect column names (order matters: exact match first, then fuzzy)
+    const nameKey = keys.find(k => k === '商品名') 
+      || keys.find(k => /product_name|name/i.test(k) && !/id/i.test(k))
+      || keys.find(k => /商品名/.test(k))
+      || keys.find(k => /商品/.test(k) && !/ID|id|ＩＤ/.test(k))
+      || keys[1] || keys[0];
+    const priceKey = keys.find(k => /価格|price|单价|金額/.test(k.toLowerCase()));
     const quantityKey = keys.find(k => /数量|quantity|qty|販売数/.test(k.toLowerCase()));
-    const revenueKey = keys.find(k => /売上|revenue|gmv|销售额|金额/.test(k.toLowerCase()));
+    const revenueKey = keys.find(k => /^GMV$/i.test(k))
+      || keys.find(k => /売上|revenue|gmv|销售额|金額/.test(k.toLowerCase()));
     const categoryKey = keys.find(k => /カテゴリ|category|分類/.test(k.toLowerCase()));
 
     // Get all display columns (exclude internal ones)
     const displayKeys = keys.filter(k => k && !k.startsWith("col_"));
 
-    // Sort items by GMV/revenue descending
+    // Sort items by GMV/revenue descending (handle string numbers)
+    const parseNum = (v) => {
+      if (typeof v === 'number') return v;
+      if (typeof v === 'string') { const n = parseFloat(v.replace(/,/g, '')); return isNaN(n) ? 0 : n; }
+      return 0;
+    };
     const sortedItems = revenueKey
-      ? [...products].sort((a, b) => {
-          const aVal = typeof a[revenueKey] === 'number' ? a[revenueKey] : 0;
-          const bVal = typeof b[revenueKey] === 'number' ? b[revenueKey] : 0;
-          return bVal - aVal;
-        })
+      ? [...products].sort((a, b) => parseNum(b[revenueKey]) - parseNum(a[revenueKey]))
       : products;
 
     return {
@@ -587,8 +593,9 @@ export default function AnalyticsSection({ reports1, videoData }) {
                         </div>
                         <div className="space-y-2">
                           {excelProducts.top5.map((product, i) => {
-                            const gmvVal = typeof product[excelProducts.revenueKey] === 'number' ? product[excelProducts.revenueKey] : 0;
-                            const maxGmv = typeof excelProducts.top5[0]?.[excelProducts.revenueKey] === 'number' ? excelProducts.top5[0][excelProducts.revenueKey] : 1;
+                            const parseNum = (v) => { if (typeof v === 'number') return v; if (typeof v === 'string') { const n = parseFloat(v.replace(/,/g, '')); return isNaN(n) ? 0 : n; } return 0; };
+                            const gmvVal = parseNum(product[excelProducts.revenueKey]);
+                            const maxGmv = parseNum(excelProducts.top5[0]?.[excelProducts.revenueKey]) || 1;
                             const barWidth = maxGmv > 0 ? Math.max((gmvVal / maxGmv) * 100, 8) : 8;
                             const rankColors = [
                               'from-amber-400 to-amber-500',
