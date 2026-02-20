@@ -39,12 +39,12 @@ class AppCreator:
         @self.app.on_event("startup")
         async def run_safe_migrations():
             """Add missing columns to database tables (idempotent, safe to run repeatedly)."""
-            from app.core.database import get_db
             try:
-                async for db in get_db():
-                    from sqlalchemy import text
+                from app.core.db import get_db
+                from sqlalchemy import text
+                async for session in get_db():
                     # Add compressed_blob_url column if it doesn't exist
-                    await db.execute(text("""
+                    await session.execute(text("""
                         DO $$
                         BEGIN
                             IF NOT EXISTS (
@@ -55,7 +55,7 @@ class AppCreator:
                             END IF;
                         END $$;
                     """))
-                    await db.commit()
+                    await session.commit()
                     logger.info("Safe migration check completed: compressed_blob_url column ensured")
             except Exception as e:
                 logger.warning(f"Safe migration check failed (non-fatal): {e}")
