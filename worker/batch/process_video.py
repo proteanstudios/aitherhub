@@ -260,12 +260,30 @@ def _resolve_inputs(args) -> tuple[str, str]:
     _ensure_dir(local_dir)
     local_path = os.path.join(local_dir, f"{video_id}.mp4")
 
+    # Check if local file exists AND is non-empty (0-byte files are invalid)
     if os.path.exists(local_path):
-        return local_path, video_id
+        file_size = os.path.getsize(local_path)
+        if file_size > 0:
+            logger.info(f"[DL] Local file exists: {local_path} ({file_size} bytes)")
+            return local_path, video_id
+        else:
+            logger.warning(f"[DL] Local file is 0 bytes, will re-download: {local_path}")
+            os.remove(local_path)
 
     if blob_url:
         logger.info(f"[DL] Downloading video from blob: {blob_url}")
         _download_blob(blob_url, local_path)
+        # Verify downloaded file is not empty
+        if os.path.exists(local_path):
+            file_size = os.path.getsize(local_path)
+            if file_size == 0:
+                logger.error(f"[DL] Downloaded file is 0 bytes! Blob may be empty: {local_path}")
+                raise RuntimeError(
+                    f"Downloaded video file is 0 bytes. "
+                    f"The video may not have been uploaded correctly to Blob Storage. "
+                    f"video_id={video_id}"
+                )
+            logger.info(f"[DL] Download complete: {local_path} ({file_size} bytes, {file_size/(1024**3):.2f} GB)")
         return local_path, video_id
 
     raise FileNotFoundError("No local video and no blob_url provided.")

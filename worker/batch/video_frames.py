@@ -3,7 +3,10 @@ import os
 import cv2
 import numpy as np
 import subprocess
+import logging
 from decouple import config
+
+logger = logging.getLogger("video_frames")
 
 
 def env(key, default=None):
@@ -343,6 +346,16 @@ def pick_representative_frames(model, phases, total_frames, frame_dir, max_sampl
 def detect_phases(frame_dir: str, model):
     files = sorted(os.listdir(frame_dir))
     total_frames = len(files)
+
+    if total_frames == 0:
+        raise ValueError(
+            f"No frames found in {frame_dir}. "
+            f"The video file may be empty or corrupted."
+        )
+    if total_frames < 2:
+        # Need at least 2 frames to compute differences
+        logger.warning(f"Only {total_frames} frame(s) in {frame_dir}, returning single phase")
+        return [0], [0], total_frames
 
     hist_scores, absdiff_scores = compute_raw_scores(frame_dir)
     peaks = detect_candidates(hist_scores, absdiff_scores)

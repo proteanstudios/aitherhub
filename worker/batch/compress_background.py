@@ -79,6 +79,13 @@ def main():
         logger.error("Video file not found: %s", video_path)
         sys.exit(1)
 
+    file_size = os.path.getsize(video_path)
+    if file_size == 0:
+        logger.error("Video file is 0 bytes, skipping compression: %s", video_path)
+        return
+
+    logger.info("Video file size: %.2f GB", file_size / (1024 ** 3))
+
     if not needs_compression(video_path):
         logger.info("Compression not needed (already <= 1080p and < 2GB)")
         return
