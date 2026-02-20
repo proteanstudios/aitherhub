@@ -584,11 +584,15 @@ async def get_video_detail(
         }
     """
     try:
+        import time as _time
+        _t0 = _time.monotonic()
         # verify video exists and ownership
         video_repo = VideoRepository(lambda: db)
         video = await video_repo.get_video_by_id(video_id)
         if not video:
             raise HTTPException(status_code=404, detail="Video not found")
+        _t1 = _time.monotonic()
+        logger.info(f"[PERF] get_video_by_id: {(_t1-_t0)*1000:.0f}ms")
 
         if current_user and current_user.get("id") != video.user_id:
             raise HTTPException(status_code=403, detail="Forbidden")
@@ -601,8 +605,11 @@ async def get_video_detail(
             ORDER BY phase_index ASC
         """)
 
+        _t2 = _time.monotonic()
         res = await db.execute(sql_insights, {"video_id": video_id})
         insight_rows = res.fetchall()
+        _t3 = _time.monotonic()
+        logger.info(f"[PERF] phase_insights query: {(_t3-_t2)*1000:.0f}ms, rows={len(insight_rows)}")
 
         # load video_phases (to get phase_description, time_start, time_end)
         # Try with product_names column first, fall back without it
@@ -644,6 +651,7 @@ async def get_video_detail(
             WHERE video_id = :video_id
         """)
 
+        _t4 = _time.monotonic()
         has_product_names = False
         try:
             pres = await db.execute(sql_phases_with_pn, {"video_id": video_id})
@@ -653,6 +661,8 @@ async def get_video_detail(
             await db.rollback()
             pres = await db.execute(sql_phases_without_pn, {"video_id": video_id})
             phase_rows = pres.fetchall()
+        _t5 = _time.monotonic()
+        logger.info(f"[PERF] video_phases query: {(_t5-_t4)*1000:.0f}ms, rows={len(phase_rows)}")
 
         phase_map = {}
         for r in phase_rows:
@@ -734,6 +744,8 @@ async def get_video_detail(
             except Exception:
                 clip_url_map[r.phase_index] = None
 
+        _t6 = _time.monotonic()
+        logger.info(f"[PERF] SAS cache check: {(_t6-_t5)*1000:.0f}ms, need_gen={len(phases_needing_sas)}, cached={len(clip_url_map)}")
         # Batch generate SAS URLs for phases that need them
         if phases_needing_sas and email:
             async def _gen_sas(phase_idx, fname, phase_id):
@@ -779,6 +791,8 @@ async def get_video_detail(
                 except Exception:
                     pass  # Non-critical: caching failure doesn't break the response
 
+        _t7 = _time.monotonic()
+        logger.info(f"[PERF] SAS batch gen+update: {(_t7-_t6)*1000:.0f}ms")
         # Build report1_items
         for r in insight_rows:
             pm = phase_map.get(r.phase_index, {})
@@ -886,6 +900,8 @@ async def get_video_detail(
             except Exception:
                 preview_url = None
 
+        _t_end = _time.monotonic()
+        logger.info(f"[PERF] TOTAL get_video_detail: {(_t_end-_t0)*1000:.0f}ms")
         return {
             "id": str(video.id),
             "original_filename": video.original_filename,
