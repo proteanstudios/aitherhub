@@ -22,6 +22,7 @@ Usage:
 import os
 import sys
 import json
+import re
 import random
 import argparse
 import logging
@@ -208,30 +209,42 @@ def download_video(blob_url: str, dest_path: str):
 # =========================
 
 def cut_segment(input_path: str, output_path: str, start_sec: float, end_sec: float) -> bool:
-    """Cut a segment from the video with audio."""
+    """Cut a segment from the video with audio.
+    
+    IMPORTANT: Uses -ss AFTER -i for frame-accurate seeking, and always re-encodes
+    to ensure audio and video are perfectly synchronized. Using -ss before -i with
+    -c copy causes audio/video desync because video seeks to nearest keyframe while
+    audio seeks to exact position.
+    """
     duration = end_sec - start_sec
     if duration <= 0:
         return False
 
+    # Always re-encode with -ss after -i for frame-accurate cut
+    # This ensures audio and video start at exactly the same point
     cmd = [
         FFMPEG_BIN, "-y",
-        "-ss", str(start_sec),
         "-i", input_path,
+        "-ss", str(start_sec),
         "-t", str(duration),
-        "-c", "copy",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+        "-c:a", "aac", "-b:a", "128k",
         "-movflags", "+faststart",
         output_path,
     ]
 
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=300)
+        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=600)
         return True
-    except subprocess.CalledProcessError:
-        # Fallback: re-encode
-        cmd_reencode = [
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to cut segment: {e}")
+        # Fallback: try with -ss before -i for faster seeking on very long videos,
+        # but still re-encode to maintain sync
+        cmd_fallback = [
             FFMPEG_BIN, "-y",
-            "-ss", str(start_sec),
+            "-ss", str(max(0, start_sec - 5)),  # Seek 5s before for keyframe
             "-i", input_path,
+            "-ss", "5" if start_sec >= 5 else str(start_sec),  # Fine-tune position
             "-t", str(duration),
             "-c:v", "libx264", "-preset", "fast", "-crf", "23",
             "-c:a", "aac", "-b:a", "128k",
@@ -239,10 +252,10 @@ def cut_segment(input_path: str, output_path: str, start_sec: float, end_sec: fl
             output_path,
         ]
         try:
-            subprocess.run(cmd_reencode, check=True, capture_output=True, text=True, timeout=600)
+            subprocess.run(cmd_fallback, check=True, capture_output=True, text=True, timeout=600)
             return True
-        except Exception as e:
-            logger.error(f"Failed to cut segment: {e}")
+        except Exception as e2:
+            logger.error(f"Fallback cut also failed: {e2}")
             return False
 
 
@@ -816,6 +829,127 @@ def create_vertical_clip_nosub(
 
 
 # =========================
+# Silence detection + removal
+# =========================
+
+def detect_silence_intervals(video_path: str, noise_threshold: str = "-35dB", min_silence_duration: float = 0.8) -> list:
+    """
+    Detect silent intervals in a video using ffmpeg silencedetect filter.
+    Returns list of (start_sec, end_sec) tuples representing silent intervals.
+    
+    Args:
+        video_path: Path to the video file
+        noise_threshold: Noise level threshold (dB). Audio below this is considered silence.
+        min_silence_duration: Minimum duration (seconds) of silence to detect.
+    """
+    cmd = [
+        FFMPEG_BIN, "-y",
+        "-i", video_path,
+        "-af", f"silencedetect=noise={noise_threshold}:d={min_silence_duration}",
+        "-f", "null", "-",
+    ]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        stderr = result.stderr
+    except Exception as e:
+        logger.error(f"Silence detection failed: {e}")
+        return []
+
+    # Parse silencedetect output from stderr
+    # Format: [silencedetect @ ...] silence_start: 1.234
+    #         [silencedetect @ ...] silence_end: 5.678 | silence_duration: 4.444
+    silence_starts = re.findall(r"silence_start:\s*([\d.]+)", stderr)
+    silence_ends = re.findall(r"silence_end:\s*([\d.]+)", stderr)
+
+    intervals = []
+    for i in range(min(len(silence_starts), len(silence_ends))):
+        start = float(silence_starts[i])
+        end = float(silence_ends[i])
+        if end - start >= min_silence_duration:
+            intervals.append((start, end))
+
+    # Handle case where silence extends to end of file (no silence_end)
+    if len(silence_starts) > len(silence_ends):
+        # Get video duration
+        try:
+            probe_cmd = [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                video_path,
+            ]
+            probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=30)
+            video_duration = float(probe_result.stdout.strip())
+            start = float(silence_starts[-1])
+            if video_duration - start >= min_silence_duration:
+                intervals.append((start, video_duration))
+        except Exception:
+            pass
+
+    logger.info(f"Detected {len(intervals)} silent intervals: {intervals}")
+    return intervals
+
+
+def remove_silence_from_video(video_path: str, output_path: str, silence_intervals: list, min_keep: float = 0.3) -> bool:
+    """
+    Remove silent intervals from video by keeping only non-silent parts.
+    Keeps a small buffer (min_keep seconds) at silence boundaries for natural transitions.
+    
+    Args:
+        video_path: Input video path
+        output_path: Output video path
+        silence_intervals: List of (start, end) tuples of silent intervals
+        min_keep: Buffer in seconds to keep at silence boundaries
+    """
+    if not silence_intervals:
+        return False
+
+    # Get video duration
+    try:
+        probe_cmd = [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            video_path,
+        ]
+        probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=30)
+        video_duration = float(probe_result.stdout.strip())
+    except Exception as e:
+        logger.error(f"Failed to get video duration: {e}")
+        return False
+
+    # Build non-silent intervals (inverse of silence intervals with buffer)
+    non_silent = []
+    prev_end = 0.0
+
+    for s_start, s_end in sorted(silence_intervals):
+        # Add buffer: keep min_keep seconds into the silence
+        keep_end = s_start + min_keep
+        keep_start = s_end - min_keep
+
+        if keep_end > prev_end:
+            non_silent.append((prev_end, keep_end))
+        prev_end = max(prev_end, keep_start)
+
+    # Add remaining part after last silence
+    if prev_end < video_duration:
+        non_silent.append((prev_end, video_duration))
+
+    # Filter out very short intervals
+    non_silent = [(s, e) for s, e in non_silent if e - s >= 0.3]
+
+    if not non_silent:
+        logger.warning("No non-silent intervals found, keeping original")
+        return False
+
+    logger.info(f"Keeping {len(non_silent)} non-silent intervals (total: {sum(e-s for s,e in non_silent):.1f}s)")
+
+    # Use concatenate_intervals to join non-silent parts
+    return concatenate_intervals(video_path, non_silent, output_path)
+
+
+# =========================
 # Main pipeline
 # =========================
 
@@ -863,6 +997,20 @@ def generate_clip(clip_id: str, video_id: str, blob_url: str, time_start: float,
                     logger.warning("Failed to filter person intervals, using original segment")
         else:
             logger.info("Person detection not available, using original segment")
+
+        # 2.7. Silence detection: remove silent intervals (coughing, dead air, etc.)
+        logger.info("Running silence detection...")
+        silence_intervals = detect_silence_intervals(segment_path, noise_threshold="-35dB", min_silence_duration=0.8)
+        if silence_intervals:
+            desilenced_path = os.path.join(work_dir, "segment_desilenced.mp4")
+            if remove_silence_from_video(segment_path, desilenced_path, silence_intervals):
+                removed_duration = sum(e - s for s, e in silence_intervals)
+                logger.info(f"Removed {removed_duration:.1f}s of silence from segment")
+                segment_path = desilenced_path  # Use desilenced version
+            else:
+                logger.warning("Failed to remove silence, using segment as-is")
+        else:
+            logger.info("No significant silence detected")
 
         # 3. Extract audio and transcribe
         audio_path = os.path.join(work_dir, "audio.wav")
