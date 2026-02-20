@@ -901,7 +901,17 @@ async def get_video_detail(
                 preview_url = None
 
         _t_end = _time.monotonic()
-        logger.info(f"[PERF] TOTAL get_video_detail: {(_t_end-_t0)*1000:.0f}ms")
+        _perf = {
+            "get_video_by_id_ms": round((_t1-_t0)*1000),
+            "phase_insights_query_ms": round((_t3-_t2)*1000),
+            "video_phases_query_ms": round((_t5-_t4)*1000),
+            "sas_cache_check_ms": round((_t6-_t5)*1000),
+            "sas_batch_gen_ms": round((_t7-_t6)*1000),
+            "total_ms": round((_t_end-_t0)*1000),
+            "phases_needing_sas": len(phases_needing_sas),
+            "phases_cached": len(clip_url_map) - len(phases_needing_sas),
+        }
+        logger.info(f"[PERF] {_perf}")
         return {
             "id": str(video.id),
             "original_filename": video.original_filename,
@@ -913,6 +923,7 @@ async def get_video_detail(
             "preview_url": preview_url,
             "reports_1": report1_items,
             "report3": report3,
+            "_perf": _perf,
         }
     except HTTPException:
         raise
