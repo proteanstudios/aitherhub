@@ -36,14 +36,65 @@ export default class BaseApiService {
       }, 0);
     };
 
+    /**
+     * Attempt to refresh the access token using the refresh token.
+     * Returns the new access token on success, or null on failure.
+     */
+    const tryRefreshToken = async () => {
+      const refreshToken = TokenManager.getRefreshToken();
+      if (!refreshToken || TokenManager.isTokenExpired(refreshToken)) {
+        return null;
+      }
+      try {
+        const response = await axios.post(baseURL + "/api/v1/auth/refresh", {
+          refresh_token: refreshToken,
+        });
+        const { token, refreshToken: newRefreshToken } = response.data;
+        const tokenStored = TokenManager.setToken(token);
+        if (newRefreshToken) {
+          TokenManager.setRefreshToken(newRefreshToken);
+        }
+        return tokenStored ? token : null;
+      } catch (e) {
+        console.warn('[BaseApiService] Token refresh failed:', e.message);
+        return null;
+      }
+    };
+
     this.client.interceptors.request.use(
-      (config) => {
-        const token = TokenManager.getToken();
-        if (token) {
-          if (!TokenManager.isTokenExpired(token)) {
-            config.headers.Authorization = "Bearer " + token;
+      async (config) => {
+        // Skip auth header for auth endpoints (login, register, refresh)
+        const requestUrl = config.url || '';
+        if (isAuthEndpoint(requestUrl)) {
+          return config;
+        }
+
+        let token = TokenManager.getToken();
+
+        if (token && TokenManager.isTokenExpired(token)) {
+          // Access token expired – try to refresh proactively
+          console.info('[BaseApiService] Access token expired, attempting proactive refresh...');
+          if (!isRefreshing) {
+            isRefreshing = true;
+            const newToken = await tryRefreshToken();
+            isRefreshing = false;
+            if (newToken) {
+              processQueue(null, newToken);
+              token = newToken;
+            } else {
+              processQueue(new Error('Token refresh failed'), null);
+              token = null;
+            }
+          } else {
+            // Another refresh is in progress – wait for it
+            token = await new Promise((resolve, reject) => {
+              failedQueue.push({ resolve, reject });
+            }).catch(() => null);
           }
-          // Don't auto logout on expired token - let refresh handle it
+        }
+
+        if (token) {
+          config.headers.Authorization = "Bearer " + token;
         }
         return config;
       },
@@ -58,9 +109,13 @@ export default class BaseApiService {
         const originalRequest = error.config;
         const requestUrl = originalRequest?.url || '';
         const isAuthRequest = isAuthEndpoint(requestUrl);
+        const status = error.response?.status;
 
-        // Handle 401 Unauthorized
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        // Handle 401 Unauthorized or 403 "Not authenticated"
+        // (Backend returns 403 when no credentials are provided, 401 when token is invalid)
+        const isAuthError = status === 401 || (status === 403 && !isAuthRequest);
+
+        if (isAuthError && !originalRequest._retry) {
           // Don't auto logout if this is an auth endpoint (login/register)
           if (isAuthRequest) {
             return Promise.reject(error);
@@ -82,28 +137,13 @@ export default class BaseApiService {
           isRefreshing = true;
 
           try {
-            const refreshToken = TokenManager.getRefreshToken();
-            if (refreshToken && !TokenManager.isTokenExpired(refreshToken)) {
-              const response = await axios.post(baseURL + "/api/v1/auth/refresh", {
-                refresh_token: refreshToken,
-              });
+            const newToken = await tryRefreshToken();
+            isRefreshing = false;
 
-              const { token, refreshToken: newRefreshToken } = response.data;
-
-              const tokenStored = TokenManager.setToken(token);
-              if (newRefreshToken) {
-                TokenManager.setRefreshToken(newRefreshToken);
-              }
-
-              isRefreshing = false;
-
-              if (tokenStored) {
-                processQueue(null, token);
-                originalRequest.headers.Authorization = "Bearer " + token;
-                return this.client(originalRequest);
-              } else {
-                throw new Error('Failed to store refreshed token');
-              }
+            if (newToken) {
+              processQueue(null, newToken);
+              originalRequest.headers.Authorization = "Bearer " + newToken;
+              return this.client(originalRequest);
             } else {
               throw new Error('No valid refresh token available');
             }
