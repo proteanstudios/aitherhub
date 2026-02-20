@@ -861,33 +861,34 @@ export default function MainContent({
                       onProcessingComplete={handleProcessingComplete}
                     />
                   </div>
+                  {/* Allow uploading another video while current one is processing */}
+                  {!uploading && activeProcessingVideoId && (
+                    <div className="mt-6 pt-4 border-t border-gray-200 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          setUploadedVideoId(null);
+                          setVideoData(null);
+                          setSelectedFile(null);
+                          setCleanVideoFile(null);
+                          setCleanVideoFiles([]);
+                          setProductExcelFile(null);
+                          setTrendExcelFile(null);
+                          setUploadMode(null);
+                          setProgress(0);
+                          setMessage("");
+                          setDuplicateVideo(null);
+                          navigate('/');
+                        }}
+                        className="px-6 py-3 text-sm text-[#7D01FF] border-2 border-[#7D01FF] rounded-lg hover:bg-purple-50 transition-colors cursor-pointer bg-white shadow-sm"
+                      >
+                        + {window.__t('newUploadButton') || '新しい動画をアップロード'}
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {/* Allow uploading another video while current one is processing */}
-                {!uploading && activeProcessingVideoId && (
-                  <div className="mt-4 flex justify-center relative z-50">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        setUploadedVideoId(null);
-                        setVideoData(null);
-                        setSelectedFile(null);
-                        setCleanVideoFile(null);
-                        setCleanVideoFiles([]);
-                        setProductExcelFile(null);
-                        setTrendExcelFile(null);
-                        setUploadMode(null);
-                        setProgress(0);
-                        setMessage("");
-                        setDuplicateVideo(null);
-                      }}
-                      className="px-6 py-3 text-sm text-[#7D01FF] border-2 border-[#7D01FF] rounded-lg hover:bg-purple-50 transition-colors cursor-pointer bg-white shadow-sm"
-                    >
-                      + 新しい動画をアップロード
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
           </div>
