@@ -1,7 +1,28 @@
 import axios from "axios";
 import TokenManager from "../utils/tokenManager";
 import AuthService from "../services/userService";
-import { isAuthEndpoint } from "../../constants/authConstants";
+
+/**
+ * Endpoints that do NOT require authentication (no Bearer token needed).
+ * These are the only endpoints where we skip the Authorization header.
+ */
+const PUBLIC_AUTH_ENDPOINTS = [
+  '/auth/login',
+  '/auth/register',
+  '/auth/refresh',
+  '/auth/forgot',
+  '/auth/reset',
+];
+
+/**
+ * Check if a URL is a public auth endpoint (login, register, refresh, etc.)
+ * These endpoints do NOT need a Bearer token.
+ */
+function isPublicAuthEndpoint(url) {
+  if (!url) return false;
+  const u = String(url);
+  return PUBLIC_AUTH_ENDPOINTS.some(ep => u.includes(ep));
+}
 
 export default class BaseApiService {
   constructor(baseURL) {
@@ -63,9 +84,10 @@ export default class BaseApiService {
 
     this.client.interceptors.request.use(
       async (config) => {
-        // Skip auth header for auth endpoints (login, register, refresh)
         const requestUrl = config.url || '';
-        if (isAuthEndpoint(requestUrl)) {
+
+        // Public auth endpoints (login, register, refresh) don't need a token
+        if (isPublicAuthEndpoint(requestUrl)) {
           return config;
         }
 
@@ -108,16 +130,15 @@ export default class BaseApiService {
       async (error) => {
         const originalRequest = error.config;
         const requestUrl = originalRequest?.url || '';
-        const isAuthRequest = isAuthEndpoint(requestUrl);
+        const isPublicAuth = isPublicAuthEndpoint(requestUrl);
         const status = error.response?.status;
 
         // Handle 401 Unauthorized or 403 "Not authenticated"
-        // (Backend returns 403 when no credentials are provided, 401 when token is invalid)
-        const isAuthError = status === 401 || (status === 403 && !isAuthRequest);
+        const isAuthError = status === 401 || status === 403;
 
         if (isAuthError && !originalRequest._retry) {
-          // Don't auto logout if this is an auth endpoint (login/register)
-          if (isAuthRequest) {
+          // Don't retry or auto-refresh for public auth endpoints (login/register)
+          if (isPublicAuth) {
             return Promise.reject(error);
           }
 
