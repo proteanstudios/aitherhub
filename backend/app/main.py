@@ -1,3 +1,4 @@
+import logging
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
@@ -5,6 +6,8 @@ from app.api.v1.routes import routers as v1_routers
 from app.core.config import configs
 from app.core.container import Container
 from app.utils.class_object import singleton
+
+logger = logging.getLogger(__name__)
 
 @singleton
 class AppCreator:
@@ -31,6 +34,31 @@ class AppCreator:
                 allow_methods=["*"],
                 allow_headers=["*"],
             )
+
+        # Run safe migrations on startup
+        @self.app.on_event("startup")
+        async def run_safe_migrations():
+            """Add missing columns to database tables (idempotent, safe to run repeatedly)."""
+            from app.core.database import get_db
+            try:
+                async for db in get_db():
+                    from sqlalchemy import text
+                    # Add compressed_blob_url column if it doesn't exist
+                    await db.execute(text("""
+                        DO $$
+                        BEGIN
+                            IF NOT EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_name = 'videos' AND column_name = 'compressed_blob_url'
+                            ) THEN
+                                ALTER TABLE videos ADD COLUMN compressed_blob_url TEXT;
+                            END IF;
+                        END $$;
+                    """))
+                    await db.commit()
+                    logger.info("Safe migration check completed: compressed_blob_url column ensured")
+            except Exception as e:
+                logger.warning(f"Safe migration check failed (non-fatal): {e}")
 
         # Health check
         @self.app.get("/")
