@@ -1632,7 +1632,7 @@ async def get_product_exposures(
         row = result.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Video not found")
-        if row[0] != current_user.id:
+        if row[0] != current_user["id"]:
             raise HTTPException(status_code=403, detail="Forbidden")
 
         # Ensure table exists (safe for first-time access)
@@ -1718,7 +1718,7 @@ async def update_product_exposure(
         row = result.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Video not found")
-        if row[0] != current_user.id:
+        if row[0] != current_user["id"]:
             raise HTTPException(status_code=403, detail="Forbidden")
 
         # Build dynamic SET clause
@@ -1782,7 +1782,7 @@ async def create_product_exposure(
         row = result.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Video not found")
-        if row[0] != current_user.id:
+        if row[0] != current_user["id"]:
             raise HTTPException(status_code=403, detail="Forbidden")
 
         product_name = payload.get("product_name")
@@ -1807,7 +1807,7 @@ async def create_product_exposure(
 
         result = await db.execute(sql, {
             "vid": video_id,
-            "uid": current_user.id,
+            "uid": current_user["id"],
             "product_name": product_name,
             "brand_name": payload.get("brand_name", ""),
             "time_start": time_start,
@@ -1843,11 +1843,10 @@ async def delete_product_exposure(
         row = result.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Video not found")
-        if row[0] != current_user.id:
+        if row[0] != current_user["id"]:
             raise HTTPException(status_code=403, detail="Forbidden")
-
         result = await db.execute(
-            text("""
+            text(""""
                 DELETE FROM video_product_exposures
                 WHERE id = :eid AND video_id = :vid
                 RETURNING id
