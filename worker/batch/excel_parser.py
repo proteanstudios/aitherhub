@@ -405,8 +405,8 @@ def build_phase_stats_from_csv(
 
     # viewer_count / like_count のカラム名を検出
     sample = trends[0]
-    viewer_key = _find_key(sample, ["观看人数", "viewers", "viewer_count", "観看人数"])
-    like_key = _find_key(sample, ["点赞数", "likes", "like_count", "いいね数"])
+    viewer_key = _find_key(sample, ["視聴者", "视聴者", "观看人数", "viewers", "viewer_count", "観看人数", "視聴者数"])
+    like_key = _find_key(sample, ["いいね数", "いいね", "点赞数", "likes", "like_count"])
 
     logger.info(
         "[CSV_STATS] Building phase stats from CSV: "

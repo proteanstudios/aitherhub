@@ -705,16 +705,16 @@ def main():
             sample = trends[0] if trends else {}
 
             # CSVカラム名を自動検出
-            gmv_key = _find_key(sample, ["gmv", "GMV", "成交金额"])
-            order_key = _find_key(sample, ["成交件数", "订单数", "orders"])
-            viewer_key = _find_key(sample, ["观看人数", "viewers", "viewer_count"])
-            like_key = _find_key(sample, ["点赞数", "likes", "like_count"])
-            comment_key = _find_key(sample, ["评论数", "comments", "comment_count"])
-            share_key = _find_key(sample, ["分享次数", "shares", "share_count"])
-            follower_key = _find_key(sample, ["新增粉丝数", "new_followers"])
-            click_key = _find_key(sample, ["商品点击量", "product_clicks"])
-            conv_key = _find_key(sample, ["点击成交转化率", "click_conversion"])
-            gpm_key = _find_key(sample, ["千次观看成交金额", "gmv_per_1k_views", "GPM"])
+            gmv_key = _find_key(sample, ["gmv", "GMV", "成交金额", "売上"])
+            order_key = _find_key(sample, ["注文", "成交件数", "订单数", "orders", "SKU注文数"])
+            viewer_key = _find_key(sample, ["視聴者", "视聴者", "观看人数", "viewers", "viewer_count", "視聴者数"])
+            like_key = _find_key(sample, ["いいね数", "いいね", "点赞数", "likes", "like_count"])
+            comment_key = _find_key(sample, ["コメント数", "评论数", "comments", "comment_count"])
+            share_key = _find_key(sample, ["シェア数", "分享次数", "shares", "share_count"])
+            follower_key = _find_key(sample, ["新規フォロワー数", "新增粉丝数", "new_followers"])
+            click_key = _find_key(sample, ["商品クリック数", "商品点击量", "product_clicks"])
+            conv_key = _find_key(sample, ["CTOR", "点击成交转化率", "click_conversion", "CVR"])
+            gpm_key = _find_key(sample, ["視聴GPM", "千次观看成交金额", "gmv_per_1k_views", "GPM", "表示GPM"])
 
             logger.info("[CSV_METRICS] Detected keys: gmv=%s, order=%s, viewer=%s, like=%s, comment=%s, share=%s, follower=%s, click=%s, conv=%s, gpm=%s",
                 gmv_key, order_key, viewer_key, like_key, comment_key, share_key, follower_key, click_key, conv_key, gpm_key)

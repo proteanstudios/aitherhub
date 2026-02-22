@@ -182,6 +182,67 @@ export default function AnalyticsSection({ reports1, videoData }) {
     return { data: parsed, hasGmv: !!gmvKey, hasViewers: !!viewerKey, hasOrders: !!orderKey };
   }, [excelData]);
 
+  // ── Compute Excel-based summary as fallback for KPI cards ────────
+  const excelSummary = useMemo(() => {
+    if (!excelData?.has_trend_data || !excelData.trends || excelData.trends.length === 0) return null;
+
+    const trends = excelData.trends;
+    const keys = Object.keys(trends[0] || {});
+    const parseNum = (v) => {
+      if (typeof v === 'number') return v;
+      if (typeof v === 'string') { const n = parseFloat(v.replace(/,/g, '')); return isNaN(n) ? 0 : n; }
+      return 0;
+    };
+
+    // Detect column names (Japanese + Chinese + English)
+    const gmvKey = keys.find(k => /^gmv$/i.test(k)) || keys.find(k => /gmv|销售额|売上|revenue|成交金额/i.test(k));
+    const orderKey = keys.find(k => /^注文$/i.test(k)) || keys.find(k => /sku注文数|订单|order|成交件数/i.test(k));
+    const viewerKey = keys.find(k => /^視聴者$/i.test(k)) || keys.find(k => /視聴者数|视聴者|观看人数|viewer/i.test(k));
+    const likeKey = keys.find(k => /^いいね数$/i.test(k)) || keys.find(k => /いいね|点赞数|like/i.test(k));
+    const commentKey = keys.find(k => /^コメント数$/i.test(k)) || keys.find(k => /评论数|comment/i.test(k));
+    const shareKey = keys.find(k => /^シェア数$/i.test(k)) || keys.find(k => /分享次数|share/i.test(k));
+    const followerKey = keys.find(k => /^新規フォロワー数$/i.test(k)) || keys.find(k => /新增粉丝数|new_follower|フォロワー/i.test(k));
+    const clickKey = keys.find(k => /^商品クリック数$/i.test(k)) || keys.find(k => /商品点击量|product_click|クリック/i.test(k));
+    const gpmKey = keys.find(k => /^視聴GPM$/i.test(k)) || keys.find(k => /gpm|千次观看|表示gpm/i.test(k));
+
+    // Get last row for cumulative totals (TikTok trend data is cumulative per time slot)
+    const lastRow = trends[trends.length - 1];
+    const totalGmv = gmvKey ? parseNum(lastRow[gmvKey]) : 0;
+    const totalOrders = orderKey ? parseNum(lastRow[orderKey]) : 0;
+    const peakViewers = viewerKey ? Math.max(...trends.map(r => parseNum(r[viewerKey]))) : 0;
+    const totalLikes = likeKey ? parseNum(lastRow[likeKey]) : 0;
+    const totalComments = commentKey ? parseNum(lastRow[commentKey]) : 0;
+    const totalShares = shareKey ? parseNum(lastRow[shareKey]) : 0;
+    const totalFollowers = followerKey ? parseNum(lastRow[followerKey]) : 0;
+    const totalClicks = clickKey ? parseNum(lastRow[clickKey]) : 0;
+    const gpm = gpmKey ? parseNum(lastRow[gpmKey]) : 0;
+
+    return { totalGmv, totalOrders, peakViewers, totalLikes, totalComments, totalShares, totalFollowers, totalClicks, gpm };
+  }, [excelData]);
+
+  // ── Merge: use Excel summary as fallback when DB values are 0 ────
+  const display = useMemo(() => {
+    if (!agg) return null;
+    const d = { ...agg };
+    if (excelSummary) {
+      if (d.totalGmv === 0 && excelSummary.totalGmv > 0) d.totalGmv = excelSummary.totalGmv;
+      if (d.totalOrders === 0 && excelSummary.totalOrders > 0) d.totalOrders = excelSummary.totalOrders;
+      if (d.totalViewers === 0 && excelSummary.peakViewers > 0) d.totalViewers = excelSummary.peakViewers;
+      if (d.totalLikes === 0 && excelSummary.totalLikes > 0) d.totalLikes = excelSummary.totalLikes;
+      if (d.totalComments === 0 && excelSummary.totalComments > 0) d.totalComments = excelSummary.totalComments;
+      if (d.totalShares === 0 && excelSummary.totalShares > 0) d.totalShares = excelSummary.totalShares;
+      if (d.totalFollowers === 0 && excelSummary.totalFollowers > 0) d.totalFollowers = excelSummary.totalFollowers;
+      if (d.totalClicks === 0 && excelSummary.totalClicks > 0) d.totalClicks = excelSummary.totalClicks;
+      if (d.gpm === 0 && excelSummary.gpm > 0) d.gpm = Math.round(excelSummary.gpm);
+      // Recalculate derived metrics
+      d.cvr = d.totalClicks > 0 ? ((d.totalOrders / d.totalClicks) * 100).toFixed(1) : "0.0";
+      d.avgOrderValue = d.totalOrders > 0 ? Math.round(d.totalGmv / d.totalOrders) : 0;
+      d.gmvPerHour = d.durationMin > 0 ? Math.round(d.totalGmv / (d.durationMin / 60)) : 0;
+      if (d.gpm === 0 && d.totalViewers > 0) d.gpm = Math.round(d.totalGmv / d.totalViewers);
+    }
+    return d;
+  }, [agg, excelSummary]);
+
   // ── Format helpers ─────────────────────────────────────────────
   const fmtTime = (seconds) => {
     const m = Math.floor(seconds / 60);
@@ -446,7 +507,7 @@ export default function AnalyticsSection({ reports1, videoData }) {
             <div>
               <div className="text-gray-900 text-xl font-semibold">アナリティクス</div>
               <div className="text-gray-500 text-sm mt-1">
-                配信時間 {agg.durationMin}分 ・ {agg.totalOrders}件の注文
+                配信時間 {(display || agg).durationMin}分 ・ {(display || agg).totalOrders}件の注文
               </div>
             </div>
           </div>
@@ -472,8 +533,8 @@ export default function AnalyticsSection({ reports1, videoData }) {
                   </svg>
                   売上 (GMV)
                 </div>
-                <div className="text-2xl font-bold text-gray-900">¥{Math.round(agg.totalGmv).toLocaleString()}</div>
-                <div className="text-xs text-gray-400 mt-1">{agg.totalOrders}件の注文</div>
+                <div className="text-2xl font-bold text-gray-900">¥{Math.round((display || agg).totalGmv).toLocaleString()}</div>
+                <div className="text-xs text-gray-400 mt-1">{(display || agg).totalOrders}件の注文</div>
               </div>
 
               {/* Viewers */}
@@ -485,7 +546,7 @@ export default function AnalyticsSection({ reports1, videoData }) {
                   </svg>
                   視聴者数
                 </div>
-                <div className="text-2xl font-bold text-gray-900">{agg.totalViewers.toLocaleString()}</div>
+                <div className="text-2xl font-bold text-gray-900">{(display || agg).totalViewers.toLocaleString()}</div>
                 <div className="text-xs text-gray-400 mt-1">ピーク視聴者</div>
               </div>
 
@@ -498,8 +559,8 @@ export default function AnalyticsSection({ reports1, videoData }) {
                   </svg>
                   いいね
                 </div>
-                <div className="text-2xl font-bold text-gray-900">{agg.totalLikes.toLocaleString()}</div>
-                <div className="text-xs text-gray-400 mt-1">コメント {agg.totalComments}</div>
+                <div className="text-2xl font-bold text-gray-900">{(display || agg).totalLikes.toLocaleString()}</div>
+                <div className="text-xs text-gray-400 mt-1">コメント {(display || agg).totalComments}</div>
               </div>
 
               {/* Product Clicks */}
@@ -511,20 +572,20 @@ export default function AnalyticsSection({ reports1, videoData }) {
                   </svg>
                   商品クリック
                 </div>
-                <div className="text-2xl font-bold text-gray-900">{agg.totalClicks.toLocaleString()}</div>
-                <div className="text-xs text-gray-400 mt-1">CVR {agg.cvr}%</div>
+                <div className="text-2xl font-bold text-gray-900">{(display || agg).totalClicks.toLocaleString()}</div>
+                <div className="text-xs text-gray-400 mt-1">CVR {(display || agg).cvr}%</div>
               </div>
             </div>
 
             {/* ── Sub Metrics ── */}
             <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
               {[
-                { label: "GPM", value: `¥${agg.gpm}` },
-                { label: "新規フォロワー", value: `+${agg.totalFollowers}` },
-                { label: "シェア", value: agg.totalShares.toString() },
-                { label: "客単価", value: `¥${agg.avgOrderValue.toLocaleString()}` },
-                { label: "配信時間", value: `${agg.durationMin}分` },
-                { label: "売上/時間", value: `¥${agg.gmvPerHour.toLocaleString()}/h` },
+                { label: "GPM", value: `¥${(display || agg).gpm}` },
+                { label: "新規フォロワー", value: `+${(display || agg).totalFollowers}` },
+                { label: "シェア", value: (display || agg).totalShares.toString() },
+                { label: "客単価", value: `¥${(display || agg).avgOrderValue.toLocaleString()}` },
+                { label: "配信時間", value: `${(display || agg).durationMin}分` },
+                { label: "売上/時間", value: `¥${(display || agg).gmvPerHour.toLocaleString()}/h` },
               ].map((item, i) => (
                 <div key={i} className="rounded-lg bg-white border border-gray-100 px-3 py-2 text-center">
                   <div className="text-[10px] text-gray-400 font-medium">{item.label}</div>
