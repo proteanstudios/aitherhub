@@ -243,11 +243,253 @@ async def stream_chat(
             except Exception:
                 report_text = ""
 
+        # ── Fetch sales data from Qdrant (RAG knowledge base) ──
+        sales_text = ""
+        try:
+            from app.services.rag.rag_client import get_qdrant_client, COLLECTION_NAME, init_collection
+            from qdrant_client.models import Filter, FieldCondition, MatchValue
+
+            qclient = get_qdrant_client()
+            init_collection(qclient)
+            qresults, _ = qclient.scroll(
+                collection_name=COLLECTION_NAME,
+                scroll_filter=Filter(
+                    must=[FieldCondition(key="video_id", match=MatchValue(value=video_id))]
+                ),
+                limit=1,
+                with_payload=True,
+                with_vectors=False,
+            )
+            if qresults:
+                payload_data = qresults[0].payload
+                sd = payload_data.get("sales_data", {})
+                sp = payload_data.get("set_products", [])
+                sm = payload_data.get("screen_metrics", {})
+
+                sales_parts: List[str] = []
+                if sd:
+                    if sd.get("gmv"): sales_parts.append(f"GMV（総売上）: ¥{sd['gmv']:,.0f}")
+                    if sd.get("total_orders"): sales_parts.append(f"注文数: {sd['total_orders']}")
+                    if sd.get("product_sales_count"): sales_parts.append(f"商品販売数: {sd['product_sales_count']}")
+                    if sd.get("viewers"): sales_parts.append(f"視聴者数: {sd['viewers']:,.0f}")
+                    if sd.get("impressions"): sales_parts.append(f"インプレッション: {sd['impressions']:,.0f}")
+                    if sd.get("product_impressions"): sales_parts.append(f"商品インプレッション: {sd['product_impressions']:,.0f}")
+                    if sd.get("product_clicks"): sales_parts.append(f"商品クリック数: {sd['product_clicks']:,.0f}")
+                    if sd.get("live_ctr"): sales_parts.append(f"LIVE CTR: {sd['live_ctr']}%")
+                    if sd.get("cvr"): sales_parts.append(f"CVR（転換率）: {sd['cvr']}%")
+                    if sd.get("tap_through_rate"): sales_parts.append(f"タップスルー率: {sd['tap_through_rate']}%")
+                    if sd.get("comment_rate"): sales_parts.append(f"コメント率: {sd['comment_rate']}%")
+                    if sd.get("avg_gpm"): sales_parts.append(f"時間あたりGMV: ¥{sd['avg_gpm']:,.0f}")
+                    if sd.get("duration_minutes"): sales_parts.append(f"配信時間: {sd['duration_minutes']}分")
+                    if sd.get("follower_ratio"): sales_parts.append(f"フォロワー率: {sd['follower_ratio']}%")
+                    if sd.get("traffic_sources"):
+                        for src in sd["traffic_sources"]:
+                            sales_parts.append(f"  トラフィック: {src.get('channel', '')} GMV {src.get('gmv_pct', '')}%")
+
+                if sp:
+                    sales_parts.append("")
+                    sales_parts.append("【セット商品販売データ】")
+                    for p in sp:
+                        line = f"  {p.get('name', '')}: ¥{p.get('price', 0):,.0f} × {p.get('quantity_sold', 0)}個"
+                        rev = p.get('set_revenue', 0)
+                        if rev:
+                            line += f" = ¥{rev:,.0f}"
+                        sales_parts.append(line)
+
+                if sm:
+                    if sm.get("viewer_count"): sales_parts.append(f"リアルタイム視聴者数: {sm['viewer_count']}")
+                    if sm.get("likes"): sales_parts.append(f"いいね数: {sm['likes']}")
+                    if sm.get("shopping_rank"): sales_parts.append(f"ショッピングランキング: No.{sm['shopping_rank']}")
+                    if sm.get("purchase_notifications"):
+                        sales_parts.append(f"購入通知数: {len(sm['purchase_notifications'])}")
+
+                if sales_parts:
+                    sales_text = "\n【売上・パフォーマンスデータ】\n" + "\n".join(sales_parts)
+        except Exception as e:
+            # non-fatal: if Qdrant lookup fails, continue without sales data
+            import traceback
+            traceback.print_exc()
+            sales_text = ""
+
+        # ── Fetch product exposure data from DB ──
+        product_exposure_text = ""
+        try:
+            sql_pe = text(
+                "SELECT product_name, brand_name, time_start, time_end, confidence, source "
+                "FROM video_product_exposures WHERE video_id = :vid ORDER BY time_start ASC"
+            )
+            pe_res = await db.execute(sql_pe, {"vid": video_id})
+            pe_rows = pe_res.fetchall()
+            if pe_rows:
+                pe_parts: List[str] = ["\n【商品露出タイムライン】"]
+                for r in pe_rows:
+                    pname = r[0] or ""
+                    bname = r[1] or ""
+                    ts = r[2]
+                    te = r[3]
+                    label = f"{bname} {pname}".strip()
+                    pe_parts.append(f"  {label}: {ts}s - {te}s")
+                product_exposure_text = "\n".join(pe_parts)
+        except Exception:
+            product_exposure_text = ""
+
+        # ── Fetch Excel data (product + trend) from Azure Blob ──
+        excel_data_text = ""
+        try:
+            sql_excel = text(
+                "SELECT v.excel_product_blob_url, v.excel_trend_blob_url, u.email "
+                "FROM videos v JOIN users u ON v.user_id = u.id WHERE v.id = :vid"
+            )
+            excel_res = await db.execute(sql_excel, {"vid": video_id})
+            excel_row = excel_res.fetchone()
+            if excel_row:
+                product_blob_url = excel_row[0]
+                trend_blob_url = excel_row[1]
+                user_email = excel_row[2]
+
+                if product_blob_url or trend_blob_url:
+                    import httpx
+                    import tempfile
+                    import openpyxl
+                    import json as _json
+                    from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+                    from datetime import timedelta, datetime, timezone
+                    from urllib.parse import urlparse, unquote
+
+                    conn_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING", "")
+                    account_name = ""
+                    account_key = ""
+                    for part in conn_str.split(";"):
+                        if part.startswith("AccountName="):
+                            account_name = part.split("=", 1)[1]
+                        elif part.startswith("AccountKey="):
+                            account_key = part.split("=", 1)[1]
+
+                    def _gen_sas(blob_url: str) -> str:
+                        try:
+                            parsed = urlparse(blob_url)
+                            path = unquote(parsed.path)
+                            if path.startswith("/videos/"):
+                                blob_name = path[len("/videos/"):]
+                            else:
+                                blob_name = path.lstrip("/")
+                                if blob_name.startswith("videos/"):
+                                    blob_name = blob_name[len("videos/"):]
+                        except Exception:
+                            filename = blob_url.split("/")[-1].split("?")[0]
+                            blob_name = f"{user_email}/{video_id}/excel/{filename}"
+                        expiry = datetime.now(timezone.utc) + timedelta(minutes=10)
+                        sas = generate_blob_sas(
+                            account_name=account_name,
+                            container_name="videos",
+                            blob_name=blob_name,
+                            account_key=account_key,
+                            permission=BlobSasPermissions(read=True),
+                            expiry=expiry,
+                        )
+                        return f"https://{account_name}.blob.core.windows.net/videos/{blob_name}?{sas}"
+
+                    async def _parse_excel_for_chat(blob_url: str) -> list:
+                        sas_url = _gen_sas(blob_url)
+                        async with httpx.AsyncClient(timeout=15.0) as hclient:
+                            resp = await hclient.get(sas_url)
+                            if resp.status_code != 200:
+                                return []
+                            with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
+                                f.write(resp.content)
+                                tmp_path = f.name
+                            try:
+                                wb = openpyxl.load_workbook(tmp_path, read_only=True, data_only=True)
+                                ws = wb.active
+                                items = []
+                                if ws:
+                                    rows_data = list(ws.iter_rows(values_only=True))
+                                    if len(rows_data) >= 2:
+                                        headers = [str(h).strip() if h else f"col_{i}" for i, h in enumerate(rows_data[0])]
+                                        for data_row in rows_data[1:]:
+                                            if all(v is None for v in data_row):
+                                                continue
+                                            item = {}
+                                            for i, val in enumerate(data_row):
+                                                if i < len(headers):
+                                                    if val is None:
+                                                        item[headers[i]] = None
+                                                    elif isinstance(val, (int, float)):
+                                                        item[headers[i]] = val
+                                                    else:
+                                                        item[headers[i]] = str(val)
+                                            items.append(item)
+                                wb.close()
+                                return items
+                            finally:
+                                os.unlink(tmp_path)
+
+                    excel_parts: List[str] = []
+
+                    if product_blob_url:
+                        try:
+                            products = await _parse_excel_for_chat(product_blob_url)
+                            if products:
+                                excel_parts.append("\n【商品販売データ（Excelアップロード）】")
+                                # Format as readable table (limit to top 30 rows)
+                                if products:
+                                    headers = list(products[0].keys())
+                                    excel_parts.append("  " + " | ".join(headers))
+                                    for p in products[:30]:
+                                        vals = []
+                                        for h in headers:
+                                            v = p.get(h)
+                                            if v is None:
+                                                vals.append("")
+                                            elif isinstance(v, float):
+                                                vals.append(f"{v:,.0f}" if v == int(v) else f"{v:,.2f}")
+                                            else:
+                                                vals.append(str(v))
+                                        excel_parts.append("  " + " | ".join(vals))
+                                    if len(products) > 30:
+                                        excel_parts.append(f"  ... (他 {len(products) - 30} 行)")
+                        except Exception:
+                            pass
+
+                    if trend_blob_url:
+                        try:
+                            trends = await _parse_excel_for_chat(trend_blob_url)
+                            if trends:
+                                excel_parts.append("\n【トレンドデータ（Excelアップロード）】")
+                                if trends:
+                                    headers = list(trends[0].keys())
+                                    excel_parts.append("  " + " | ".join(headers))
+                                    for t in trends[:30]:
+                                        vals = []
+                                        for h in headers:
+                                            v = t.get(h)
+                                            if v is None:
+                                                vals.append("")
+                                            elif isinstance(v, float):
+                                                vals.append(f"{v:,.0f}" if v == int(v) else f"{v:,.2f}")
+                                            else:
+                                                vals.append(str(v))
+                                        excel_parts.append("  " + " | ".join(vals))
+                                    if len(trends) > 30:
+                                        excel_parts.append(f"  ... (他 {len(trends) - 30} 行)")
+                        except Exception:
+                            pass
+
+                    if excel_parts:
+                        excel_data_text = "\n".join(excel_parts)
+        except Exception:
+            excel_data_text = ""
+
         system_msg = {
             "role": "system",
             "content": (
-                "Hãy trả lời theo ngôn ngữ của người hỏi, xoay quanh báo cáo sau:\n\n"
-                + (report_text or "(no report available)")
+                "質問者の言語で回答してください。以下のレポートとデータに基づいて回答してください。\n"
+                "データに含まれる数値は正確に引用してください。データにない情報は推測せず、その旨を伝えてください。\n\n"
+                "【レポート】\n"
+                + (report_text or "(レポートなし)")
+                + sales_text
+                + product_exposure_text
+                + excel_data_text
             ),
         }
 
