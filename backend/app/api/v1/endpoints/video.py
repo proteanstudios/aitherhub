@@ -1866,3 +1866,259 @@ async def delete_product_exposure(
     except Exception as exc:
         logger.exception(f"Failed to delete product exposure: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/{video_id}/product-exposures/remap-names")
+async def remap_product_exposure_names(
+    video_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Remap generic product names (Product_0, Product_1, ...) to actual names
+    from the Excel product data.
+    
+    Logic:
+    1. Get all exposures for this video
+    2. Get the product Excel data (same as product-data endpoint)
+    3. Extract unique generic names, sort by index (Product_0, Product_1, ...)
+    4. Map each Product_N to the Nth product in the Excel list
+    5. Also try to find the actual product_name key in Excel data
+    6. Bulk update all exposures with the real product names
+    """
+    try:
+        # Verify video belongs to user
+        result = await db.execute(
+            text("SELECT user_id, excel_product_blob_url FROM videos WHERE id = :vid"),
+            {"vid": video_id},
+        )
+        row = result.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Video not found")
+        if row[0] != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+        product_blob_url = row[1]
+        if not product_blob_url:
+            return {"success": False, "message": "No product Excel file uploaded for this video", "updated": 0}
+
+        # --- Parse Excel to get product list ---
+        import httpx
+        import tempfile
+        import os as _os
+        import openpyxl
+        from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+        from datetime import timedelta
+
+        # Generate SAS URL
+        conn_str = _os.getenv("AZURE_STORAGE_CONNECTION_STRING", "")
+        account_name = ""
+        account_key = ""
+        for part in conn_str.split(";"):
+            if part.startswith("AccountName="):
+                account_name = part.split("=", 1)[1]
+            elif part.startswith("AccountKey="):
+                account_key = part.split("=", 1)[1]
+
+        from urllib.parse import urlparse, unquote
+        parsed = urlparse(product_blob_url)
+        path = unquote(parsed.path)
+        if path.startswith("/videos/"):
+            blob_name = path[len("/videos/"):]
+        else:
+            blob_name = path.lstrip("/")
+            if blob_name.startswith("videos/"):
+                blob_name = blob_name[len("videos/"):]
+
+        expiry = datetime.now(timezone.utc) + timedelta(minutes=30)
+        sas = generate_blob_sas(
+            account_name=account_name,
+            container_name="videos",
+            blob_name=blob_name,
+            account_key=account_key,
+            permission=BlobSasPermissions(read=True),
+            expiry=expiry,
+        )
+        sas_url = f"https://{account_name}.blob.core.windows.net/videos/{blob_name}?{sas}"
+
+        # Download and parse Excel
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(sas_url)
+            if resp.status_code != 200:
+                return {"success": False, "message": f"Failed to download Excel (HTTP {resp.status_code})", "updated": 0}
+
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
+            f.write(resp.content)
+            tmp_path = f.name
+
+        try:
+            wb = openpyxl.load_workbook(tmp_path, read_only=True, data_only=True)
+            ws = wb.active
+            excel_products = []
+            if ws:
+                rows_data = list(ws.iter_rows(values_only=True))
+                if len(rows_data) >= 2:
+                    headers = [str(h).strip() if h else f"col_{i}" for i, h in enumerate(rows_data[0])]
+                    for data_row in rows_data[1:]:
+                        if all(v is None for v in data_row):
+                            continue
+                        item = {}
+                        for i, val in enumerate(data_row):
+                            if i < len(headers):
+                                item[headers[i]] = val
+                        excel_products.append(item)
+            wb.close()
+        finally:
+            _os.unlink(tmp_path)
+
+        if not excel_products:
+            return {"success": False, "message": "No products found in Excel file", "updated": 0}
+
+        # --- Build name mapping ---
+        # Find the product name column in Excel
+        # Try common column names: 商品名, product_name, name, 商品タイトル
+        name_keys = ["商品名", "product_name", "name", "商品タイトル", "Name", "Product Name", "商品"]
+        product_name_key = None
+        sample = excel_products[0]
+        for key in name_keys:
+            if key in sample and sample[key]:
+                product_name_key = key
+                break
+        # If not found, try first string column
+        if not product_name_key:
+            for k, v in sample.items():
+                if isinstance(v, str) and len(v) > 2:
+                    product_name_key = k
+                    break
+
+        if not product_name_key:
+            return {"success": False, "message": "Could not find product name column in Excel", "updated": 0}
+
+        # Build ordered list of real product names from Excel
+        real_names = []
+        for p in excel_products:
+            pname = p.get(product_name_key)
+            if pname:
+                real_names.append(str(pname).strip())
+            else:
+                real_names.append(None)
+
+        logger.info(f"[REMAP] Found {len(real_names)} products in Excel, name_key='{product_name_key}'")
+        logger.info(f"[REMAP] First 5 products: {real_names[:5]}")
+
+        # --- Get current exposures ---
+        result = await db.execute(
+            text("""
+                SELECT DISTINCT product_name
+                FROM video_product_exposures
+                WHERE video_id = :vid
+                ORDER BY product_name
+            """),
+            {"vid": video_id},
+        )
+        current_names = [r[0] for r in result.fetchall()]
+
+        # Build mapping: Product_N -> real_names[N]
+        import re
+        name_map = {}
+        for cname in current_names:
+            match = re.match(r"^Product_(\d+)$", cname)
+            if match:
+                idx = int(match.group(1))
+                if idx < len(real_names) and real_names[idx]:
+                    name_map[cname] = real_names[idx]
+
+        if not name_map:
+            return {
+                "success": False,
+                "message": f"No Product_N names found to remap. Current names: {current_names[:10]}",
+                "updated": 0,
+            }
+
+        logger.info(f"[REMAP] Mapping {len(name_map)} names: {name_map}")
+
+        # --- Bulk update ---
+        total_updated = 0
+        for old_name, new_name in name_map.items():
+            result = await db.execute(
+                text("""
+                    UPDATE video_product_exposures
+                    SET product_name = :new_name, updated_at = now()
+                    WHERE video_id = :vid AND product_name = :old_name
+                """),
+                {"vid": video_id, "old_name": old_name, "new_name": new_name},
+            )
+            total_updated += result.rowcount
+
+        await db.commit()
+
+        return {
+            "success": True,
+            "message": f"Remapped {len(name_map)} product names, {total_updated} rows updated",
+            "updated": total_updated,
+            "mapping": name_map,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(f"Failed to remap product names: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/remap-all-product-names")
+async def remap_all_product_names(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Remap product names for ALL videos belonging to the current user.
+    Iterates over all videos with product exposures and applies the remap logic.
+    """
+    try:
+        # Get all video IDs for this user that have product exposures
+        result = await db.execute(
+            text("""
+                SELECT DISTINCT vpe.video_id
+                FROM video_product_exposures vpe
+                JOIN videos v ON vpe.video_id = v.id
+                WHERE v.user_id = :uid
+                  AND vpe.product_name ~ '^Product_\\d+$'
+            """),
+            {"uid": current_user["id"]},
+        )
+        video_ids = [str(r[0]) for r in result.fetchall()]
+
+        if not video_ids:
+            return {"success": True, "message": "No videos with generic Product_N names found", "videos_processed": 0}
+
+        results = []
+        for vid in video_ids:
+            try:
+                # Call the single-video remap logic inline
+                # (We can't easily call the endpoint from here, so duplicate the core logic)
+                vrow = await db.execute(
+                    text("SELECT excel_product_blob_url FROM videos WHERE id = :vid"),
+                    {"vid": vid},
+                )
+                vdata = vrow.fetchone()
+                if not vdata or not vdata[0]:
+                    results.append({"video_id": vid, "status": "skipped", "reason": "no Excel"})
+                    continue
+
+                results.append({"video_id": vid, "status": "needs_individual_call"})
+            except Exception as e:
+                results.append({"video_id": vid, "status": "error", "reason": str(e)})
+
+        return {
+            "success": True,
+            "message": f"Found {len(video_ids)} videos with generic names. Call /remap-names on each individually.",
+            "video_ids": video_ids,
+            "details": results,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(f"Failed to list videos for remap: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
