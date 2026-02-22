@@ -8,8 +8,8 @@ from functools import partial
 from openai import AzureOpenAI, RateLimitError, APIError, APITimeoutError
 from decouple import config
 
-# Reduced from 8 to 4 to avoid 429 rate limits on Azure OpenAI
-MAX_CONCURRENCY = 4
+# v3: 4→20 for speed optimization (fewer total calls due to CSV filter)
+MAX_CONCURRENCY = 20
 
 # =========================
 # ENV & CLIENT

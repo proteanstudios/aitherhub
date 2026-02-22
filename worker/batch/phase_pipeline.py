@@ -11,7 +11,8 @@ from decouple import config
 import asyncio
 from functools import partial
 
-MAX_CONCURRENCY = 8
+# v3: 8→20 for speed optimization
+MAX_CONCURRENCY = 20
 
 
 # ======================================================

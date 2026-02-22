@@ -1063,20 +1063,25 @@ def main():
                     logger.info("[PRODUCT] Using %d products from Excel", len(product_list))
 
                 if product_list:
-                    # Load transcription segments if available
+                    # Load transcription segments from audio_text .txt files
                     transcription_segments = None
-                    transcript_file = os.path.join(audio_text_dir(video_id), "full_transcript.json")
-                    if os.path.exists(transcript_file):
-                        with open(transcript_file, "r", encoding="utf-8") as f:
-                            transcription_segments = json.load(f)
+                    atd_path = audio_text_dir(video_id)
+                    if os.path.isdir(atd_path):
+                        from phase_pipeline import load_all_audio_segments
+                        raw_segments = load_all_audio_segments(atd_path)
+                        if raw_segments:
+                            transcription_segments = raw_segments
+                            logger.info("[PRODUCT] Loaded %d transcription segments from audio_text", len(transcription_segments))
 
-                    # Run product detection
+                    # Run product detection (v3: audio-first + minimal image)
                     exposures = detect_product_timeline(
                         frame_dir=frames_dir(video_id),
                         product_list=product_list,
                         transcription_segments=transcription_segments,
                         sample_interval=5,
                         on_progress=_on_product_progress,
+                        excel_data=excel_data,
+                        time_offset_seconds=time_offset_seconds,
                     )
 
                     logger.info("[PRODUCT] Detected %d product exposure segments", len(exposures))
