@@ -10,7 +10,7 @@ from decouple import config
 from best_phase_pipeline import extract_attention_metrics
 
 
-MAX_CONCURRENCY = 8
+MAX_CONCURRENCY = 20
 
 # ======================================================
 # ENV / CLIENT

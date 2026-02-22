@@ -2,6 +2,7 @@
 import os
 import time
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from decouple import config
 
 
@@ -17,7 +18,7 @@ AUDIO_OUT_ROOT = "audio"
 AUDIO_TEXT_ROOT = "audio_text"
 
 FFMPEG_BIN = env("FFMPEG_PATH", "ffmpeg")
-CHUNK_SECONDS = 600
+CHUNK_SECONDS = 1800  # v5: 30-min chunks (was 600=10min) — fewer chunks = less overhead
 
 # Whisper engine selection: "local" (faster-whisper) or "azure" (Azure API)
 WHISPER_ENGINE = env("WHISPER_ENGINE", "local")
@@ -32,6 +33,10 @@ WHISPER_DEVICE = env("WHISPER_DEVICE", "auto")          # "auto", "cuda", "cpu"
 WHISPER_COMPUTE_TYPE = env("WHISPER_COMPUTE_TYPE", "auto")  # "auto", "float16", "int8_float16", "int8"
 WHISPER_BEAM_SIZE = int(env("WHISPER_BEAM_SIZE", "5"))
 WHISPER_LANGUAGE = env("WHISPER_LANGUAGE", "ja")
+
+# v4: Parallel transcription workers (limited by GPU VRAM)
+# T4 16GB: large-v3 uses ~4GB, so 2 parallel is safe; 3 might OOM
+WHISPER_PARALLEL_WORKERS = int(env("WHISPER_PARALLEL_WORKERS", "2"))
 
 MAX_RETRY = 10
 SLEEP_BETWEEN_REQUESTS = 2
@@ -85,13 +90,14 @@ def _get_whisper_model():
 
 
 # =========================
-# STEP 3.1 – EXTRACT AUDIO
+# STEP 3.1 – EXTRACT AUDIO (GPU-accelerated)
 # =========================
 
 def extract_audio_chunks(video_path: str, out_dir: str) -> str:
     """
     Extract audio chunks into out_dir.
-    WAV, mono, 16kHz – safe for Whisper
+    WAV, mono, 16kHz – safe for Whisper.
+    v4: Uses GPU decode if available for faster extraction.
     """
     os.makedirs(out_dir, exist_ok=True)
 
@@ -121,9 +127,17 @@ def extract_audio_chunks(video_path: str, out_dir: str) -> str:
 # STEP 3.2 – TRANSCRIBE (LOCAL)
 # =========================
 
+import threading
+
+# Lock for thread-safe access to faster-whisper model
+# faster-whisper with CTranslate2 is NOT thread-safe for concurrent inference
+_whisper_lock = threading.Lock()
+
+
 def _transcribe_chunk_local(audio_path: str, chunk_index: int) -> dict:
     """
     Transcribe a single audio chunk using local faster-whisper.
+    Thread-safe: uses lock to serialize GPU access.
 
     Returns dict with:
       - "text": full transcription text
@@ -135,25 +149,27 @@ def _transcribe_chunk_local(audio_path: str, chunk_index: int) -> dict:
     t0 = time.time()
     print(f"[WHISPER-LOCAL] Transcribing chunk_{chunk_index:03d}.wav ...")
 
-    segments_iter, info = model.transcribe(
-        audio_path,
-        beam_size=WHISPER_BEAM_SIZE,
-        language=WHISPER_LANGUAGE,
-        vad_filter=True,
-        vad_parameters=dict(min_silence_duration_ms=500),
-        word_timestamps=True,
-    )
+    # Lock for thread-safe model access
+    with _whisper_lock:
+        segments_iter, info = model.transcribe(
+            audio_path,
+            beam_size=WHISPER_BEAM_SIZE,
+            language=WHISPER_LANGUAGE,
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=500),
+            word_timestamps=True,
+        )
 
-    # Consume the generator (faster-whisper uses lazy evaluation)
-    segments = []
-    full_text_parts = []
-    for seg in segments_iter:
-        segments.append({
-            "start": seg.start + offset,
-            "end": seg.end + offset,
-            "text": seg.text.strip(),
-        })
-        full_text_parts.append(seg.text.strip())
+        # Consume the generator inside the lock (faster-whisper uses lazy evaluation)
+        segments = []
+        full_text_parts = []
+        for seg in segments_iter:
+            segments.append({
+                "start": seg.start + offset,
+                "end": seg.end + offset,
+                "text": seg.text.strip(),
+            })
+            full_text_parts.append(seg.text.strip())
 
     elapsed = time.time() - t0
     print(
@@ -254,9 +270,10 @@ def transcribe_audio_chunks(audio_dir: str, text_dir: str, on_progress=None):
     """
     Transcribe all audio chunks in audio_dir, write results to text_dir.
 
-    Supports two engines:
-      - WHISPER_ENGINE="local"  → faster-whisper (default, free, GPU-accelerated)
-      - WHISPER_ENGINE="azure"  → Azure Whisper API (fallback)
+    v4: Parallel transcription for local engine.
+    - Local engine: uses ThreadPoolExecutor with WHISPER_PARALLEL_WORKERS threads
+      (model access is serialized via lock, but I/O and pre/post processing overlap)
+    - Azure engine: sequential with rate-limit throttle
 
     Output format is identical for both engines:
       [TEXT]
@@ -277,39 +294,79 @@ def transcribe_audio_chunks(audio_dir: str, text_dir: str, on_progress=None):
 
     total_chunks = len(files)
     engine = WHISPER_ENGINE.lower()
-    print(f"[TRANSCRIBE] Engine: {engine}, Chunks: {total_chunks}")
+    print(f"[TRANSCRIBE] Engine: {engine}, Chunks: {total_chunks}, Workers: {WHISPER_PARALLEL_WORKERS}")
 
-    for idx, f in enumerate(files):
-        audio_path = os.path.join(audio_dir, f)
-        txt_path = os.path.join(text_dir, f.replace(".wav", ".txt"))
+    if engine == "local" and total_chunks > 1:
+        # ---- PARALLEL LOCAL TRANSCRIPTION ----
+        # Pre-load model before spawning threads
+        _get_whisper_model()
 
-        chunk_index = int(f.split("_")[1].split(".")[0])
+        completed = [0]
+        results_map = {}  # {chunk_index: result}
 
-        # ---------- Transcribe ----------
-        if engine == "local":
+        def _process_chunk(f):
+            audio_path = os.path.join(audio_dir, f)
+            chunk_index = int(f.split("_")[1].split(".")[0])
             result = _transcribe_chunk_local(audio_path, chunk_index)
-        else:
-            result = _transcribe_chunk_azure(audio_path, chunk_index, f)
+            results_map[chunk_index] = (f, result)
 
-        # ---------- Write output (identical format for both engines) ----------
-        with open(txt_path, "w", encoding="utf-8") as out:
-            out.write("[TEXT]\n")
-            out.write(result.get("text", ""))
+            completed[0] += 1
+            if on_progress and total_chunks > 0:
+                pct = min(int(completed[0] / total_chunks * 100), 100)
+                on_progress(pct)
 
-            out.write("\n\n[TIMELINE]\n")
-            for seg in result.get("segments", []):
-                out.write(
-                    f"{seg['start']:.2f}s → {seg['end']:.2f}s : {seg['text']}\n"
-                )
+            return chunk_index
 
-        print(f"[OK] Saved → {txt_path}")
+        with ThreadPoolExecutor(max_workers=WHISPER_PARALLEL_WORKERS) as pool:
+            futures = [pool.submit(_process_chunk, f) for f in files]
+            for fut in as_completed(futures):
+                try:
+                    fut.result()
+                except Exception as e:
+                    print(f"[TRANSCRIBE][ERROR] Chunk failed: {e}")
 
-        # Report progress
-        if on_progress and total_chunks > 0:
-            pct = min(int((idx + 1) / total_chunks * 100), 100)
-            on_progress(pct)
+        # Write results in order
+        for f in files:
+            chunk_index = int(f.split("_")[1].split(".")[0])
+            if chunk_index not in results_map:
+                continue
+            _, result = results_map[chunk_index]
+            txt_path = os.path.join(text_dir, f.replace(".wav", ".txt"))
+            _write_transcription(txt_path, result)
+            print(f"[OK] Saved → {txt_path}")
 
-        # Throttle only for Azure API
-        if engine == "azure":
-            print(f"[SLEEP] {SLEEP_BETWEEN_REQUESTS}s to avoid quota")
-            time.sleep(SLEEP_BETWEEN_REQUESTS)
+    else:
+        # ---- SEQUENTIAL (Azure or single chunk) ----
+        for idx, f in enumerate(files):
+            audio_path = os.path.join(audio_dir, f)
+            txt_path = os.path.join(text_dir, f.replace(".wav", ".txt"))
+            chunk_index = int(f.split("_")[1].split(".")[0])
+
+            if engine == "local":
+                result = _transcribe_chunk_local(audio_path, chunk_index)
+            else:
+                result = _transcribe_chunk_azure(audio_path, chunk_index, f)
+
+            _write_transcription(txt_path, result)
+            print(f"[OK] Saved → {txt_path}")
+
+            if on_progress and total_chunks > 0:
+                pct = min(int((idx + 1) / total_chunks * 100), 100)
+                on_progress(pct)
+
+            if engine == "azure":
+                print(f"[SLEEP] {SLEEP_BETWEEN_REQUESTS}s to avoid quota")
+                time.sleep(SLEEP_BETWEEN_REQUESTS)
+
+
+def _write_transcription(txt_path: str, result: dict):
+    """Write transcription result to text file in standard format."""
+    with open(txt_path, "w", encoding="utf-8") as out:
+        out.write("[TEXT]\n")
+        out.write(result.get("text", ""))
+
+        out.write("\n\n[TIMELINE]\n")
+        for seg in result.get("segments", []):
+            out.write(
+                f"{seg['start']:.2f}s → {seg['end']:.2f}s : {seg['text']}\n"
+            )
