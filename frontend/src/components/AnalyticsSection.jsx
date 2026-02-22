@@ -204,6 +204,7 @@ export default function AnalyticsSection({ reports1, videoData, onPreviewSegment
 
   // Selected product for filtering
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [rankingCollapsed, setRankingCollapsed] = useState(false);
 
   // ── Fetch Excel product/trend data ────────────────────────────
   useEffect(() => {
@@ -715,6 +716,7 @@ export default function AnalyticsSection({ reports1, videoData, onPreviewSegment
                         const width = ((exp.time_end - exp.time_start) / videoDuration) * 100;
                         const ci = exposureStats.colorMap[exp.product_name] ?? 0;
                         const isFiltered = selectedProduct && exp.product_name !== selectedProduct;
+                        if (isFiltered) return null;
                         return (
                           <div key={exp.id || idx}
                             className="absolute top-0 h-full rounded-sm cursor-pointer transition-all duration-200 hover:opacity-90"
@@ -723,7 +725,7 @@ export default function AnalyticsSection({ reports1, videoData, onPreviewSegment
                               left: `${Math.max(0, left)}%`,
                               width: `${Math.max(0.3, width)}%`,
                               backgroundColor: getColor(ci),
-                              opacity: isFiltered ? 0.15 : Math.max(0.5, exp.confidence || 0.8),
+                              opacity: Math.max(0.5, exp.confidence || 0.8),
                             }}
                             title={`${exp.product_name} (${formatTime(exp.time_start)} - ${formatTime(exp.time_end)}) ▶ クリックで再生`}
                           />
@@ -739,7 +741,7 @@ export default function AnalyticsSection({ reports1, videoData, onPreviewSegment
                         return (
                           <div key={p.name}
                             onClick={() => handleProductClick(p.name)}
-                            className={`flex items-center gap-1.5 text-xs cursor-pointer rounded-md px-1.5 py-0.5 transition-all duration-200 ${isLegendSelected ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-gray-100'} ${isLegendDimmed ? 'opacity-30' : ''}`}>
+                            className={`flex items-center gap-1.5 text-xs cursor-pointer rounded-md px-1.5 py-0.5 transition-all duration-200 ${isLegendSelected ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-gray-100'} ${isLegendDimmed ? 'hidden' : ''}`}>
                             <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: getColor(p.colorIdx) }} />
                             <span className="text-gray-700 font-medium">{p.name}</span>
                             {p.gmv > 0 && (
@@ -795,14 +797,20 @@ export default function AnalyticsSection({ reports1, videoData, onPreviewSegment
             {productRanking.length > 0 && (
               <div className="rounded-xl bg-white border border-gray-200 shadow-sm">
                 <div className="p-4">
-                  <div className="flex items-center gap-2 mb-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-500">
-                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                  <div className="flex items-center justify-between cursor-pointer" onClick={() => setRankingCollapsed(!rankingCollapsed)}>
+                    <div className="flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-500">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                      </svg>
+                      <span className="text-sm font-semibold text-gray-700">商品別売上ランキング</span>
+                      <span className="text-xs text-gray-400">({productRanking.length}商品)</span>
+                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`text-gray-400 transition-transform duration-200 ${rankingCollapsed ? '' : 'rotate-180'}`}>
+                      <polyline points="6 9 12 15 18 9" />
                     </svg>
-                    <span className="text-sm font-semibold text-gray-700">商品別売上ランキング</span>
                   </div>
 
-                  <div className="overflow-x-auto">
+                  {!rankingCollapsed && <div className="overflow-x-auto mt-4">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-gray-200">
@@ -884,7 +892,7 @@ export default function AnalyticsSection({ reports1, videoData, onPreviewSegment
                         })}
                       </tbody>
                     </table>
-                  </div>
+                  </div>}
                 </div>
               </div>
             )}
