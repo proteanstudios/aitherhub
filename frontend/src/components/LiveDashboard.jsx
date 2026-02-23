@@ -336,15 +336,27 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
         <div className="flex-1 flex flex-col bg-black">
           {/* Video Player Area */}
           <div className="flex-1 relative flex items-center justify-center">
-            {streamUrl ? (
-              <video
-                ref={videoRef}
-                src={streamUrl}
-                autoPlay
-                muted
-                playsInline
-                className="max-w-full max-h-full object-contain"
-              />
+            {loadStep >= 5 ? (
+              /* Connected - show video or live placeholder */
+              streamUrl ? (
+                <video
+                  ref={videoRef}
+                  src={streamUrl}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="max-w-full max-h-full object-contain"
+                />
+              ) : (
+                <div className="text-center">
+                  <div className="w-32 h-32 rounded-full bg-gradient-to-r from-[#FF0050]/20 to-[#00F2EA]/20 flex items-center justify-center mx-auto mb-4 animate-pulse">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#FF0050" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+                  </div>
+                  <p className="text-white text-lg font-bold">ライブ配信中</p>
+                  <p className="text-gray-400 text-sm mt-1">@{username}</p>
+                  <p className="text-gray-500 text-xs mt-2">リアルタイムデータを受信中</p>
+                </div>
+              )
             ) : (
               <div className="text-center w-80">
                 {/* Animated icon */}
