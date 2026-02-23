@@ -611,7 +611,7 @@ def main():
                     keyframes=keyframes,
                     total_frames=total_frames,
                     frame_dir=frame_dir,
-                    phase_importance=phase_importance,
+
                 )
         else:
             logger.info("[SKIP] STEP 2")

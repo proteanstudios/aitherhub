@@ -136,7 +136,7 @@ def process_live_capture_job(payload: dict):
     video_id = payload.get("video_id")
     live_url = payload.get("live_url")
     email = payload.get("email", "")
-    user_id = payload.get("user_id", "")
+    user_id = str(payload.get("user_id", ""))
     duration = payload.get("duration", 0)
 
     if not video_id or not live_url:
