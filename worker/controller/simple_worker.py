@@ -23,7 +23,7 @@ BATCH_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "batch
 sys.path.insert(0, BATCH_DIR)
 
 # Maximum concurrent jobs
-MAX_WORKERS = int(os.getenv("WORKER_MAX_CONCURRENT", "5"))
+MAX_WORKERS = int(os.getenv("WORKER_MAX_CONCURRENT", "1"))
 
 # Visibility timeout: 4 hours (video analysis can take 1-3 hours)
 VISIBILITY_TIMEOUT = 4 * 60 * 60  # 14400 seconds

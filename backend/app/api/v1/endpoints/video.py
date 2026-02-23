@@ -455,9 +455,21 @@ async def delete_video(
         user_id = current_user["id"]
         video_repo = VideoRepository(lambda: db)
 
-        # Delete related records first (video_phases, video_insights, etc.)
+        # Delete ALL related records first to avoid FK constraint violations
+        # Order matters: delete child tables before parent tables
+        await db.execute(text("DELETE FROM frame_analysis_results WHERE frame_id IN (SELECT id FROM video_frames WHERE video_id = :vid)"), {"vid": video_id})
+        await db.execute(text("DELETE FROM video_frames WHERE video_id = :vid"), {"vid": video_id})
+        await db.execute(text("DELETE FROM video_product_exposures WHERE video_id = :vid"), {"vid": video_id})
+        await db.execute(text("DELETE FROM video_clips WHERE video_id = :vid"), {"vid": video_id})
+        await db.execute(text("DELETE FROM audio_chunks WHERE video_id = :vid"), {"vid": video_id})
+        await db.execute(text("DELETE FROM chats WHERE video_id = :vid"), {"vid": video_id})
+        await db.execute(text("DELETE FROM phase_group_best_phases WHERE video_id = :vid"), {"vid": video_id})
+        await db.execute(text("DELETE FROM phase_insights WHERE video_id = :vid"), {"vid": video_id})
         await db.execute(text("DELETE FROM video_phases WHERE video_id = :vid"), {"vid": video_id})
         await db.execute(text("DELETE FROM video_insights WHERE video_id = :vid"), {"vid": video_id})
+        await db.execute(text("DELETE FROM processing_jobs WHERE video_id = :vid"), {"vid": video_id})
+        await db.execute(text("DELETE FROM reports WHERE video_id = :vid"), {"vid": video_id})
+        await db.execute(text("DELETE FROM video_states WHERE video_id = :vid"), {"vid": video_id})
         await db.commit()
 
         # Delete the video record
