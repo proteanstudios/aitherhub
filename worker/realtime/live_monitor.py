@@ -413,91 +413,119 @@ class TikTokLiveMonitor:
         )
 
     async def _fetch_stream_url(self):
-        """Fetch the HLS/FLV stream URL for frontend playback."""
+        """Fetch the HLS stream URL via /api/live/detail/ API."""
         try:
-            # Use the existing TikTokLiveExtractor to get stream URL
-            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            from batch.tiktok_stream_capture import TikTokLiveExtractor
+            room_id = await self._get_room_id()
+            if not room_id:
+                return
+            self._room_id = room_id
 
-            extractor = TikTokLiveExtractor()
-            info = extractor.extract(f"https://www.tiktok.com/@{self.unique_id}/live")
-            self._stream_url = info.get("stream_url", "")
+            data = await self._fetch_live_detail(room_id)
+            if not data:
+                return
+
+            room_info = data.get("LiveRoomInfo", {})
+            self._stream_url = room_info.get("liveUrl", "")
 
             if self._stream_url:
                 logger.info(f"Stream URL obtained: {self._stream_url[:80]}...")
-                # Push stream URL to backend
                 await self._push_to_backend("stream_url", {
                     "stream_url": self._stream_url,
                     "username": self.unique_id,
                 })
+            else:
+                logger.warning("No liveUrl in API response")
         except Exception as e:
             logger.error(f"Failed to get stream URL: {e}")
 
-    async def _poll_tiktok_api_loop(self):
-        """Poll TikTok API for viewer count and room info every 5 seconds."""
-        # Use TikTok's webcast API to get room stats
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from batch.tiktok_stream_capture import TikTokLiveExtractor
-
-        extractor = TikTokLiveExtractor()
-
-        # Get room_id
+    async def _get_room_id(self) -> str | None:
+        """Get room_id using TikTokLiveExtractor."""
         try:
+            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from batch.tiktok_stream_capture import TikTokLiveExtractor
+            extractor = TikTokLiveExtractor()
             room_id = extractor.get_room_id(self.unique_id)
+            logger.info(f"Room ID: {room_id}")
+            return str(room_id)
         except Exception as e:
             logger.error(f"Failed to get room_id: {e}")
-            return
+            return None
 
-        logger.info(f"Room ID: {room_id}")
+    async def _fetch_live_detail(self, room_id: str) -> dict | None:
+        """Fetch live detail from TikTok /api/live/detail/ endpoint."""
+        url = f"https://www.tiktok.com/api/live/detail/?aid=1988&roomID={room_id}"
+        try:
+            async with httpx.AsyncClient(
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                },
+                timeout=10,
+            ) as client:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    return resp.json()
+                else:
+                    logger.warning(f"live/detail API returned {resp.status_code}")
+                    return None
+        except Exception as e:
+            logger.warning(f"live/detail API error: {e}")
+            return None
+
+    async def _poll_tiktok_api_loop(self):
+        """Poll TikTok /api/live/detail/ for viewer count and room info every 5 seconds."""
+        room_id = getattr(self, '_room_id', None)
+        if not room_id:
+            room_id = await self._get_room_id()
+            if not room_id:
+                logger.error("Cannot start polling: no room_id")
+                return
+            self._room_id = room_id
+
+        consecutive_errors = 0
+        MAX_CONSECUTIVE_ERRORS = 6  # 30 seconds of errors before giving up
 
         while self.running:
             try:
-                # Poll room info for viewer count
-                url = f"https://webcast.tiktok.com/webcast/room/info/?aid=1988&room_id={room_id}"
-                async with httpx.AsyncClient(
-                    headers=extractor.session.headers if hasattr(extractor, 'session') else {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                    },
-                    timeout=10,
-                ) as client:
-                    resp = await client.get(url)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        room_data = data.get("data", {})
+                data = await self._fetch_live_detail(room_id)
+                if data:
+                    room_info = data.get("LiveRoomInfo", {})
+                    stats = room_info.get("liveRoomStats", {})
 
-                        # Extract viewer count
-                        user_count = room_data.get("user_count_str", "0")
-                        try:
-                            viewer_count = int(user_count.replace(",", ""))
-                        except (ValueError, AttributeError):
-                            # Handle "1.2K" format
-                            if "K" in str(user_count).upper():
-                                viewer_count = int(float(user_count.upper().replace("K", "")) * 1000)
-                            elif "M" in str(user_count).upper():
-                                viewer_count = int(float(user_count.upper().replace("M", "")) * 1000000)
-                            else:
-                                viewer_count = 0
+                    # Extract viewer count
+                    viewer_count = stats.get("userCount", 0)
+                    self.collector.on_viewer_update(viewer_count)
 
-                        self.collector.on_viewer_update(viewer_count)
+                    # Extract like count from stats if available
+                    like_count = stats.get("likeCount", 0)
+                    if like_count > self.collector.total_likes:
+                        delta = like_count - self.collector.total_likes
+                        self.collector.on_like(delta)
 
-                        # Extract like count
-                        like_count = room_data.get("like_count", 0)
-                        if like_count > self.collector.total_likes:
-                            delta = like_count - self.collector.total_likes
-                            self.collector.on_like(delta)
+                    # Check if still live (status == 2 means live)
+                    status = room_info.get("status", 2)  # default to 2 (live) if missing
+                    if status != 2:
+                        logger.info(f"Stream ended (status={status}). Stopping monitor.")
+                        self.running = False
+                        await self._push_to_backend("stream_ended", {
+                            "message": "ライブ配信が終了しました",
+                        })
+                        break
 
-                        # Check if still live
-                        status = room_data.get("status", 0)
-                        if status != 2:  # 2 = live
-                            logger.info("Stream ended. Stopping monitor.")
-                            self.running = False
-                            await self._push_to_backend("stream_ended", {
-                                "message": "ライブ配信が終了しました",
-                            })
-                            break
+                    consecutive_errors = 0
+                else:
+                    consecutive_errors += 1
+                    logger.warning(f"No data from live/detail (attempt {consecutive_errors}/{MAX_CONSECUTIVE_ERRORS})")
+                    if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                        logger.error("Too many consecutive errors. Stopping monitor.")
+                        self.running = False
+                        await self._push_to_backend("stream_ended", {
+                            "message": "接続が失われました",
+                        })
+                        break
 
             except Exception as e:
                 logger.warning(f"TikTok API poll error: {e}")
+                consecutive_errors += 1
 
             await asyncio.sleep(METRICS_INTERVAL)
 
