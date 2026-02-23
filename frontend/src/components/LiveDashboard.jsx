@@ -13,16 +13,16 @@ const MetricCard = ({ label, value, trend, icon, color = 'purple' }) => {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-gray-500 font-medium">{label}</span>
-        <div className={`w-8 h-8 rounded-lg bg-gradient-to-r ${colorMap[color]} flex items-center justify-center`}>
-          <span className="text-white text-sm">{icon}</span>
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 hover:shadow-md transition-shadow">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[11px] text-gray-500 font-medium">{label}</span>
+        <div className={`w-7 h-7 rounded-lg bg-gradient-to-r ${colorMap[color]} flex items-center justify-center`}>
+          <span className="text-white text-xs">{icon}</span>
         </div>
       </div>
-      <div className="text-2xl font-bold text-gray-900">{value}</div>
+      <div className="text-xl font-bold text-gray-900">{value}</div>
       {trend !== undefined && (
-        <div className={`text-xs mt-1 ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+        <div className={`text-[10px] mt-0.5 ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
           {trend >= 0 ? '↑' : '↓'} {Math.abs(trend).toFixed(1)}%
         </div>
       )}
@@ -47,15 +47,15 @@ const AdviceCard = ({ advice, isNew }) => {
   const priority = advice.urgency || advice.priority || 'medium';
 
   return (
-    <div className={`border-l-4 ${priorityColors[priority]} rounded-r-lg p-4 mb-3 transition-all duration-500 ${isNew ? 'animate-pulse ring-2 ring-purple-300' : ''}`}>
+    <div className={`border-l-4 ${priorityColors[priority]} rounded-r-lg p-3 mb-2 transition-all duration-500 ${isNew ? 'animate-pulse ring-2 ring-purple-300' : ''}`}>
       <div className="flex items-start gap-2">
-        <span className="text-lg">{priorityIcons[priority]}</span>
+        <span className="text-base">{priorityIcons[priority]}</span>
         <div className="flex-1">
-          <p className="text-sm font-semibold text-gray-900">{advice.message}</p>
+          <p className="text-xs font-semibold text-gray-900">{advice.message}</p>
           {advice.action && (
-            <p className="text-xs text-gray-600 mt-1 italic">→ {advice.action}</p>
+            <p className="text-[10px] text-gray-600 mt-1 italic">→ {advice.action}</p>
           )}
-          <p className="text-[10px] text-gray-400 mt-1">
+          <p className="text-[9px] text-gray-400 mt-1">
             {advice.timestamp ? new Date(typeof advice.timestamp === 'number' ? advice.timestamp * 1000 : advice.timestamp).toLocaleTimeString('ja-JP') : ''}
           </p>
         </div>
@@ -65,7 +65,7 @@ const AdviceCard = ({ advice, isNew }) => {
 };
 
 // ─── Mini Chart (Sparkline) ────────────────────────────────
-const Sparkline = ({ data, color = '#7D01FF', height = 60, label }) => {
+const Sparkline = ({ data, color = '#7D01FF', height = 50, label }) => {
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -247,14 +247,18 @@ const HLSVideoPlayer = ({ streamUrl, username }) => {
 
   return (
     <div className="w-full h-full relative bg-black flex items-center justify-center">
-      {/* Video element */}
+      {/* Video element - maintain 9:16 aspect ratio */}
       <video
         ref={videoRef}
-        className="w-full h-full object-contain"
+        className="h-full object-contain"
+        style={{
+          maxWidth: '100%',
+          aspectRatio: '9 / 16',
+          display: playerState === 'playing' ? 'block' : 'none',
+        }}
         playsInline
         autoPlay
         controls={false}
-        style={{ display: playerState === 'playing' ? 'block' : 'none' }}
       />
 
       {/* Loading state */}
@@ -493,7 +497,7 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
   return (
     <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-gray-900 to-gray-800 border-b border-gray-700/50">
+      <div className="flex items-center justify-between px-4 py-2 bg-gradient-to-r from-gray-900 to-gray-800 border-b border-gray-700/50 shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="relative flex h-3 w-3">
@@ -516,19 +520,21 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
         </button>
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left: Live Video Area */}
-        <div className="flex-1 flex flex-col bg-gradient-to-b from-gray-900 to-black">
+      {/* Main Content - horizontal layout */}
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        {/* Left: Live Video Area - 9:16 centered */}
+        <div className="flex-1 flex flex-col bg-black min-w-0">
           {/* Video Player Area */}
-          <div className="flex-1 relative">
+          <div className="flex-1 relative flex items-center justify-center min-h-0">
             {showDashboard ? (
               /* Connected - show HLS video player or fallback */
               streamUrl ? (
-                <HLSVideoPlayer streamUrl={streamUrl} username={username} />
+                <div className="h-full flex items-center justify-center" style={{ aspectRatio: '9 / 16', maxWidth: '100%' }}>
+                  <HLSVideoPlayer streamUrl={streamUrl} username={username} />
+                </div>
               ) : (
                 /* No stream URL yet - show waiting state with TikTok link */
-                <div className="w-full h-full flex flex-col items-center justify-center">
+                <div className="flex flex-col items-center justify-center">
                   <div className="w-16 h-16 rounded-full border-4 border-t-[#FF0050] border-r-[#00F2EA] border-b-[#FF0050] border-l-[#00F2EA] animate-spin mb-4"></div>
                   <p className="text-white text-sm mb-2">ストリームURLを取得中...</p>
                   <p className="text-gray-500 text-xs mb-4">データは正常に受信しています</p>
@@ -547,15 +553,15 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
               )
             ) : (
               /* Loading state */
-              <div className="w-full h-full flex items-center justify-center">
-                <div className="text-center w-80">
+              <div className="flex items-center justify-center">
+                <div className="text-center w-72">
                   {/* Animated icon */}
-                  <div className="w-24 h-24 rounded-full bg-gradient-to-r from-[#FF0050] to-[#00F2EA] flex items-center justify-center mx-auto mb-6 animate-pulse shadow-lg shadow-pink-500/30">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+                  <div className="w-20 h-20 rounded-full bg-gradient-to-r from-[#FF0050] to-[#00F2EA] flex items-center justify-center mx-auto mb-5 animate-pulse shadow-lg shadow-pink-500/30">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
                   </div>
 
                   {/* Progress percentage */}
-                  <p className="text-white text-3xl font-bold mb-2">{loadProgress}%</p>
+                  <p className="text-white text-2xl font-bold mb-2">{loadProgress}%</p>
 
                   {/* Current step label */}
                   <p className="text-gray-300 text-sm mb-4">{loadSteps[loadStep]?.label || '準備中...'}</p>
@@ -590,7 +596,7 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
 
             {/* Overlay Metrics (only when video is playing) */}
             {showDashboard && (
-              <div className="absolute top-4 left-4 flex gap-2 z-10">
+              <div className="absolute top-3 left-3 flex gap-2 z-10">
                 <div className="bg-black/60 backdrop-blur-sm rounded-full px-3 py-1 flex items-center gap-1">
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FF0050" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                   <span className="text-white text-xs font-bold">{formatNum(metrics.viewer_count)}</span>
@@ -605,19 +611,19 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
 
           {/* Bottom Sparklines */}
           {showDashboard && (
-            <div className="h-20 bg-gray-900/80 border-t border-gray-800 px-4 py-2 grid grid-cols-4 gap-4">
-              <Sparkline data={metricsHistory.viewers} color="#FF0050" height={50} label="視聴者" />
-              <Sparkline data={metricsHistory.comments} color="#00F2EA" height={50} label="コメント/分" />
-              <Sparkline data={metricsHistory.likes} color="#FF6B6B" height={50} label="いいね" />
-              <Sparkline data={metricsHistory.gifts} color="#FFD93D" height={50} label="ギフト" />
+            <div className="h-16 bg-gray-900/80 border-t border-gray-800 px-3 py-1.5 grid grid-cols-4 gap-3 shrink-0">
+              <Sparkline data={metricsHistory.viewers} color="#FF0050" height={40} label="視聴者" />
+              <Sparkline data={metricsHistory.comments} color="#00F2EA" height={40} label="コメント/分" />
+              <Sparkline data={metricsHistory.likes} color="#FF6B6B" height={40} label="いいね" />
+              <Sparkline data={metricsHistory.gifts} color="#FFD93D" height={40} label="ギフト" />
             </div>
           )}
         </div>
 
-        {/* Right: Dashboard */}
-        <div className="w-[380px] flex flex-col bg-gray-50 border-l border-gray-200 overflow-hidden">
+        {/* Right: Dashboard Panel - fixed 320px */}
+        <div className="w-80 flex flex-col bg-gray-50 border-l border-gray-200 overflow-hidden shrink-0">
           {/* Metrics Grid */}
-          <div className="p-3 grid grid-cols-2 gap-2 border-b border-gray-200">
+          <div className="p-2.5 grid grid-cols-2 gap-2 border-b border-gray-200 shrink-0">
             <MetricCard
               label="視聴者数"
               value={formatNum(metrics.viewer_count)}
@@ -660,11 +666,11 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
           </div>
 
           {/* AI Advice Section */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-200 bg-white">
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+            <div className="px-3 py-2 border-b border-gray-200 bg-white shrink-0">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center">
-                  <span className="text-white text-xs">AI</span>
+                <div className="w-5 h-5 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center">
+                  <span className="text-white text-[10px]">AI</span>
                 </div>
                 <span className="text-sm font-bold text-gray-800">リアルタイムアドバイス</span>
                 {advices.length > 0 && (
@@ -677,12 +683,12 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
 
             <div
               ref={adviceContainerRef}
-              className="flex-1 overflow-y-auto p-3 space-y-2"
+              className="flex-1 overflow-y-auto p-2.5 space-y-2"
             >
               {advices.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center">
-                  <div className="w-16 h-16 rounded-full bg-purple-50 flex items-center justify-center mb-3">
-                    <span className="text-2xl">🤖</span>
+                  <div className="w-14 h-14 rounded-full bg-purple-50 flex items-center justify-center mb-3">
+                    <span className="text-xl">🤖</span>
                   </div>
                   <p className="text-sm text-gray-500">AIがライブを分析中...</p>
                   <p className="text-xs text-gray-400 mt-1">
@@ -705,7 +711,7 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
           </div>
 
           {/* Connection Status */}
-          <div className="px-4 py-2 bg-white border-t border-gray-200 flex items-center justify-between">
+          <div className="px-3 py-1.5 bg-white border-t border-gray-200 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full ${isConnected && !streamEnded ? 'bg-green-500' : streamEnded ? 'bg-gray-400' : 'bg-red-500'}`}></div>
               <span className="text-[10px] text-gray-500">
