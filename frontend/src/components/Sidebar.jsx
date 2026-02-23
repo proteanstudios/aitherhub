@@ -21,6 +21,12 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 
+// Helper: check if a video is a live analysis
+const isLiveVideo = (video) => {
+  const name = (video?.original_filename || '').toLowerCase();
+  return name.startsWith('tiktok_live_');
+};
+
 export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAnalysis, onShowFeedback, refreshKey, selectedVideo, showFeedback }) {
   const sidebarRef = useRef(null);
   const [openForgotPassword, setOpenForgotPassword] = useState(false);
@@ -145,6 +151,29 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
     fetchVideos();
   }, [effectiveUser?.isLoggedIn, effectiveUser?.id, effectiveUser?.email, refreshKey]);
 
+  // Split videos into live and regular
+  const { liveVideos, regularVideos } = useMemo(() => {
+    const query = searchValue.trim().toLowerCase();
+    const filtered = query
+      ? (videos || []).filter((video) => {
+          const name = (video?.original_filename ?? "").toString().toLowerCase();
+          const id = (video?.id ?? "").toString().toLowerCase();
+          return name.includes(query) || id.includes(query);
+        })
+      : videos;
+
+    const live = [];
+    const regular = [];
+    for (const v of filtered) {
+      if (isLiveVideo(v)) {
+        live.push(v);
+      } else {
+        regular.push(v);
+      }
+    }
+    return { liveVideos: live, regularVideos: regular };
+  }, [videos, searchValue]);
+
   const filteredVideos = useMemo(() => {
     const query = searchValue.trim().toLowerCase();
     if (!query) return videos;
@@ -172,13 +201,136 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
     if (isOpen) {
       const timer = setTimeout(() => {
         setShowBackButton(true);
-      }, 300); // đúng duration sidebar
+      }, 300);
 
       return () => clearTimeout(timer);
     } else {
       setShowBackButton(false);
     }
   }, [isOpen]);
+
+  // Extract username from live video filename
+  const getLiveUsername = (video) => {
+    const name = video?.original_filename || '';
+    const match = name.match(/tiktok_live_(.+?)\.mp4$/);
+    return match ? `@${match[1]}` : name;
+  };
+
+  // Render a single video item
+  const renderVideoItem = (video, isLive = false) => (
+    <div className={`group relative w-full min-h-10 flex items-center gap-2 font-semibold cursor-pointer text-black p-2 rounded-lg text-left transition-all duration-200 ease-out ${selectedVideoId === video.id
+      ? "bg-purple-100 text-purple-700"
+      : "hover:text-gray-400 hover:bg-gray-100"
+      }`} key={video.id}
+      onClick={() => { if (renamingVideoId !== video.id && deleteConfirmVideoId !== video.id) handleVideoClick(video); }}>
+      
+      {/* Icon: Live or Video */}
+      {isLive ? (
+        <div className="min-w-[16px] flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" className="min-w-[16px]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+      ) : (
+        <svg xmlns="http://www.w3.org/2000/svg" className="min-w-[16px]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
+      )}
+
+      {renamingVideoId === video.id ? (
+        <input
+          autoFocus
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleRenameVideo(video.id);
+            if (e.key === "Escape") { setRenamingVideoId(null); setRenameValue(""); }
+          }}
+          onBlur={() => handleRenameVideo(video.id)}
+          onClick={(e) => e.stopPropagation()}
+          className="text-sm font-medium text-gray-700 bg-white border border-purple-300 rounded px-1 py-0.5 outline-none focus:ring-2 focus:ring-purple-400 w-full"
+        />
+      ) : deleteConfirmVideoId === video.id ? (
+        <div className="flex items-center gap-2 w-full" onClick={(e) => e.stopPropagation()}>
+          <span className="text-xs text-red-500">削除しますか？</span>
+          <button onClick={() => handleDeleteVideo(video.id)} className="text-xs bg-red-500 text-white px-2 py-0.5 rounded hover:bg-red-600">削除</button>
+          <button onClick={() => setDeleteConfirmVideoId(null)} className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded hover:bg-gray-300">取消</button>
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-col flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-medium text-[#6b7280] block truncate">
+                {isLive ? getLiveUsername(video) : (video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`)}
+              </span>
+              {isLive && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-500 text-white shrink-0 leading-none">
+                  LIVE
+                </span>
+              )}
+            </div>
+            {!isLive && video.top_products && video.top_products.length > 0 && (
+              <div className="flex items-center gap-1 mt-0.5">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 text-emerald-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                <span className="text-[10px] text-emerald-600 truncate" title={video.top_products.join(' / ')}>
+                  {video.top_products.map(p => p.length > 15 ? p.slice(0, 15) + '...' : p).join(' / ')}
+                </span>
+              </div>
+            )}
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              {video.total_gmv != null && video.total_gmv > 0 && (
+                <span className="inline-flex items-center gap-0.5 text-[10px] text-orange-600">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                  {video.total_gmv >= 10000 ? `¥${(video.total_gmv / 10000).toFixed(1)}万` : `¥${Math.round(video.total_gmv).toLocaleString()}`}
+                </span>
+              )}
+              {video.stream_duration != null && video.stream_duration > 0 && (
+                <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-500">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  {(() => { const h = Math.floor(video.stream_duration / 3600); const m = Math.floor((video.stream_duration % 3600) / 60); return h > 0 ? `${h}h${m.toString().padStart(2,'0')}m` : `${m}m`; })()}
+                </span>
+              )}
+              {video.completed_clip_count > 0 && (
+                <span className="inline-flex items-center gap-0.5 text-[10px] text-purple-600">
+                  <Scissors className="w-3 h-3" />
+                  {video.completed_clip_count}
+                </span>
+              )}
+              {video.memo_count > 0 && (
+                <span className="inline-flex items-center gap-0.5 text-[10px] text-green-600">
+                  <MessageSquareText className="w-3 h-3" />
+                  {video.memo_count}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="relative" ref={menuOpenVideoId === video.id ? menuRef : null}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setMenuOpenVideoId(menuOpenVideoId === video.id ? null : video.id); }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-200"
+            >
+              <MoreHorizontal className="w-4 h-4 text-gray-500" />
+            </button>
+            {menuOpenVideoId === video.id && (
+              <div className="absolute right-0 top-8 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px]">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setRenamingVideoId(video.id); setRenameValue(video.original_filename || ""); setMenuOpenVideoId(null); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  <Pencil className="w-3.5 h-3.5" /> 名前を変更
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setDeleteConfirmVideoId(video.id); setMenuOpenVideoId(null); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> 削除
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
 
   return (
     <>
@@ -225,13 +377,12 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                 : "border-gray-200 hover:bg-gray-100"
                 }`}
             >
-              {/* <img src={write} className="w-[30px] h-[30px]" /> */}
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={!showFeedback && !selectedVideo ? "#7c3aed" : "#213547"} stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil-icon lucide-pencil transition-colors duration-200 ease-out"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /><path d="m15 5 4 4" /></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={!showFeedback && !selectedVideo ? "#7c3aed" : "#213547"} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-pencil-icon lucide-pencil transition-colors duration-200 ease-out"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /><path d="m15 5 4 4" /></svg>
               <span className={`text-sm transition-colors duration-200 ease-out ${!showFeedback && !selectedVideo ? "text-purple-700 font-medium" : "text-[#020817]"
                 }`}>{window.__t('newAnalysis')}</span>
             </div>
             <div className="relative">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"><path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" /></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-search absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"><path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" /></svg>
               <input
                 type="text"
                 value={searchValue}
@@ -263,7 +414,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                 : "border-gray-200 hover:bg-gray-100"
                 }`}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={showFeedback ? "#7c3aed" : "#6b7280"} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-message-square-icon lucide-message-square transition-colors duration-200 ease-out"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" /></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={showFeedback ? "#7c3aed" : "#6b7280"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-colors duration-200 ease-out"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
               <span className={`text-sm transition-colors duration-200 ease-out ${showFeedback ? "text-purple-700 font-medium" : "text-muted-foreground "
                 }`}>{window.__t('feedback')}</span>
             </div>
@@ -272,33 +423,6 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
 
         {/* ================= SP ================= */}
         <div className="hidden mt-[22px] px-4 shrink-0">
-          {/* <div className="flex justify-between items-center ml-[50px] mb-[20px] gap-2">
-            <div className="relative w-full max-w-[270px]">
-              <div className="relative p-px rounded-[5px] bg-linear-to-b from-[#4500FF] via-[#6A00FF] to-[#9B00FF]">
-                <img src={searchSp} className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  placeholder={window.__t("searchChat")}
-                  value={searchValue}
-                  onChange={(e) => setSearchValue(e.target.value)}
-                  className="
-                    w-full h-[40px] rounded-[5px] bg-white text-black pl-[35px] pr-3 outline-none
-
-                    placeholder:text-[#9B00FF]
-                    placeholder:font-bold
-                    placeholder:text-[14px]
-
-                    placeholder:transition-opacity
-                    placeholder:duration-100
-                    focus:placeholder:opacity-50
-                  "
-                />
-
-              </div>
-            </div>
-
-            <img src={searchMobile} onClick={() => { setSelectedVideoId(null); if (onVideoSelect) onVideoSelect(null); if (onNewAnalysis) onNewAnalysis(); }} className="w-[32px] cursor-pointer" />
-          </div> */}
-
           <div className="bg-[linear-gradient(180deg,rgba(69,0,255,1),rgba(155,0,255,1))]">
             <div className="bg-white">
               <div className="flex items-center mb-5 mt-1">
@@ -320,119 +444,51 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
 
         {/* ================= COMMON ================= */}
         <div className="mt-6 md:space-y-3 flex flex-col flex-1 min-h-0 pl-4 pr-0 md:px-0">
-          <span className="block text-[#9E9E9E] text-left shrink-0 text-sm">{window.__t('analysisHistory')}</span>
 
           {effectiveUser?.isLoggedIn && (
             <>
-              <div className="flex-1 min-h-0 flex flex-col">
+              <div className="flex-1 min-h-0 flex flex-col overflow-y-auto scrollbar-custom">
                 {loadingVideos && videos.length === 0 ? (
                   <div className="flex items-center justify-center py-4">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-400"></div>
                   </div>
-                ) : filteredVideos.length > 0 ? (
-                  <div className="flex flex-col items-start gap-2 flex-1 min-h-0 overflow-y-auto scrollbar-custom">
-                    {loadingVideos && (
-                      <div className="w-full flex justify-center py-1">
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400"></div>
+                ) : (liveVideos.length > 0 || regularVideos.length > 0) ? (
+                  <>
+                    {/* ── Live Analysis Section ── */}
+                    {liveVideos.length > 0 && (
+                      <div className="mb-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                          </span>
+                          <span className="text-[#9E9E9E] text-sm font-medium">ライブ解析</span>
+                          <span className="text-[10px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full font-bold">{liveVideos.length}</span>
+                        </div>
+                        <div className="flex flex-col items-start gap-1">
+                          {liveVideos.map((video) => renderVideoItem(video, true))}
+                        </div>
                       </div>
                     )}
-                    {filteredVideos.map((video) => (
-                      <div className={`group relative w-full min-h-10 flex items-center gap-2 font-semibold cursor-pointer text-black p-2 rounded-lg text-left transition-all duration-200 ease-out ${selectedVideoId === video.id
-                        ? "bg-purple-100 text-purple-700"
-                        : "hover:text-gray-400 hover:bg-gray-100"
-                        }`} key={video.id}
-                        onClick={() => { if (renamingVideoId !== video.id && deleteConfirmVideoId !== video.id) handleVideoClick(video); }}>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="min-w-[16px]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
 
-                        {renamingVideoId === video.id ? (
-                          <input
-                            autoFocus
-                            value={renameValue}
-                            onChange={(e) => setRenameValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") handleRenameVideo(video.id);
-                              if (e.key === "Escape") { setRenamingVideoId(null); setRenameValue(""); }
-                            }}
-                            onBlur={() => handleRenameVideo(video.id)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-sm font-medium text-gray-700 bg-white border border-purple-300 rounded px-1 py-0.5 outline-none focus:ring-2 focus:ring-purple-400 w-full"
-                          />
-                        ) : deleteConfirmVideoId === video.id ? (
-                          <div className="flex items-center gap-2 w-full" onClick={(e) => e.stopPropagation()}>
-                            <span className="text-xs text-red-500">削除しますか？</span>
-                            <button onClick={() => handleDeleteVideo(video.id)} className="text-xs bg-red-500 text-white px-2 py-0.5 rounded hover:bg-red-600">削除</button>
-                            <button onClick={() => setDeleteConfirmVideoId(null)} className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded hover:bg-gray-300">取消</button>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="flex flex-col flex-1 min-w-0">
-                              <span className="text-sm font-medium text-[#6b7280] block truncate">
-                                {video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`}
-                              </span>
-                              {video.top_products && video.top_products.length > 0 && (
-                                <div className="flex items-center gap-1 mt-0.5">
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 text-emerald-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-                                  <span className="text-[10px] text-emerald-600 truncate" title={video.top_products.join(' / ')}>
-                                    {video.top_products.map(p => p.length > 15 ? p.slice(0, 15) + '...' : p).join(' / ')}
-                                  </span>
-                                </div>
-                              )}
-                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                {video.total_gmv != null && video.total_gmv > 0 && (
-                                  <span className="inline-flex items-center gap-0.5 text-[10px] text-orange-600">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                                    {video.total_gmv >= 10000 ? `¥${(video.total_gmv / 10000).toFixed(1)}万` : `¥${Math.round(video.total_gmv).toLocaleString()}`}
-                                  </span>
-                                )}
-                                {video.stream_duration != null && video.stream_duration > 0 && (
-                                  <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-500">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                    {(() => { const h = Math.floor(video.stream_duration / 3600); const m = Math.floor((video.stream_duration % 3600) / 60); return h > 0 ? `${h}h${m.toString().padStart(2,'0')}m` : `${m}m`; })()}
-                                  </span>
-                                )}
-                                {video.completed_clip_count > 0 && (
-                                  <span className="inline-flex items-center gap-0.5 text-[10px] text-purple-600">
-                                    <Scissors className="w-3 h-3" />
-                                    {video.completed_clip_count}
-                                  </span>
-                                )}
-                                {video.memo_count > 0 && (
-                                  <span className="inline-flex items-center gap-0.5 text-[10px] text-green-600">
-                                    <MessageSquareText className="w-3 h-3" />
-                                    {video.memo_count}
-                                  </span>
-                                )}
-                              </div>
+                    {/* ── Video Analysis Section ── */}
+                    {regularVideos.length > 0 && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#9E9E9E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
+                          <span className="text-[#9E9E9E] text-sm">{window.__t('analysisHistory')}</span>
+                        </div>
+                        <div className="flex flex-col items-start gap-1">
+                          {loadingVideos && (
+                            <div className="w-full flex justify-center py-1">
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400"></div>
                             </div>
-                            <div className="relative" ref={menuOpenVideoId === video.id ? menuRef : null}>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setMenuOpenVideoId(menuOpenVideoId === video.id ? null : video.id); }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-200"
-                              >
-                                <MoreHorizontal className="w-4 h-4 text-gray-500" />
-                              </button>
-                              {menuOpenVideoId === video.id && (
-                                <div className="absolute right-0 top-8 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px]">
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); setRenamingVideoId(video.id); setRenameValue(video.original_filename || ""); setMenuOpenVideoId(null); }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                  >
-                                    <Pencil className="w-3.5 h-3.5" /> 名前を変更
-                                  </button>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); setDeleteConfirmVideoId(video.id); setMenuOpenVideoId(null); }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" /> 削除
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </>
-                        )}
+                          )}
+                          {regularVideos.map((video) => renderVideoItem(video, false))}
+                        </div>
                       </div>
-                    ))}
-                  </div>
+                    )}
+                  </>
                 ) : (
                   <div className="text-center text-gray-400 text-sm py-4">
                     {videos.length > 0 && searchValue.trim()
@@ -451,7 +507,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                       className="w-[225px] h-[45px] rounded-[50px] border border-[#B5B5B5] flex items-center justify-center shadow cursor-pointer transition-colors hover:bg-gray-100 active:bg-gray-100"
                     >
                       <span className="font-bold text-sm max-w-[165px] truncate inline-block align-middle text-gray-700">
-                        {effectiveUser.email}
+                        {effectiveUser?.email || ""}
                       </span>
                       <ChevronDown className="ml-1 w-4 h-4 text-gray-500" />
                     </button>
@@ -505,8 +561,8 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
         style={{ fontSize: "24px", borderRadius: "50%" }}
         className={`md:hidden ml-[-10px] fixed top-[16px] right-[16px] z-70 w-[32px] h-[32px] flex items-center justify-center font-bold bg-white rounded-full shadow-lg transition-all duration-200 ease-out ${showBackButton ? "opacity-100 translate-x-0 pointer-events-auto" : "opacity-0 translate-x-2 pointer-events-none"}`}
       >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" stroke="#4500FF" />
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="size-6">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" stroke="#4500FF" />
         </svg>
 
       </button>

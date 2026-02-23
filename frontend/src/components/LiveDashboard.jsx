@@ -13,16 +13,16 @@ const MetricCard = ({ label, value, trend, icon, color = 'purple' }) => {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-gray-500 font-medium">{label}</span>
-        <div className={`w-8 h-8 rounded-lg bg-gradient-to-r ${colorMap[color]} flex items-center justify-center`}>
-          <span className="text-white text-sm">{icon}</span>
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 hover:shadow-md transition-shadow">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[11px] text-gray-500 font-medium">{label}</span>
+        <div className={`w-7 h-7 rounded-lg bg-gradient-to-r ${colorMap[color]} flex items-center justify-center`}>
+          <span className="text-white text-xs">{icon}</span>
         </div>
       </div>
-      <div className="text-2xl font-bold text-gray-900">{value}</div>
+      <div className="text-xl font-bold text-gray-900">{value}</div>
       {trend !== undefined && (
-        <div className={`text-xs mt-1 ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+        <div className={`text-[10px] mt-0.5 ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
           {trend >= 0 ? '↑' : '↓'} {Math.abs(trend).toFixed(1)}%
         </div>
       )}
@@ -47,16 +47,16 @@ const AdviceCard = ({ advice, isNew }) => {
   const priority = advice.urgency || advice.priority || 'medium';
 
   return (
-    <div className={`border-l-4 ${priorityColors[priority]} rounded-r-lg p-4 mb-3 transition-all duration-500 ${isNew ? 'animate-pulse ring-2 ring-purple-300' : ''}`}>
+    <div className={`border-l-4 ${priorityColors[priority]} rounded-r-lg p-3 mb-2 transition-all duration-500 ${isNew ? 'animate-pulse ring-2 ring-purple-300' : ''}`}>
       <div className="flex items-start gap-2">
-        <span className="text-lg">{priorityIcons[priority]}</span>
+        <span className="text-base">{priorityIcons[priority]}</span>
         <div className="flex-1">
-          <p className="text-sm font-semibold text-gray-900">{advice.message}</p>
+          <p className="text-xs font-semibold text-gray-900">{advice.message}</p>
           {advice.action && (
-            <p className="text-xs text-gray-600 mt-1 italic">→ {advice.action}</p>
+            <p className="text-[10px] text-gray-600 mt-1 italic">→ {advice.action}</p>
           )}
-          <p className="text-[10px] text-gray-400 mt-1">
-            {new Date(advice.timestamp * 1000).toLocaleTimeString('ja-JP')}
+          <p className="text-[9px] text-gray-400 mt-1">
+            {advice.timestamp ? new Date(typeof advice.timestamp === 'number' ? advice.timestamp * 1000 : advice.timestamp).toLocaleTimeString('ja-JP') : ''}
           </p>
         </div>
       </div>
@@ -65,7 +65,7 @@ const AdviceCard = ({ advice, isNew }) => {
 };
 
 // ─── Mini Chart (Sparkline) ────────────────────────────────
-const Sparkline = ({ data, color = '#7D01FF', height = 60, label }) => {
+const Sparkline = ({ data, color = '#7D01FF', height = 50, label }) => {
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -130,81 +130,170 @@ const Sparkline = ({ data, color = '#7D01FF', height = 60, label }) => {
   );
 };
 
-// ─── Animated Live Placeholder ─────────────────────────────
-const LivePlaceholder = ({ username, viewerCount, elapsedTime, formatTime, formatNum }) => {
+// ─── HLS Video Player (9:16 aspect ratio) ─────────────────
+const HLSVideoPlayer = ({ streamUrl, username }) => {
+  const videoRef = useRef(null);
+  const hlsRef = useRef(null);
+  const [playerState, setPlayerState] = useState('loading'); // loading | playing | error
+  const [errorMsg, setErrorMsg] = useState('');
+
+  useEffect(() => {
+    if (!streamUrl || !videoRef.current) return;
+
+    let hls = null;
+
+    const initHls = async () => {
+      try {
+        // Dynamically import hls.js from CDN
+        if (!window.Hls) {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/hls.js@latest';
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+        }
+
+        const Hls = window.Hls;
+
+        if (Hls.isSupported()) {
+          hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: true,
+            backBufferLength: 30,
+            maxBufferLength: 10,
+            maxMaxBufferLength: 20,
+            liveSyncDurationCount: 3,
+            liveMaxLatencyDurationCount: 6,
+            liveDurationInfinity: true,
+            fragLoadingTimeOut: 20000,
+            manifestLoadingTimeOut: 20000,
+            levelLoadingTimeOut: 20000,
+          });
+
+          hlsRef.current = hls;
+
+          hls.on(Hls.Events.ERROR, (event, data) => {
+            console.warn('HLS error:', data.type, data.details);
+            if (data.fatal) {
+              switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                  console.log('HLS: Fatal network error, trying to recover...');
+                  hls.startLoad();
+                  break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                  console.log('HLS: Fatal media error, trying to recover...');
+                  hls.recoverMediaError();
+                  break;
+                default:
+                  setPlayerState('error');
+                  setErrorMsg('ストリームの再生に失敗しました');
+                  break;
+              }
+            }
+          });
+
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            console.log('HLS: Manifest parsed, starting playback');
+            videoRef.current.play().then(() => {
+              setPlayerState('playing');
+            }).catch(err => {
+              console.warn('HLS: Autoplay blocked, muting and retrying');
+              videoRef.current.muted = true;
+              videoRef.current.play().then(() => {
+                setPlayerState('playing');
+              }).catch(() => {
+                setPlayerState('error');
+                setErrorMsg('自動再生がブロックされました');
+              });
+            });
+          });
+
+          hls.loadSource(streamUrl);
+          hls.attachMedia(videoRef.current);
+
+        } else if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
+          // Safari native HLS support
+          videoRef.current.src = streamUrl;
+          videoRef.current.addEventListener('loadedmetadata', () => {
+            videoRef.current.play().then(() => {
+              setPlayerState('playing');
+            }).catch(() => {
+              videoRef.current.muted = true;
+              videoRef.current.play().then(() => setPlayerState('playing'));
+            });
+          });
+        } else {
+          setPlayerState('error');
+          setErrorMsg('お使いのブラウザはHLS再生に対応していません');
+        }
+      } catch (err) {
+        console.error('HLS init error:', err);
+        setPlayerState('error');
+        setErrorMsg('プレーヤーの初期化に失敗しました');
+      }
+    };
+
+    initHls();
+
+    return () => {
+      if (hls) {
+        hls.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, [streamUrl]);
+
   return (
-    <div className="flex flex-col items-center justify-center h-full w-full relative overflow-hidden">
-      {/* Animated background rings */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div
-          className="absolute w-64 h-64 rounded-full border border-[#FF0050]/10"
-          style={{ animation: 'ping 3s cubic-bezier(0, 0, 0.2, 1) infinite' }}
-        />
-        <div
-          className="absolute w-48 h-48 rounded-full border border-[#00F2EA]/10"
-          style={{ animation: 'ping 3s cubic-bezier(0, 0, 0.2, 1) infinite', animationDelay: '1s' }}
-        />
-        <div
-          className="absolute w-32 h-32 rounded-full border border-[#FF0050]/15"
-          style={{ animation: 'ping 3s cubic-bezier(0, 0, 0.2, 1) infinite', animationDelay: '2s' }}
-        />
-      </div>
+    <div className="h-full flex items-center justify-center bg-black">
+      {/* Video element - constrained to 9:16 aspect ratio */}
+      <video
+        ref={videoRef}
+        className="h-full"
+        style={{ aspectRatio: '9/16', maxWidth: '100%', objectFit: 'cover', display: playerState === 'playing' ? 'block' : 'none' }}
+        playsInline
+        autoPlay
+        controls={false}
+      />
 
-      {/* Main content */}
-      <div className="relative z-10 text-center">
-        {/* Animated live icon */}
-        <div className="w-28 h-28 rounded-full bg-gradient-to-br from-[#FF0050]/20 via-[#FF0050]/10 to-[#00F2EA]/20 flex items-center justify-center mx-auto mb-6 backdrop-blur-sm border border-white/10">
-          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#FF0050]/30 to-[#00F2EA]/30 flex items-center justify-center">
-            <div className="relative">
-              <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10"/>
-                <circle cx="12" cy="12" r="3"/>
-                <line x1="12" y1="2" x2="12" y2="6" opacity="0.5"/>
-                <line x1="12" y1="18" x2="12" y2="22" opacity="0.5"/>
-                <line x1="2" y1="12" x2="6" y2="12" opacity="0.5"/>
-                <line x1="18" y1="12" x2="22" y2="12" opacity="0.5"/>
-              </svg>
-              {/* Pulsing red dot */}
-              <span className="absolute -top-1 -right-1 flex h-4 w-4">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500"></span>
-              </span>
-            </div>
-          </div>
+      {/* Loading state */}
+      {playerState === 'loading' && (
+        <div className="flex flex-col items-center justify-center">
+          <div className="w-16 h-16 rounded-full border-4 border-t-[#FF0050] border-r-[#00F2EA] border-b-[#FF0050] border-l-[#00F2EA] animate-spin mb-4"></div>
+          <p className="text-white text-sm">ライブ映像を読み込み中...</p>
+          <p className="text-gray-500 text-xs mt-1">@{username}</p>
         </div>
+      )}
 
-        {/* Title */}
-        <h2 className="text-white text-xl font-bold mb-1">ライブ配信モニタリング中</h2>
-        <p className="text-gray-400 text-sm mb-4">@{username}</p>
-
-        {/* Live stats bar */}
-        <div className="flex items-center justify-center gap-6 mb-6">
-          <div className="flex items-center gap-2 bg-white/5 rounded-full px-4 py-2 backdrop-blur-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FF0050" strokeWidth="2">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+      {/* Error state - show fallback */}
+      {playerState === 'error' && (
+        <div className="flex flex-col items-center justify-center text-center px-8">
+          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#FF0050]/20 to-[#00F2EA]/20 flex items-center justify-center mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5">
+              <circle cx="12" cy="12" r="10"/>
+              <circle cx="12" cy="12" r="3"/>
+              <line x1="12" y1="2" x2="12" y2="6" opacity="0.5"/>
+              <line x1="12" y1="18" x2="12" y2="22" opacity="0.5"/>
+              <line x1="2" y1="12" x2="6" y2="12" opacity="0.5"/>
+              <line x1="18" y1="12" x2="22" y2="12" opacity="0.5"/>
             </svg>
-            <span className="text-white font-bold text-sm">{formatNum(viewerCount)}</span>
-            <span className="text-gray-500 text-xs">視聴中</span>
           </div>
-          <div className="flex items-center gap-2 bg-white/5 rounded-full px-4 py-2 backdrop-blur-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00F2EA" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          <p className="text-white text-sm mb-1">{errorMsg || 'ストリーム接続エラー'}</p>
+          <p className="text-gray-500 text-xs mb-4">ダッシュボードのデータは正常に受信しています</p>
+          <a
+            href={`https://www.tiktok.com/@${username}/live`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 bg-[#FF0050] hover:bg-[#FF0050]/80 text-white text-xs px-4 py-2 rounded-full transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
             </svg>
-            <span className="text-white font-bold text-sm">{formatTime(elapsedTime)}</span>
-            <span className="text-gray-500 text-xs">経過</span>
-          </div>
+            TikTokで視聴
+          </a>
         </div>
-
-        {/* Data receiving indicator */}
-        <div className="flex items-center justify-center gap-2">
-          <div className="flex gap-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></div>
-            <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-            <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" style={{ animationDelay: '0.4s' }}></div>
-          </div>
-          <span className="text-green-400 text-xs">リアルタイムデータ受信中</span>
-        </div>
-      </div>
+      )}
     </div>
   );
 };
@@ -213,6 +302,7 @@ const LivePlaceholder = ({ username, viewerCount, elapsedTime, formatTime, forma
 const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
   // State
   const [isConnected, setIsConnected] = useState(false);
+  const [streamUrl, setStreamUrl] = useState(null);
   const [metrics, setMetrics] = useState({
     viewer_count: 0,
     like_count: 0,
@@ -223,165 +313,190 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
   });
   const [metricsHistory, setMetricsHistory] = useState({
     viewers: [],
-    comments: [],
     likes: [],
+    comments: [],
     gifts: [],
   });
   const [advices, setAdvices] = useState([]);
   const [newAdviceId, setNewAdviceId] = useState(null);
-  const [streamEnded, setStreamEnded] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [error, setError] = useState(null);
-  const [loadProgress, setLoadProgress] = useState(0);
-  const [loadStep, setLoadStep] = useState(0); // 0-5
+  const [streamEnded, setStreamEnded] = useState(false);
   const [metricsReceived, setMetricsReceived] = useState(false);
+
+  // Loading state
+  const [loadStep, setLoadStep] = useState(0);
+  const [loadProgress, setLoadProgress] = useState(0);
   const loadSteps = [
-    { label: 'モニター起動中...', pct: 10 },
-    { label: 'TikTokライブに接続中...', pct: 30 },
-    { label: 'SSEストリーム確立中...', pct: 50 },
-    { label: 'ストリームURL取得中...', pct: 70 },
-    { label: 'メトリクス受信待ち...', pct: 85 },
-    { label: '接続完了', pct: 100 },
+    { label: 'TikTokに接続中...' },
+    { label: 'ライブ情報を取得中...' },
+    { label: 'ストリームURLを解析中...' },
+    { label: 'メトリクス収集を開始...' },
+    { label: 'AIアドバイザーを起動中...' },
+    { label: 'ダッシュボード準備完了' },
   ];
 
   const sseRef = useRef(null);
-  const timerRef = useRef(null);
-  const adviceContainerRef = useRef(null);
   const startTimeRef = useRef(Date.now());
+  const adviceContainerRef = useRef(null);
 
   // Timer
   useEffect(() => {
-    timerRef.current = setInterval(() => {
+    const timer = setInterval(() => {
       setElapsedTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
     }, 1000);
-    return () => clearInterval(timerRef.current);
-  }, []);
-
-  // Format elapsed time
-  const formatTime = (seconds) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    return `${m}:${String(s).padStart(2, '0')}`;
-  };
-
-  // Handle metrics update
-  const handleMetrics = useCallback((data) => {
-    console.log('LiveDashboard: Received metrics:', JSON.stringify(data));
-    setMetrics(prev => ({
-      ...prev,
-      viewer_count: data.viewer_count ?? prev.viewer_count,
-      like_count: data.total_likes ?? prev.like_count,
-      comment_count: data.total_comments ?? prev.comment_count,
-      gift_count: data.total_gifts ?? prev.gift_count,
-      share_count: data.total_shares ?? prev.share_count,
-    }));
-    setMetricsHistory(prev => ({
-      viewers: [...prev.viewers.slice(-59), data.viewer_count || 0],
-      comments: [...prev.comments.slice(-59), data.comments_in_interval || 0],
-      likes: [...prev.likes.slice(-59), data.likes_in_interval || 0],
-      gifts: [...prev.gifts.slice(-59), data.gifts_in_interval || 0],
-    }));
-    setMetricsReceived(true);
-  }, []);
-
-  // Handle AI advice
-  const handleAdvice = useCallback((data) => {
-    const id = Date.now();
-    setAdvices(prev => [{ ...data, id }, ...prev.slice(0, 19)]);
-    setNewAdviceId(id);
-    setTimeout(() => setNewAdviceId(null), 3000);
-
-    // Auto-scroll to top
-    if (adviceContainerRef.current) {
-      adviceContainerRef.current.scrollTop = 0;
-    }
-  }, []);
-
-  // Handle stream ended
-  const handleStreamEnded = useCallback((data) => {
-    setStreamEnded(true);
-    clearInterval(timerRef.current);
-  }, []);
-
-  // Smooth progress animation
-  useEffect(() => {
-    const target = loadSteps[loadStep]?.pct || 0;
-    if (loadProgress >= target) return;
-    const timer = setInterval(() => {
-      setLoadProgress(prev => {
-        if (prev >= target) { clearInterval(timer); return target; }
-        return Math.min(prev + 1, target);
-      });
-    }, 40);
     return () => clearInterval(timer);
-  }, [loadStep]);
+  }, []);
 
-  // Connect SSE
-  useEffect(() => {
-    if (!videoId) return;
-
-    // Step 0: Start monitoring
-    setLoadStep(0);
-    VideoService.startLiveMonitor(videoId, liveUrl)
-      .then(() => {
-        setLoadStep(1); // Step 1: Connected to TikTok
-      })
-      .catch(err => {
-        console.error('Failed to start monitor:', err);
-        setLoadStep(1); // Continue anyway
-      });
-
-    // Step 2: SSE stream
-    setTimeout(() => setLoadStep(2), 3000);
-
-    // Connect SSE
-    sseRef.current = VideoService.streamLiveEvents({
-      videoId,
-      onMetrics: (data) => {
-        setLoadStep(prev => (prev < 5 ? 5 : prev)); // Step 5: Complete
-        handleMetrics(data);
-      },
-      onAdvice: handleAdvice,
-      onStreamUrl: (data) => {
-        setLoadStep(prev => Math.max(prev, 3)); // Step 3: Stream URL received
-        console.log('LiveDashboard: Stream URL received:', data);
-      },
-      onStreamEnded: handleStreamEnded,
-      onError: (err) => {
-        console.error('LiveSSE error:', err);
-        setError('接続が切断されました。再接続中...');
-      },
-    });
-
-    setIsConnected(true);
-
-    // Step 4: Waiting for metrics (if not received yet)
-    const metricsTimer = setTimeout(() => {
-      setLoadStep(prev => (prev < 4 ? 4 : prev));
-    }, 8000);
-
-    return () => {
-      if (sseRef.current) sseRef.current.close();
-      clearTimeout(metricsTimer);
-    };
-  }, [videoId, liveUrl]);
+  // Format time
+  const formatTime = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
 
   // Format number
   const formatNum = (n) => {
-    if (n >= 10000) return (n / 10000).toFixed(1) + '万';
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
     if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
-    return String(n || 0);
+    return (n || 0).toString();
   };
 
-  // Check if dashboard should show (metrics received or loadStep >= 5)
+  // Auto-scroll advice
+  useEffect(() => {
+    if (adviceContainerRef.current) {
+      adviceContainerRef.current.scrollTop = adviceContainerRef.current.scrollHeight;
+    }
+  }, [advices]);
+
+  // Loading progress animation
+  useEffect(() => {
+    const targetProgress = Math.min((loadStep / (loadSteps.length - 1)) * 100, 100);
+    const interval = setInterval(() => {
+      setLoadProgress(prev => {
+        if (prev >= targetProgress) return targetProgress;
+        return prev + 1;
+      });
+    }, 30);
+    return () => clearInterval(interval);
+  }, [loadStep]);
+
+  // SSE connection
+  useEffect(() => {
+    let isMounted = true;
+
+    const connect = async () => {
+      try {
+        // Step 0: Start monitoring
+        setLoadStep(0);
+        VideoService.startLiveMonitor(videoId, liveUrl)
+          .then(() => {
+            setLoadStep(1); // Step 1: Connected to TikTok
+          })
+          .catch(err => {
+            console.warn('Monitor start warning:', err);
+            setLoadStep(1);
+          });
+
+        // Step 2: Start SSE
+        setTimeout(() => {
+          if (isMounted) setLoadStep(2);
+        }, 2000);
+
+        // Step 3: Collecting metrics
+        setTimeout(() => {
+          if (isMounted) setLoadStep(3);
+        }, 4000);
+
+        // Step 4: AI advisor
+        setTimeout(() => {
+          if (isMounted) setLoadStep(4);
+        }, 6000);
+
+        // Connect SSE after short delay
+        await new Promise(r => setTimeout(r, 1500));
+
+        const metricsTimer = setTimeout(() => {
+          if (isMounted && !metricsReceived) {
+            setLoadStep(5);
+          }
+        }, 15000);
+
+        VideoService.streamLiveEvents(videoId, {
+          onMetrics: (data) => {
+            if (!isMounted) return;
+            setIsConnected(true);
+            setMetricsReceived(true);
+            setLoadStep(5);
+
+            // Update stream URL if available
+            if (data.stream_url && !streamUrl) {
+              setStreamUrl(data.stream_url);
+            }
+
+            // Update metrics
+            setMetrics(prev => ({
+              viewer_count: data.viewer_count ?? prev.viewer_count,
+              like_count: data.like_count ?? prev.like_count,
+              comment_count: data.comment_count ?? prev.comment_count,
+              gift_count: data.gift_count ?? prev.gift_count,
+              share_count: data.share_count ?? prev.share_count,
+              new_follower_count: data.new_follower_count ?? prev.new_follower_count,
+            }));
+
+            // Update history
+            setMetricsHistory(prev => ({
+              viewers: [...prev.viewers.slice(-59), data.viewer_count ?? 0],
+              likes: [...prev.likes.slice(-59), data.like_count ?? 0],
+              comments: [...prev.comments.slice(-59), data.comment_count ?? 0],
+              gifts: [...prev.gifts.slice(-59), data.gift_count ?? 0],
+            }));
+          },
+          onAdvice: (data) => {
+            if (!isMounted) return;
+            const id = Date.now() + Math.random();
+            setAdvices(prev => [...prev.slice(-19), { ...data, id }]);
+            setNewAdviceId(id);
+            setTimeout(() => setNewAdviceId(null), 3000);
+          },
+          onStreamEnded: () => {
+            if (!isMounted) return;
+            setStreamEnded(true);
+          },
+          onError: (err) => {
+            if (!isMounted) return;
+            console.error('SSE error:', err);
+            setError('接続エラー');
+          },
+          onRef: (eventSource) => {
+            sseRef.current = eventSource;
+          },
+        });
+
+        return () => {
+          if (sseRef.current) sseRef.current.close();
+          clearTimeout(metricsTimer);
+        };
+      } catch (err) {
+        console.error('Connection error:', err);
+        if (isMounted) setError('接続に失敗しました');
+      }
+    };
+
+    connect();
+
+    return () => {
+      isMounted = false;
+      if (sseRef.current) sseRef.current.close();
+    };
+  }, [videoId, liveUrl]);
+
   const showDashboard = loadStep >= 5 || metricsReceived;
 
   return (
     <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-gray-900 to-gray-800 border-b border-gray-700/50">
+      <div className="flex items-center justify-between px-4 py-2 bg-gradient-to-r from-gray-900 to-gray-800 border-b border-gray-700/50 shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="relative flex h-3 w-3">
@@ -405,63 +520,80 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         {/* Left: Live Video Area */}
-        <div className="flex-1 flex flex-col bg-gradient-to-b from-gray-900 to-black">
+        <div className="flex-1 flex flex-col bg-black min-w-0">
           {/* Video Player Area */}
-          <div className="flex-1 relative flex items-center justify-center">
+          <div className="flex-1 relative min-h-0 flex items-center justify-center overflow-hidden">
             {showDashboard ? (
-              /* Connected - show live placeholder with animated visualization */
-              <LivePlaceholder
-                username={username}
-                viewerCount={metrics.viewer_count}
-                elapsedTime={elapsedTime}
-                formatTime={formatTime}
-                formatNum={formatNum}
-              />
+              /* Connected - show HLS video player or fallback */
+              streamUrl ? (
+                <HLSVideoPlayer streamUrl={streamUrl} username={username} />
+              ) : (
+                /* No stream URL yet - show waiting state with TikTok link */
+                <div className="flex flex-col items-center justify-center">
+                  <div className="w-16 h-16 rounded-full border-4 border-t-[#FF0050] border-r-[#00F2EA] border-b-[#FF0050] border-l-[#00F2EA] animate-spin mb-4"></div>
+                  <p className="text-white text-sm mb-2">ストリームURLを取得中...</p>
+                  <p className="text-gray-500 text-xs mb-4">データは正常に受信しています</p>
+                  <a
+                    href={`https://www.tiktok.com/@${username}/live`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 bg-[#FF0050] hover:bg-[#FF0050]/80 text-white text-xs px-4 py-2 rounded-full transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                    </svg>
+                    TikTokで視聴
+                  </a>
+                </div>
+              )
             ) : (
-              <div className="text-center w-80">
-                {/* Animated icon */}
-                <div className="w-24 h-24 rounded-full bg-gradient-to-r from-[#FF0050] to-[#00F2EA] flex items-center justify-center mx-auto mb-6 animate-pulse shadow-lg shadow-pink-500/30">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+              /* Loading state */
+              <div className="flex items-center justify-center">
+                <div className="text-center w-80">
+                  {/* Animated icon */}
+                  <div className="w-24 h-24 rounded-full bg-gradient-to-r from-[#FF0050] to-[#00F2EA] flex items-center justify-center mx-auto mb-6 animate-pulse shadow-lg shadow-pink-500/30">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+                  </div>
+
+                  {/* Progress percentage */}
+                  <p className="text-white text-3xl font-bold mb-2">{loadProgress}%</p>
+
+                  {/* Current step label */}
+                  <p className="text-gray-300 text-sm mb-4">{loadSteps[loadStep]?.label || '準備中...'}</p>
+
+                  {/* Progress bar */}
+                  <div className="w-full bg-gray-700 rounded-full h-2 mb-4 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-[#FF0050] to-[#00F2EA] transition-all duration-300 ease-out"
+                      style={{ width: `${loadProgress}%` }}
+                    />
+                  </div>
+
+                  {/* Step indicators */}
+                  <div className="space-y-2 text-left">
+                    {loadSteps.slice(0, -1).map((step, i) => (
+                      <div key={i} className={`flex items-center gap-2 text-xs transition-all duration-300 ${i <= loadStep ? 'text-gray-300' : 'text-gray-600'}`}>
+                        <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] flex-shrink-0 ${
+                          i < loadStep ? 'bg-green-500 text-white' : i === loadStep ? 'bg-gradient-to-r from-[#FF0050] to-[#00F2EA] text-white animate-pulse' : 'bg-gray-700 text-gray-500'
+                        }`}>
+                          {i < loadStep ? '✓' : i + 1}
+                        </span>
+                        <span>{step.label.replace('...', '')}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Estimated time */}
+                  <p className="text-gray-600 text-[10px] mt-4">通常10〜30秒で接続されます</p>
                 </div>
-
-                {/* Progress percentage */}
-                <p className="text-white text-3xl font-bold mb-2">{loadProgress}%</p>
-
-                {/* Current step label */}
-                <p className="text-gray-300 text-sm mb-4">{loadSteps[loadStep]?.label || '準備中...'}</p>
-
-                {/* Progress bar */}
-                <div className="w-full bg-gray-700 rounded-full h-2 mb-4 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-[#FF0050] to-[#00F2EA] transition-all duration-300 ease-out"
-                    style={{ width: `${loadProgress}%` }}
-                  />
-                </div>
-
-                {/* Step indicators */}
-                <div className="space-y-2 text-left">
-                  {loadSteps.slice(0, -1).map((step, i) => (
-                    <div key={i} className={`flex items-center gap-2 text-xs transition-all duration-300 ${i <= loadStep ? 'text-gray-300' : 'text-gray-600'}`}>
-                      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] flex-shrink-0 ${
-                        i < loadStep ? 'bg-green-500 text-white' : i === loadStep ? 'bg-gradient-to-r from-[#FF0050] to-[#00F2EA] text-white animate-pulse' : 'bg-gray-700 text-gray-500'
-                      }`}>
-                        {i < loadStep ? '✓' : i + 1}
-                      </span>
-                      <span>{step.label.replace('...', '')}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Estimated time */}
-                <p className="text-gray-600 text-[10px] mt-4">通常10〜30秒で接続されます</p>
               </div>
             )}
 
-            {/* Overlay Metrics (only when dashboard is showing) */}
+            {/* Overlay Metrics (only when video is playing) */}
             {showDashboard && (
-              <div className="absolute top-4 left-4 flex gap-2">
+              <div className="absolute top-4 left-4 flex gap-2 z-10">
                 <div className="bg-black/60 backdrop-blur-sm rounded-full px-3 py-1 flex items-center gap-1">
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FF0050" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                   <span className="text-white text-xs font-bold">{formatNum(metrics.viewer_count)}</span>
@@ -476,19 +608,19 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
 
           {/* Bottom Sparklines */}
           {showDashboard && (
-            <div className="h-20 bg-gray-900/80 border-t border-gray-800 px-4 py-2 grid grid-cols-4 gap-4">
-              <Sparkline data={metricsHistory.viewers} color="#FF0050" height={50} label="視聴者" />
-              <Sparkline data={metricsHistory.comments} color="#00F2EA" height={50} label="コメント/分" />
-              <Sparkline data={metricsHistory.likes} color="#FF6B6B" height={50} label="いいね" />
-              <Sparkline data={metricsHistory.gifts} color="#FFD93D" height={50} label="ギフト" />
+            <div className="h-16 bg-gray-900/80 border-t border-gray-800 px-4 py-1 grid grid-cols-4 gap-4 shrink-0">
+              <Sparkline data={metricsHistory.viewers} color="#FF0050" height={40} label="視聴者" />
+              <Sparkline data={metricsHistory.comments} color="#00F2EA" height={40} label="コメント/分" />
+              <Sparkline data={metricsHistory.likes} color="#FF6B6B" height={40} label="いいね" />
+              <Sparkline data={metricsHistory.gifts} color="#FFD93D" height={40} label="ギフト" />
             </div>
           )}
         </div>
 
-        {/* Right: Dashboard */}
-        <div className="w-[380px] flex flex-col bg-gray-50 border-l border-gray-200 overflow-hidden">
+        {/* Right: Dashboard Panel - fixed width, never cut off */}
+        <div className="w-[280px] flex flex-col bg-gray-50 border-l border-gray-200 overflow-hidden shrink-0">
           {/* Metrics Grid */}
-          <div className="p-3 grid grid-cols-2 gap-2 border-b border-gray-200">
+          <div className="p-2 grid grid-cols-2 gap-1.5 border-b border-gray-200 shrink-0">
             <MetricCard
               label="視聴者数"
               value={formatNum(metrics.viewer_count)}
@@ -531,13 +663,13 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
           </div>
 
           {/* AI Advice Section */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-200 bg-white">
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+            <div className="px-3 py-2 border-b border-gray-200 bg-white shrink-0">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center">
-                  <span className="text-white text-xs">AI</span>
+                <div className="w-5 h-5 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center">
+                  <span className="text-white text-[10px]">AI</span>
                 </div>
-                <span className="text-sm font-bold text-gray-800">リアルタイムアドバイス</span>
+                <span className="text-xs font-bold text-gray-800">リアルタイムアドバイス</span>
                 {advices.length > 0 && (
                   <span className="bg-purple-100 text-purple-700 text-[10px] px-2 py-0.5 rounded-full">
                     {advices.length}件
@@ -548,18 +680,18 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
 
             <div
               ref={adviceContainerRef}
-              className="flex-1 overflow-y-auto p-3 space-y-2"
+              className="flex-1 overflow-y-auto p-2 space-y-1"
             >
               {advices.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center">
-                  <div className="w-16 h-16 rounded-full bg-purple-50 flex items-center justify-center mb-3">
-                    <span className="text-2xl">🤖</span>
+                  <div className="w-12 h-12 rounded-full bg-purple-50 flex items-center justify-center mb-3">
+                    <span className="text-xl">🤖</span>
                   </div>
-                  <p className="text-sm text-gray-500">AIがライブを分析中...</p>
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-gray-500">AIがライブを分析中...</p>
+                  <p className="text-[10px] text-gray-400 mt-1">
                     視聴者の動きやコメントの変化を<br/>監視しています
                   </p>
-                  <p className="text-[10px] text-gray-300 mt-3">
+                  <p className="text-[9px] text-gray-300 mt-3">
                     約30秒後にデータが蓄積されると<br/>AIアドバイスが表示されます
                   </p>
                 </div>
@@ -576,7 +708,7 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
           </div>
 
           {/* Connection Status */}
-          <div className="px-4 py-2 bg-white border-t border-gray-200 flex items-center justify-between">
+          <div className="px-3 py-1.5 bg-white border-t border-gray-200 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full ${isConnected && !streamEnded ? 'bg-green-500' : streamEnded ? 'bg-gray-400' : 'bg-red-500'}`}></div>
               <span className="text-[10px] text-gray-500">

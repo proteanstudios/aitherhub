@@ -326,7 +326,7 @@ JSON形式で回答してください。"""
             async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
                 if self.use_azure:
                     # Azure OpenAI format
-                    url = f"{self.api_base}/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-08-01-preview"
+                    url = f"{self.api_base}/openai/deployments/gpt-4o/chat/completions?api-version=2024-08-01-preview"
                     headers = {
                         "api-key": self.api_key,
                         "Content-Type": "application/json",

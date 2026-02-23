@@ -1295,7 +1295,7 @@ export default function MainContent({
                             </div>
                             <div className="w-full max-w-sm">
                               <p className="text-sm font-semibold text-gray-800 mb-3">
-                                TikTokライブURLを貼り付け
+                                TikTokライブリンクを貼り付け
                               </p>
                               <input
                                 type="text"
@@ -1306,7 +1306,7 @@ export default function MainContent({
                                     handleLiveCheck();
                                   }
                                 }}
-                                placeholder="https://www.tiktok.com/@user/live"
+                                placeholder="TikTokアプリからリンクをコピーして貼り付け"
                                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#FF0050] focus:border-transparent transition-all"
                                 disabled={liveCapturing}
                               />
