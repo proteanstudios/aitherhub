@@ -1,13 +1,26 @@
 """
 product_detection_pipeline.py
 ─────────────────────────────
-v3: 音声先行検出 + 最小画像補完 = 60-120分 → 1-2分
+v4: 売上時間推定精度向上 + マージ・重複排除改善
+
+v3からの改修点:
+  1. detect_from_sales_data: 音声検出結果と照合して売上時間を推定
+     - 均等分配（前5分）を廃止
+     - 音声で確認済みの紹介区間に売上を紐付け
+     - 音声未確認の場合はCSVスロット間隔ベースの狭い時間窓
+  2. merge_all_exposures: 複数ソース確認時のconfidenceブースト
+     - audio+sales二重確認で最高信頼度
+     - ソース数に応じた段階的ブースト
+  3. find_uncovered_gaps: 全ソースでギャップ判定
+  4. post_filter_exposures: ソース数に応じたフィルタ緩和
 
 アーキテクチャ:
   Phase 1: 音声トランスクリプトから商品言及時間帯を特定（API不要、即座）
   Phase 2: 売上データ（CSV）から売上発生時間帯を特定（API不要、即座）
-  Phase 3: 音声で特定できなかった「空白時間帯」のみ画像分析（ごく少数のAPI呼び出し）
+           ★v4: 音声検出結果と照合して時間精度を向上
+  Phase 3: 全ソースで特定できなかった「空白時間帯」のみ画像分析
   Phase 4: 全結果を統合・フィルタ・ブランド名補完
+           ★v4: 信頼度計算を改善
 
 入力:
   - frame_dir   : 1秒ごとに抽出されたフレーム画像のディレクトリ
@@ -27,6 +40,7 @@ import random
 import base64
 import asyncio
 import logging
+from collections import Counter
 from functools import partial
 from openai import AzureOpenAI, RateLimitError, APIError, APITimeoutError
 from dotenv import load_dotenv
@@ -36,7 +50,7 @@ load_dotenv()
 logger = logging.getLogger("product_detection")
 
 # ─── ENV & CLIENT ───────────────────────────────────────────
-MAX_CONCURRENCY = 20  # v3: 3→20 に引き上げ（画像分析は少数なので安全）
+MAX_CONCURRENCY = 20
 
 def env(key, default=None):
     return os.getenv(key) or config(key, default=default)
@@ -203,25 +217,30 @@ def detect_from_transcription(
             })
 
     logger.info(
-        "[PRODUCT-v3] Audio detection: found %d exposures for %d/%d products",
+        "[PRODUCT-v4] Audio detection: found %d exposures for %d/%d products",
         len(exposures), len(product_mentions), len(product_keywords),
     )
     return exposures
 
 
 # ═══════════════════════════════════════════════════════════
-# PHASE 2: 売上データから商品露出時間帯を推定（API不要）
+# PHASE 2: 売上データから商品露出時間帯を推定（v4: 音声照合ベース）
 # ═══════════════════════════════════════════════════════════
 def detect_from_sales_data(
     excel_data: dict | None,
     product_keywords: dict[str, list[str]],
     time_offset_seconds: float = 0,
+    audio_exposures: list[dict] | None = None,
 ) -> list[dict]:
     """
     売上データ（CSV/Excel）から、売上が発生した時間帯に
     対応する商品の露出を推定する。
 
-    売上が発生した = その前後で商品が紹介されていた可能性が高い
+    v4改修:
+    - 音声検出結果と照合し、音声で確認済みの紹介区間に売上を紐付ける
+    - 音声で見つからない場合は、売上発生の直前のCSVスロットを参照して
+      より狭い時間窓で推定（均等分配を廃止）
+    - 複数スロットにまたがる売上は、注文数/GMVの重みで按分
 
     Returns: [{"product_name", "time_start", "time_end", "confidence", "source": "sales"}]
     """
@@ -233,9 +252,9 @@ def detect_from_sales_data(
         return []
 
     try:
-        from csv_slot_filter import _find_key, KPI_ALIASES
+        from csv_slot_filter import _find_key, _parse_time_to_seconds, KPI_ALIASES
     except ImportError:
-        logger.warning("[PRODUCT-v3] csv_slot_filter not available, skipping sales detection")
+        logger.warning("[PRODUCT-v4] csv_slot_filter not available, skipping sales detection")
         return []
 
     sample = trends[0]
@@ -245,23 +264,42 @@ def detect_from_sales_data(
     gmv_key = _find_key(sample, KPI_ALIASES.get("gmv", []))
 
     if not time_key:
-        logger.info("[PRODUCT-v3] No time column found in sales data")
+        logger.info("[PRODUCT-v4] No time column found in sales data")
         return []
 
-    # 時間パース
-    def parse_time(val) -> float | None:
-        if val is None:
-            return None
-        try:
-            from csv_slot_filter import _parse_time_to_seconds
-            return _parse_time_to_seconds(val)
-        except Exception:
-            return None
+    # ── CSVのタイムスロット間隔を推定 ──
+    slot_times = []
+    for entry in trends:
+        t_sec = _parse_time_to_seconds(entry.get(time_key))
+        if t_sec is not None:
+            slot_times.append(t_sec)
+    slot_times.sort()
 
-    # 売上が発生したタイムスロットを収集
+    slot_interval = 60  # デフォルト1分
+    if len(slot_times) >= 2:
+        intervals = [slot_times[i+1] - slot_times[i] for i in range(len(slot_times)-1)]
+        intervals = [iv for iv in intervals if iv > 0]
+        if intervals:
+            interval_counts = Counter(int(iv) for iv in intervals)
+            slot_interval = interval_counts.most_common(1)[0][0]
+            if slot_interval < 10:
+                slot_interval = 60  # 異常値ガード
+
+    logger.info("[PRODUCT-v4] Detected CSV slot interval: %d seconds", slot_interval)
+
+    # ── 音声検出結果をインデックス化（商品名→時間区間リスト）──
+    audio_index: dict[str, list[tuple[float, float]]] = {}
+    if audio_exposures:
+        for ae in audio_exposures:
+            name = ae["product_name"]
+            if name not in audio_index:
+                audio_index[name] = []
+            audio_index[name].append((ae["time_start"], ae["time_end"]))
+
+    # ── 売上エントリを処理 ──
     exposures = []
     for entry in trends:
-        t_sec = parse_time(entry.get(time_key))
+        t_sec = _parse_time_to_seconds(entry.get(time_key))
         if t_sec is None:
             continue
 
@@ -270,7 +308,7 @@ def detect_from_sales_data(
         if video_time < 0:
             continue
 
-        # 注文があったかチェック
+        # 注文/GMVチェック
         orders = 0
         if order_key:
             try:
@@ -288,18 +326,16 @@ def detect_from_sales_data(
         if orders <= 0 and gmv <= 0:
             continue
 
-        # 商品名がCSVにある場合
+        # 商品名の取得とマッチング
         product_name = None
         if product_name_key:
             raw_name = entry.get(product_name_key, "")
             if raw_name:
                 product_name = str(raw_name).strip()
 
-        # 商品名がCSVにない場合、この時間帯は「不明な商品の売上」として記録
         if not product_name:
             continue
 
-        # 商品リストとマッチング
         matched_name = None
         for pname, keywords in product_keywords.items():
             for kw in keywords:
@@ -310,59 +346,157 @@ def detect_from_sales_data(
                 break
 
         if not matched_name:
-            # 完全一致を試す
             if product_name in product_keywords:
                 matched_name = product_name
 
-        if matched_name:
-            # 売上発生の前後5分を商品紹介時間と推定
+        if not matched_name:
+            continue
+
+        # ── v4: 音声検出結果と照合して時間を決定 ──
+        audio_ranges = audio_index.get(matched_name, [])
+
+        # 戦略1: 売上発生時刻の直前に音声で確認された紹介区間があるか
+        # 売上は紹介の最中〜紹介後3分以内に発生するのが自然
+        best_audio_match = None
+        best_audio_distance = float('inf')
+        for a_start, a_end in audio_ranges:
+            if a_start <= video_time <= a_end + 180:
+                distance = abs(video_time - (a_start + a_end) / 2)
+                if distance < best_audio_distance:
+                    best_audio_distance = distance
+                    best_audio_match = (a_start, a_end)
+
+        if best_audio_match:
+            # 音声で確認済み → 音声区間をそのまま使い、confidenceをブースト
             exposures.append({
                 "product_name": matched_name,
                 "brand_name": "",
-                "time_start": max(0, video_time - 300),  # 5分前
-                "time_end": video_time + 60,               # 1分後
-                "confidence": min(0.85, 0.65 + min(orders, 5) * 0.04),
+                "time_start": best_audio_match[0],
+                "time_end": max(best_audio_match[1], video_time),
+                "confidence": min(0.95, 0.80 + min(orders, 5) * 0.03),
+                "audio_confirmed": True,
+                "source": "sales",
+                "sales_orders": orders,
+                "sales_gmv": gmv,
+                "sales_time": video_time,
+            })
+            logger.debug(
+                "[PRODUCT-v4] Sales matched to audio: %s at %.0fs (audio: %.0f-%.0f)",
+                matched_name, video_time, best_audio_match[0], best_audio_match[1],
+            )
+        else:
+            # 戦略2: 音声で見つからない → CSVスロット単位で狭い時間窓を使用
+            # 売上発生の「2スロット前〜1スロット後」を紹介時間と推定
+            # （v3の「前5分」より大幅に狭い）
+            lookback = min(slot_interval * 2, 180)  # 最大3分、通常は2スロット分
+            exposures.append({
+                "product_name": matched_name,
+                "brand_name": "",
+                "time_start": max(0, video_time - lookback),
+                "time_end": video_time + slot_interval,
+                "confidence": min(0.70, 0.50 + min(orders, 5) * 0.04),
                 "audio_confirmed": False,
                 "source": "sales",
+                "sales_orders": orders,
+                "sales_gmv": gmv,
+                "sales_time": video_time,
             })
+            logger.debug(
+                "[PRODUCT-v4] Sales without audio match: %s at %.0fs (window: -%.0fs to +%.0fs)",
+                matched_name, video_time, lookback, slot_interval,
+            )
 
-    logger.info("[PRODUCT-v3] Sales detection: found %d exposures", len(exposures))
+    # ── 同一商品の連続する売上スロットをマージ ──
+    exposures = _merge_consecutive_sales(exposures, slot_interval)
+
+    logger.info("[PRODUCT-v4] Sales detection: found %d exposures", len(exposures))
     return exposures
+
+
+def _merge_consecutive_sales(exposures: list[dict], slot_interval: float) -> list[dict]:
+    """同一商品の連続する売上スロットをマージ（v4新規）"""
+    if not exposures:
+        return []
+
+    by_product: dict[str, list[dict]] = {}
+    for exp in exposures:
+        name = exp["product_name"]
+        if name not in by_product:
+            by_product[name] = []
+        by_product[name].append(exp)
+
+    merged = []
+    for product_name, exps in by_product.items():
+        exps.sort(key=lambda x: x.get("sales_time", x["time_start"]))
+
+        current = exps[0].copy()
+        current_orders = current.get("sales_orders", 0)
+        current_gmv = current.get("sales_gmv", 0)
+
+        for i in range(1, len(exps)):
+            next_exp = exps[i]
+            next_sales_time = next_exp.get("sales_time", next_exp["time_start"])
+            curr_sales_time = current.get("sales_time", current["time_end"])
+
+            if next_sales_time - curr_sales_time <= slot_interval * 2.5:
+                current["time_end"] = max(current["time_end"], next_exp["time_end"])
+                current["sales_time"] = next_sales_time
+                current_orders += next_exp.get("sales_orders", 0)
+                current_gmv += next_exp.get("sales_gmv", 0)
+                current["confidence"] = min(0.95, current["confidence"] + 0.02)
+                if next_exp.get("audio_confirmed"):
+                    current["audio_confirmed"] = True
+            else:
+                current["sales_orders"] = current_orders
+                current["sales_gmv"] = current_gmv
+                merged.append(current)
+                current = next_exp.copy()
+                current_orders = current.get("sales_orders", 0)
+                current_gmv = current.get("sales_gmv", 0)
+
+        current["sales_orders"] = current_orders
+        current["sales_gmv"] = current_gmv
+        merged.append(current)
+
+    merged.sort(key=lambda x: x["time_start"])
+    return merged
 
 
 # ═══════════════════════════════════════════════════════════
 # PHASE 3: 空白時間帯のみ画像分析（最小限のAPI呼び出し）
 # ═══════════════════════════════════════════════════════════
 def find_uncovered_gaps(
-    audio_exposures: list[dict],
+    all_known_exposures: list[dict],
     total_duration: float,
-    min_gap: float = 120.0,  # 2分以上の空白のみ対象
+    min_gap: float = 120.0,
 ) -> list[tuple[float, float]]:
     """
-    音声検出でカバーされていない時間帯（空白）を見つける。
-    min_gap秒以上の空白のみを返す。
+    全ソース（音声+売上）でカバーされていない時間帯（空白）を見つける。
+
+    v4改修:
+    - audio_exposuresだけでなく、全ソースの検出結果を考慮
+    - 引数名をall_known_exposuresに変更
     """
-    if not audio_exposures:
+    if not all_known_exposures:
         return [(0, total_duration)]
 
-    # 全exposureの時間範囲をマージ
-    sorted_exp = sorted(audio_exposures, key=lambda x: x["time_start"])
-    merged = []
+    sorted_exp = sorted(all_known_exposures, key=lambda x: x["time_start"])
+    merged_ranges = []
     for exp in sorted_exp:
-        if merged and exp["time_start"] <= merged[-1][1] + 30:  # 30秒以内のギャップは無視
-            merged[-1] = (merged[-1][0], max(merged[-1][1], exp["time_end"]))
+        start = exp["time_start"]
+        end = exp["time_end"]
+        if merged_ranges and start <= merged_ranges[-1][1] + 30:
+            merged_ranges[-1] = (merged_ranges[-1][0], max(merged_ranges[-1][1], end))
         else:
-            merged.append((exp["time_start"], exp["time_end"]))
+            merged_ranges.append((start, end))
 
-    # 空白時間帯を計算
     gaps = []
     prev_end = 0
-    for start, end in merged:
+    for start, end in merged_ranges:
         if start - prev_end >= min_gap:
             gaps.append((prev_end, start))
         prev_end = end
 
-    # 最後の空白
     if total_duration - prev_end >= min_gap:
         gaps.append((prev_end, total_duration))
 
@@ -482,7 +616,7 @@ def detect_from_images_for_gaps(
     frame_dir: str,
     product_list: list[dict],
     gaps: list[tuple[float, float]],
-    sample_interval: int = 30,  # v3: 空白時間帯は30秒間隔でサンプリング
+    sample_interval: int = 30,
     on_progress=None,
 ) -> list[dict]:
     """
@@ -490,7 +624,7 @@ def detect_from_images_for_gaps(
     v2と同じ高品質プロンプトを使用するが、対象フレーム数を大幅に削減。
     """
     if not gaps:
-        logger.info("[PRODUCT-v3] No gaps to analyze with images")
+        logger.info("[PRODUCT-v4] No gaps to analyze with images")
         return []
 
     files = sorted([f for f in os.listdir(frame_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
@@ -507,12 +641,12 @@ def detect_from_images_for_gaps(
                 sample_indices.append(idx)
 
     if not sample_indices:
-        logger.info("[PRODUCT-v3] No frames to analyze in gaps")
+        logger.info("[PRODUCT-v4] No frames to analyze in gaps")
         return []
 
     total_samples = len(sample_indices)
     logger.info(
-        "[PRODUCT-v3] Image analysis for %d gaps: %d frames (interval=%ds)",
+        "[PRODUCT-v4] Image analysis for %d gaps: %d frames (interval=%ds)",
         len(gaps), total_samples, sample_interval,
     )
 
@@ -551,7 +685,7 @@ def detect_from_images_for_gaps(
         asyncio.run(run_detection())
 
     logger.info(
-        "[PRODUCT-v3] Image detection complete: %d frames, %d had products",
+        "[PRODUCT-v4] Image detection complete: %d frames, %d had products",
         len(frame_detections),
         sum(1 for v in frame_detections.values() if v),
     )
@@ -635,7 +769,7 @@ def merge_image_detections(
 
 
 # ═══════════════════════════════════════════════════════════
-# PHASE 4: 統合・フィルタ・補完
+# PHASE 4: 統合・フィルタ・補完（v4: 信頼度計算改善）
 # ═══════════════════════════════════════════════════════════
 def merge_all_exposures(
     audio_exposures: list[dict],
@@ -644,7 +778,12 @@ def merge_all_exposures(
 ) -> list[dict]:
     """
     3つのソースからのexposureを統合する。
-    同じ商品の重複する時間帯はマージする。
+
+    v4改修:
+    - 複数ソースで確認された場合にconfidenceをブースト
+    - audio+salesの二重確認は最高信頼度
+    - ソース情報を保持して後段のフィルタで活用
+    - time_startの精度: audioが最も正確、salesは売上時刻基準、imageは粗い
     """
     all_exposures = audio_exposures + sales_exposures + image_exposures
 
@@ -663,30 +802,73 @@ def merge_all_exposures(
     for product_name, exps in by_product.items():
         exps.sort(key=lambda x: x["time_start"])
 
-        # 重複する時間帯をマージ
         current = exps[0].copy()
+        current_sources = {current.get("source", "unknown")}
+        current_has_audio = current.get("audio_confirmed", False)
+        current_has_sales = current.get("source") == "sales"
+        current_sales_gmv = current.get("sales_gmv", 0)
+        current_sales_orders = current.get("sales_orders", 0)
+
         for i in range(1, len(exps)):
             next_exp = exps[i]
             # 重複チェック（30秒以内のギャップはマージ）
             if next_exp["time_start"] <= current["time_end"] + 30:
-                # マージ
+                # ── マージ ──
+                # time_start: audioソースの開始時刻を優先（最も正確）
+                if next_exp.get("source") == "audio" and current.get("source") != "audio":
+                    current["time_start"] = min(current["time_start"], next_exp["time_start"])
                 current["time_end"] = max(current["time_end"], next_exp["time_end"])
-                # confidenceは高い方を採用
-                current["confidence"] = max(current["confidence"], next_exp["confidence"])
-                # audio_confirmedは一つでもTrueならTrue
+
+                # ソース情報を収集
+                next_source = next_exp.get("source", "unknown")
+                current_sources.add(next_source)
+
+                if next_exp.get("audio_confirmed"):
+                    current_has_audio = True
+                if next_source == "sales":
+                    current_has_sales = True
+                    current_sales_gmv += next_exp.get("sales_gmv", 0)
+                    current_sales_orders += next_exp.get("sales_orders", 0)
+
+                # ── v4: 信頼度計算 ──
+                base_conf = max(current["confidence"], next_exp["confidence"])
+
+                source_count = len(current_sources)
+                if source_count >= 3:
+                    source_bonus = 0.15  # audio + sales + image 三重確認
+                elif source_count >= 2:
+                    if current_has_audio and current_has_sales:
+                        source_bonus = 0.12  # audio+sales は最も信頼性が高い
+                    else:
+                        source_bonus = 0.08
+                else:
+                    source_bonus = 0
+
+                current["confidence"] = min(0.98, base_conf + source_bonus)
+
                 if next_exp.get("audio_confirmed"):
                     current["audio_confirmed"] = True
-                # sourceを統合
-                sources = set()
-                if current.get("source"):
-                    sources.add(current["source"])
-                if next_exp.get("source"):
-                    sources.add(next_exp["source"])
-                current["source"] = "+".join(sorted(sources))
-            else:
-                merged.append(current)
-                current = next_exp.copy()
 
+            else:
+                # ── 新しいセグメント ──
+                current["source"] = "+".join(sorted(current_sources))
+                current["source_count"] = len(current_sources)
+                current["sales_gmv"] = current_sales_gmv
+                current["sales_orders"] = current_sales_orders
+                merged.append(current)
+
+                current = next_exp.copy()
+                current_sources = {current.get("source", "unknown")}
+                current_has_audio = current.get("audio_confirmed", False)
+                current_has_sales = current.get("source") == "sales"
+                current_sales_gmv = current.get("sales_gmv", 0)
+                current_sales_orders = current.get("sales_orders", 0)
+
+        # 最後のセグメント
+        current["source"] = "+".join(sorted(current_sources))
+        current["source_count"] = len(current_sources)
+        current["sales_gmv"] = current_sales_gmv
+        current["sales_orders"] = current_sales_orders
         merged.append(current)
 
     merged.sort(key=lambda x: x["time_start"])
@@ -698,18 +880,40 @@ def post_filter_exposures(
     final_confidence_threshold: float = 0.45,
     min_final_duration: float = 8.0,
 ) -> list[dict]:
-    """最終フィルタ（v2と同じロジック）"""
+    """
+    最終フィルタ
+
+    v4改修:
+    - 複数ソースで確認されたセグメントはフィルタを緩和
+    - 売上データ付きのセグメントは保持しやすくする
+    """
     filtered = []
     removed = []
     for exp in exposures:
         duration = exp["time_end"] - exp["time_start"]
         conf = exp.get("confidence", 0)
+        source_count = exp.get("source_count", 1)
+        has_sales = exp.get("sales_orders", 0) > 0 or exp.get("sales_gmv", 0) > 0
 
-        if exp.get("audio_confirmed"):
+        # 複数ソース確認済み → フィルタ緩和
+        if source_count >= 2:
+            if conf >= 0.35 and duration >= 3.0:
+                filtered.append(exp)
+            else:
+                removed.append(exp)
+        # 売上データ付き → やや緩和
+        elif has_sales:
             if conf >= 0.40 and duration >= 5.0:
                 filtered.append(exp)
             else:
                 removed.append(exp)
+        # 音声確認済み
+        elif exp.get("audio_confirmed"):
+            if conf >= 0.40 and duration >= 5.0:
+                filtered.append(exp)
+            else:
+                removed.append(exp)
+        # 画像のみ
         else:
             if conf >= final_confidence_threshold and duration >= min_final_duration:
                 filtered.append(exp)
@@ -718,7 +922,7 @@ def post_filter_exposures(
 
     if removed:
         logger.info(
-            "[PRODUCT-v3] Post-filter removed %d segments (kept %d)",
+            "[PRODUCT-v4] Post-filter removed %d segments (kept %d)",
             len(removed), len(filtered),
         )
 
@@ -745,31 +949,32 @@ def fill_brand_names(exposures: list[dict], product_list: list[dict]) -> list[di
 
 
 # ═══════════════════════════════════════════════════════════
-# MAIN ENTRY POINT (v3)
+# MAIN ENTRY POINT (v4)
 # ═══════════════════════════════════════════════════════════
 def detect_product_timeline(
     frame_dir: str,
     product_list: list[dict],
     transcription_segments: list[dict] | None = None,
-    sample_interval: int = 5,  # 互換性のため残すが、v3では内部で最適化
+    sample_interval: int = 5,  # 互換性のため残すが、v4では内部で最適化
     on_progress=None,
     excel_data: dict | None = None,
     time_offset_seconds: float = 0,
 ) -> list[dict]:
     """
-    商品タイムライン検出のメインエントリポイント (v3)。
+    商品タイムライン検出のメインエントリポイント (v4)。
 
-    v3アーキテクチャ:
+    v4アーキテクチャ:
       1. 音声トランスクリプトから商品言及を検出（0秒、API不要）
       2. 売上データから商品露出を推定（0秒、API不要）
-      3. 空白時間帯のみ画像分析（少数のAPI呼び出し）
-      4. 全結果を統合・フィルタ
+         ★v4: 音声検出結果と照合して時間精度を向上
+      3. 全ソースで特定できなかった空白時間帯のみ画像分析
+      4. 全結果を統合・フィルタ（★v4: 信頼度計算改善）
 
     Args:
         frame_dir: フレーム画像のディレクトリ
         product_list: 商品リスト
         transcription_segments: Whisper文字起こし結果
-        sample_interval: (v3では内部最適化のため参考値)
+        sample_interval: (v4では内部最適化のため参考値)
         on_progress: 進捗コールバック (0-100)
         excel_data: Excelから読み込んだ売上データ
         time_offset_seconds: 動画の時間オフセット
@@ -779,18 +984,18 @@ def detect_product_timeline(
                      "confidence", "product_image_url"}]
     """
     if not product_list:
-        logger.warning("[PRODUCT-v3] No product list provided, skipping detection")
+        logger.warning("[PRODUCT-v4] No product list provided, skipping detection")
         return []
 
     files = sorted([f for f in os.listdir(frame_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
     if not files:
-        logger.warning("[PRODUCT-v3] No frames found in %s", frame_dir)
+        logger.warning("[PRODUCT-v4] No frames found in %s", frame_dir)
         return []
 
     total_duration = float(len(files))  # fps=1なのでフレーム数=秒数
 
     logger.info(
-        "[PRODUCT-v3] Starting detection: %d frames (%.0f sec), %d products",
+        "[PRODUCT-v4] Starting detection: %d frames (%.0f sec), %d products",
         len(files), total_duration, len(product_list),
     )
 
@@ -804,60 +1009,60 @@ def detect_product_timeline(
         audio_exposures = detect_from_transcription(
             transcription_segments, product_keywords,
         )
-    logger.info("[PRODUCT-v3] Phase 1 (audio): %d exposures in %.1fs", len(audio_exposures), time.time() - t0)
+    logger.info("[PRODUCT-v4] Phase 1 (audio): %d exposures in %.1fs", len(audio_exposures), time.time() - t0)
 
     if on_progress:
         on_progress(30)
 
-    # ── PHASE 2: 売上データ検出（即座、API不要）──
+    # ── PHASE 2: 売上データ検出（v4: 音声照合ベース）──
     t1 = time.time()
     sales_exposures = detect_from_sales_data(
         excel_data, product_keywords, time_offset_seconds,
+        audio_exposures=audio_exposures,  # ★v4: 音声検出結果を渡す
     )
-    logger.info("[PRODUCT-v3] Phase 2 (sales): %d exposures in %.1fs", len(sales_exposures), time.time() - t1)
+    logger.info("[PRODUCT-v4] Phase 2 (sales): %d exposures in %.1fs", len(sales_exposures), time.time() - t1)
 
     if on_progress:
         on_progress(50)
 
-    # ── PHASE 3: 空白時間帯の画像分析（最小限のAPI呼び出し）──
+    # ── PHASE 3: 空白時間帯の画像分析（v4: 全ソースでギャップ判定）──
     t2 = time.time()
-    all_known = audio_exposures + sales_exposures
+    all_known = audio_exposures + sales_exposures  # ★v4: salesも含めてギャップ判定
     gaps = find_uncovered_gaps(all_known, total_duration, min_gap=120.0)
 
     image_exposures = []
     if gaps:
         total_gap_duration = sum(end - start for start, end in gaps)
         logger.info(
-            "[PRODUCT-v3] Phase 3: %d gaps (total %.0f sec), analyzing with images",
+            "[PRODUCT-v4] Phase 3: %d gaps (total %.0f sec), analyzing with images",
             len(gaps), total_gap_duration,
         )
 
         def _on_image_progress(pct):
             if on_progress:
-                # 50-90%の範囲でマッピング
                 on_progress(50 + int(pct * 0.4))
 
         image_exposures = detect_from_images_for_gaps(
             frame_dir=frame_dir,
             product_list=product_list,
             gaps=gaps,
-            sample_interval=30,  # 空白時間帯は30秒間隔
+            sample_interval=30,
             on_progress=_on_image_progress,
         )
     else:
-        logger.info("[PRODUCT-v3] Phase 3: No significant gaps, skipping image analysis")
+        logger.info("[PRODUCT-v4] Phase 3: No significant gaps, skipping image analysis")
 
-    logger.info("[PRODUCT-v3] Phase 3 (image): %d exposures in %.1fs", len(image_exposures), time.time() - t2)
+    logger.info("[PRODUCT-v4] Phase 3 (image): %d exposures in %.1fs", len(image_exposures), time.time() - t2)
 
     if on_progress:
         on_progress(90)
 
-    # ── PHASE 4: 統合・フィルタ ──
+    # ── PHASE 4: 統合・フィルタ（v4: 信頼度計算改善）──
     exposures = merge_all_exposures(audio_exposures, sales_exposures, image_exposures)
-    logger.info("[PRODUCT-v3] After merge: %d exposures", len(exposures))
+    logger.info("[PRODUCT-v4] After merge: %d exposures", len(exposures))
 
     exposures = post_filter_exposures(exposures)
-    logger.info("[PRODUCT-v3] After post-filter: %d exposures", len(exposures))
+    logger.info("[PRODUCT-v4] After post-filter: %d exposures", len(exposures))
 
     exposures = fill_brand_names(exposures, product_list)
 
@@ -867,7 +1072,7 @@ def detect_product_timeline(
     # サマリーログ
     total_time = time.time() - t0
     logger.info(
-        "[PRODUCT-v3] COMPLETE: %d exposures (audio=%d, sales=%d, image=%d), "
+        "[PRODUCT-v4] COMPLETE: %d exposures (audio=%d, sales=%d, image=%d), "
         "total time=%.1fs (v2 would have taken ~%d min)",
         len(exposures),
         len(audio_exposures), len(sales_exposures), len(image_exposures),

@@ -1042,6 +1042,7 @@ def main():
         # =========================
         # STEP 12.5 – PRODUCT DETECTION
         # =========================
+        exposures = []  # Initialize for use in Report 3
         if start_step <= 13:  # index 13 in STEP_ORDER
             update_video_status_sync(video_id, VideoStatus.STEP_12_5_PRODUCT_DETECTION)
             logger.info("=== STEP 12.5 – PRODUCT DETECTION ===")
@@ -1160,6 +1161,8 @@ def main():
                             current_features=current_features,
                             best_features=best_features,
                             group_stats=group_stats,
+                            phase_units=phase_units,
+                            product_exposures=exposures,
                         )
 
                         r3_gpt = rewrite_report_3_structure_with_gpt(r3_raw)

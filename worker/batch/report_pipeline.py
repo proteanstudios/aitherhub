@@ -307,6 +307,11 @@ def build_report_2_phase_insights_raw(phase_units, best_data, excel_data=None):
         if sales:
             item["sales_data"] = sales
 
+        # Add csv_metrics if available
+        csv_m = p.get("csv_metrics")
+        if csv_m:
+            item["csv_metrics"] = csv_m
+
         out.append(item)
 
     return out
@@ -320,10 +325,10 @@ def is_gpt_report_2_invalid(text: str) -> bool:
 
     refusal_signals = [
         # EN
-        "i’m sorry",
+        "i'm sorry",
         "i am sorry",
         "cannot assist",
-        "can’t assist",
+        "can't assist",
         "cannot help",
         "cannot comply",
         "not able to help",
@@ -335,33 +340,6 @@ def is_gpt_report_2_invalid(text: str) -> bool:
     ]
 
     return any(sig in t for sig in refusal_signals)
-
-
-# PROMPT_REPORT_2 = """
-# あなたはライブコマース分析の専門家です。
-
-# 以下は、あるフェーズの説明と、
-# 同タイプの過去ベストフェーズとの指標比較結果です。
-
-# このフェーズについて：
-
-# - 「最も優先して改善すべきポイント」を最大2つだけ選んでください
-# - 重要度・インパクトが最も高いものに限定してください
-# - 全ての問題点を網羅しようとしないでください
-
-# ルール：
-# - 指標を再計算しない
-# - データを捏造しない
-# - 改善できる点のみを述べる
-# - 抽象的な表現を避け、具体的に書く
-# - 各項目は「すぐ行動できるレベル」の内容にする
-
-# 出力：
-# - 最大2つまでの箇条書き
-
-# 入力：
-# {data}
-# """.strip()
 
 
 PROMPT_REPORT_2 = """
@@ -442,7 +420,15 @@ def rewrite_report_2_with_gpt(raw_items, excel_data=None):
 # REPORT 3 – VIDEO INSIGHTS (RAW)
 # ======================================================
 
-def build_report_3_video_insights_raw(phase_units):
+def build_report_3_video_insights_raw(phase_units, product_exposures=None):
+    """
+    Build video-level insights from phase data.
+    Now includes:
+    - Per-group performance (view/like deltas)
+    - Sales data per group (GMV, orders) from csv_metrics
+    - Product exposure summary (which products, when, how long)
+    - Sales trigger analysis (which phases drove sales spikes)
+    """
     groups = {}
 
     for p in phase_units:
@@ -452,11 +438,18 @@ def build_report_3_video_insights_raw(phase_units):
 
         gid = str(gid)
         m = extract_attention_metrics(p)
+        csv_m = p.get("csv_metrics", {})
 
         g = groups.setdefault(gid, {
             "phase_count": 0,
             "total_delta_view": 0,
-            "total_delta_like": 0
+            "total_delta_like": 0,
+            "total_gmv": 0,
+            "total_orders": 0,
+            "total_product_clicks": 0,
+            "max_gpm": 0,
+            "max_conversion_rate": 0,
+            "phases_with_sales": 0,
         })
 
         g["phase_count"] += 1
@@ -467,18 +460,128 @@ def build_report_3_video_insights_raw(phase_units):
         if m["delta_like"] is not None:
             g["total_delta_like"] += m["delta_like"]
 
-    return {
+        # Aggregate CSV metrics per group
+        if csv_m:
+            g["total_gmv"] += csv_m.get("gmv", 0) or 0
+            g["total_orders"] += csv_m.get("order_count", 0) or 0
+            g["total_product_clicks"] += csv_m.get("product_clicks", 0) or 0
+            g["max_gpm"] = max(g["max_gpm"], csv_m.get("gpm", 0) or 0)
+            g["max_conversion_rate"] = max(
+                g["max_conversion_rate"],
+                csv_m.get("conversion_rate", 0) or 0
+            )
+            if (csv_m.get("order_count", 0) or 0) > 0:
+                g["phases_with_sales"] += 1
+
+    # ---- Sales trigger analysis ----
+    # Identify phases where sales spiked (top performers)
+    sales_phases = []
+    for p in phase_units:
+        csv_m = p.get("csv_metrics", {})
+        gmv = csv_m.get("gmv", 0) or 0 if csv_m else 0
+        orders = csv_m.get("order_count", 0) or 0 if csv_m else 0
+        if gmv > 0 or orders > 0:
+            tr = p.get("time_range", {})
+            duration = (tr.get("end_sec", 0) - tr.get("start_sec", 0))
+            gmv_per_min = (gmv / (duration / 60.0)) if duration > 0 else 0
+            sales_phases.append({
+                "phase_index": p["phase_index"],
+                "group_id": str(p.get("group_id", "")),
+                "gmv": round(gmv, 2),
+                "orders": orders,
+                "gmv_per_minute": round(gmv_per_min, 2),
+                "duration_sec": round(duration, 1),
+                "cta_score": p.get("cta_score"),
+                "phase_description": p.get("phase_description", "")[:100],
+            })
+
+    # Sort by GMV per minute (sales efficiency)
+    sales_phases.sort(key=lambda x: x["gmv_per_minute"], reverse=True)
+    top_sales_phases = sales_phases[:5]  # Top 5 sales-driving phases
+
+    # ---- Product exposure summary ----
+    product_summary = {}
+    if product_exposures:
+        for exp in product_exposures:
+            pname = exp.get("product_name", "unknown")
+            ps = product_summary.setdefault(pname, {
+                "total_duration_sec": 0,
+                "segment_count": 0,
+                "total_gmv": 0,
+                "total_orders": 0,
+                "avg_confidence": 0,
+                "sources": set(),
+            })
+            dur = (exp.get("time_end", 0) - exp.get("time_start", 0))
+            ps["total_duration_sec"] += dur
+            ps["segment_count"] += 1
+            ps["total_gmv"] += exp.get("gmv", 0) or 0
+            ps["total_orders"] += exp.get("order_count", 0) or 0
+            ps["avg_confidence"] += exp.get("confidence", 0) or 0
+            for src in (exp.get("sources") or []):
+                ps["sources"].add(src)
+
+        # Finalize averages
+        for pname, ps in product_summary.items():
+            if ps["segment_count"] > 0:
+                ps["avg_confidence"] = round(
+                    ps["avg_confidence"] / ps["segment_count"], 3
+                )
+            ps["total_duration_sec"] = round(ps["total_duration_sec"], 1)
+            ps["total_gmv"] = round(ps["total_gmv"], 2)
+            ps["sources"] = sorted(ps["sources"])
+
+    # ---- Calculate total video metrics ----
+    total_gmv = sum(g["total_gmv"] for g in groups.values())
+    total_orders = sum(g["total_orders"] for g in groups.values())
+
+    result = {
         "total_phases": len(phase_units),
+        "total_gmv": round(total_gmv, 2),
+        "total_orders": total_orders,
         "group_performance": [
             {
                 "group_id": gid,
                 "phase_count": g["phase_count"],
                 "total_delta_view": g["total_delta_view"],
-                "total_delta_like": g["total_delta_like"]
+                "total_delta_like": g["total_delta_like"],
+                "total_gmv": round(g["total_gmv"], 2),
+                "total_orders": g["total_orders"],
+                "total_product_clicks": g["total_product_clicks"],
+                "max_gpm": round(g["max_gpm"], 2),
+                "max_conversion_rate": round(g["max_conversion_rate"], 4),
+                "phases_with_sales": g["phases_with_sales"],
             }
             for gid, g in groups.items()
-        ]
+        ],
     }
+
+    # Add sales trigger analysis if data exists
+    if top_sales_phases:
+        result["sales_trigger_analysis"] = {
+            "top_sales_phases": top_sales_phases,
+            "insight": (
+                f"売上上位{len(top_sales_phases)}フェーズが "
+                f"全体GMV {round(total_gmv, 0)} の "
+                f"{round(sum(sp['gmv'] for sp in top_sales_phases) / total_gmv * 100, 1) if total_gmv > 0 else 0}% を占めています"
+            ),
+        }
+
+    # Add product summary if data exists
+    if product_summary:
+        result["product_performance"] = [
+            {
+                "product_name": pname,
+                **ps,
+            }
+            for pname, ps in sorted(
+                product_summary.items(),
+                key=lambda x: x[1]["total_gmv"],
+                reverse=True,
+            )
+        ]
+
+    return result
 
 
 PROMPT_REPORT_3 = """
@@ -486,6 +589,9 @@ PROMPT_REPORT_3 = """
 
 提供される情報：
 - 配信全体のフェーズ別パフォーマンス（視聴者数・いいね数の変動）
+- 売上データ（GMV・注文数・GPM。ある場合）
+- 商品別パフォーマンス（紹介時間・売上。ある場合）
+- 売上トリガー分析（どのフェーズで売上が跳ねたか。ある場合）
 
 あなたの役割：
 - 配信全体の「売り方の流れ」を俯瞰的に分析する
@@ -499,6 +605,9 @@ PROMPT_REPORT_3 = """
 - 購買ピークの作り方（限定感・緊急性・価格提示）
 - クロージング（最後の押し）の強さ
 - 視聴者離脱が起きているポイントとその原因
+- 売上データがある場合：GMV効率が高いフェーズの特徴と、低いフェーズの改善点
+- 商品別データがある場合：紹介時間と売上の関係、紹介順序の最適化
+- 売上トリガーがある場合：売上が跳ねたフェーズの共通点と再現方法
 
 【必須ルール】：
 - 数値を捏造しない
@@ -531,10 +640,10 @@ def safe_json_load(text):
 
     if text.startswith("```"):
         lines = text.splitlines()
-        # bỏ dòng ```json
+        # コードブロックの開始行を除去
         if lines[0].startswith("```"):
             lines = lines[1:]
-        # bỏ dòng ```
+        # コードブロックの終了行を除去
         if lines and lines[-1].startswith("```"):
             lines = lines[:-1]
         text = "\n".join(lines).strip()
@@ -544,42 +653,6 @@ def safe_json_load(text):
     except json.JSONDecodeError:
         return None
 
-# def rewrite_report_3_with_gpt(raw_video_insight):
-#     payload = json.dumps(raw_video_insight, ensure_ascii=False)
-
-#     # Style demo: inject data qua placeholder
-#     prompt = PROMPT_REPORT_3.replace("{data}", payload)
-
-#     resp = client.responses.create(
-#         model=GPT5_MODEL,
-#         input=[
-#             {
-#                 "role": "user",
-#                 "content": [
-#                     {
-#                         "type": "input_text",
-#                         "text": prompt
-#                     }
-#                 ]
-#             }
-#         ],
-#         max_output_tokens=2048
-#     )
-
-#     parsed = safe_json_load(resp.output_text)
-
-#     if parsed and "video_insights" in parsed:
-#         return parsed
-
-#     # Fallback cứng để không làm gãy pipeline
-#     return {
-#         "video_insights": [
-#             {
-#                 "title": "Không thể phân tích",
-#                 "content": "GPT không trả về đúng định dạng mong muốn."
-#             }
-#         ]
-#     }
 
 def rewrite_report_3_with_gpt(raw_video_insight, max_retry: int = 5):
     payload = json.dumps(raw_video_insight, ensure_ascii=False)
@@ -629,11 +702,17 @@ def build_report_3_structure_vs_benchmark_raw(
     current_features: dict,
     best_features: dict,
     group_stats: dict | None = None,
+    phase_units: list | None = None,
+    product_exposures: list | None = None,
 ):
     """
     Deterministic, rule-based.
     Compare current video structure vs benchmark video structure.
-    Output: JSON-like dict, language-agnostic.
+    Now includes:
+    - Original structure metrics comparison
+    - Sales timing analysis (when sales happen relative to product intro)
+    - Sales concentration analysis (how concentrated sales are)
+    - Product intro timing effectiveness
     """
 
     FEATURES = [
@@ -719,7 +798,13 @@ def build_report_3_structure_vs_benchmark_raw(
             result["suggestions"].append(f"adjust_{key}_distribution_toward_benchmark")
 
     # =====================================================
-    # 3) Overall judgement
+    # 3) Sales timing & product intro analysis (NEW)
+    # =====================================================
+    if phase_units:
+        _analyze_sales_structure(result, phase_units, product_exposures)
+
+    # =====================================================
+    # 4) Overall judgement
     # =====================================================
     if result["problems"]:
         result["overall"] = "structure_quality_worse_than_benchmark"
@@ -728,6 +813,160 @@ def build_report_3_structure_vs_benchmark_raw(
 
     return result
 
+
+def _analyze_sales_structure(result, phase_units, product_exposures=None):
+    """
+    Analyze the relationship between sales timing, product introductions,
+    and the overall structure of the livestream.
+    Adds findings to result["problems"] and result["suggestions"].
+    """
+
+    # ---- Sales concentration analysis ----
+    # Are sales concentrated in a few phases or spread out?
+    phase_gmvs = []
+    total_video_duration = 0
+
+    for p in phase_units:
+        csv_m = p.get("csv_metrics", {})
+        gmv = csv_m.get("gmv", 0) or 0 if csv_m else 0
+        tr = p.get("time_range", {})
+        duration = tr.get("end_sec", 0) - tr.get("start_sec", 0)
+        total_video_duration = max(total_video_duration, tr.get("end_sec", 0))
+        phase_gmvs.append({
+            "phase_index": p["phase_index"],
+            "gmv": gmv,
+            "start_sec": tr.get("start_sec", 0),
+            "end_sec": tr.get("end_sec", 0),
+            "duration": duration,
+        })
+
+    total_gmv = sum(pg["gmv"] for pg in phase_gmvs)
+
+    if total_gmv > 0 and len(phase_gmvs) > 3:
+        # Sort by GMV descending
+        sorted_by_gmv = sorted(phase_gmvs, key=lambda x: x["gmv"], reverse=True)
+
+        # Top 20% of phases
+        top_n = max(1, len(sorted_by_gmv) // 5)
+        top_gmv = sum(pg["gmv"] for pg in sorted_by_gmv[:top_n])
+        concentration = top_gmv / total_gmv
+
+        result["metrics"]["sales_concentration"] = {
+            "type": "scalar",
+            "current": round(concentration, 3),
+            "description": f"上位{top_n}フェーズ（全{len(phase_gmvs)}フェーズの20%）が全体GMVの{round(concentration * 100, 1)}%を占める",
+        }
+
+        if concentration > 0.8:
+            result["problems"].append("sales_too_concentrated_in_few_phases")
+            result["suggestions"].append(
+                "distribute_sales_opportunities_across_more_phases"
+            )
+        elif concentration < 0.3:
+            result["judgements"].append("sales_well_distributed_across_phases")
+
+        # ---- Sales timing analysis ----
+        # When do sales happen? Early/Mid/Late?
+        if total_video_duration > 0:
+            early_cutoff = total_video_duration * 0.33
+            mid_cutoff = total_video_duration * 0.66
+
+            early_gmv = sum(
+                pg["gmv"] for pg in phase_gmvs
+                if pg["start_sec"] < early_cutoff
+            )
+            mid_gmv = sum(
+                pg["gmv"] for pg in phase_gmvs
+                if early_cutoff <= pg["start_sec"] < mid_cutoff
+            )
+            late_gmv = sum(
+                pg["gmv"] for pg in phase_gmvs
+                if pg["start_sec"] >= mid_cutoff
+            )
+
+            result["metrics"]["sales_timing"] = {
+                "type": "distribution",
+                "early_pct": round(early_gmv / total_gmv * 100, 1) if total_gmv > 0 else 0,
+                "mid_pct": round(mid_gmv / total_gmv * 100, 1) if total_gmv > 0 else 0,
+                "late_pct": round(late_gmv / total_gmv * 100, 1) if total_gmv > 0 else 0,
+            }
+
+            # Problem: No sales in early phase (missed warm-up opportunity)
+            if early_gmv == 0 and total_gmv > 0:
+                result["problems"].append("no_sales_in_early_phase")
+                result["suggestions"].append(
+                    "introduce_a_hook_product_early_to_establish_buying_momentum"
+                )
+
+            # Problem: Sales drop off in late phase
+            if late_gmv < total_gmv * 0.1 and total_gmv > 0:
+                result["problems"].append("sales_drop_in_late_phase")
+                result["suggestions"].append(
+                    "add_closing_urgency_with_limited_time_offers_or_bundle_deals"
+                )
+
+    # ---- Product intro timing vs sales ----
+    if product_exposures and total_gmv > 0:
+        products_with_sales = []
+        products_without_sales = []
+
+        # Group exposures by product
+        product_groups = {}
+        for exp in product_exposures:
+            pname = exp.get("product_name", "unknown")
+            pg = product_groups.setdefault(pname, {
+                "first_intro_sec": float("inf"),
+                "total_duration_sec": 0,
+                "total_gmv": 0,
+                "total_orders": 0,
+            })
+            pg["first_intro_sec"] = min(
+                pg["first_intro_sec"],
+                exp.get("time_start", float("inf"))
+            )
+            dur = exp.get("time_end", 0) - exp.get("time_start", 0)
+            pg["total_duration_sec"] += dur
+            pg["total_gmv"] += exp.get("gmv", 0) or 0
+            pg["total_orders"] += exp.get("order_count", 0) or 0
+
+        for pname, pg in product_groups.items():
+            if pg["total_gmv"] > 0:
+                products_with_sales.append({
+                    "product_name": pname,
+                    **pg,
+                })
+            else:
+                products_without_sales.append({
+                    "product_name": pname,
+                    **pg,
+                })
+
+        result["metrics"]["product_intro_effectiveness"] = {
+            "products_with_sales": len(products_with_sales),
+            "products_without_sales": len(products_without_sales),
+            "conversion_rate": round(
+                len(products_with_sales) /
+                (len(products_with_sales) + len(products_without_sales))
+                * 100, 1
+            ) if (products_with_sales or products_without_sales) else 0,
+        }
+
+        # Problem: Many products introduced but not sold
+        total_products = len(products_with_sales) + len(products_without_sales)
+        if total_products > 0 and len(products_without_sales) / total_products > 0.5:
+            result["problems"].append("many_products_introduced_without_sales")
+            result["suggestions"].append(
+                "reduce_product_count_and_focus_on_fewer_high_converting_items"
+            )
+
+        # Problem: Short intro duration for products that didn't sell
+        for pw in products_without_sales:
+            if pw["total_duration_sec"] < 60:
+                result["problems"].append("product_intro_too_short_for_unsold_items")
+                result["suggestions"].append(
+                    "extend_product_introduction_time_with_demo_and_social_proof"
+                )
+                break  # Only add once
 
 
 PROMPT_REPORT_3_STRUCTURE = """
@@ -747,6 +986,9 @@ PROMPT_REPORT_3_STRUCTURE = """
 - 購買ピークの作り方（セールストークの盛り上げ方）
 - フェーズの切り替えテンポ（視聴者を飽きさせない進行）
 - オープニングとクロージングの設計
+- 売上の時間分布（序盤・中盤・終盤のバランス）
+- 商品紹介時間と売上の関係（紹介が短すぎる商品、長すぎる商品）
+- 売上集中度（特定フェーズに偏りすぎていないか）
 
 重要なルール：
 - 「ベンチマーク」「他の動画」「平均」などの言葉を一切使わない
@@ -769,43 +1011,48 @@ PROMPT_REPORT_3_STRUCTURE = """
 {data}
 """.strip()
 
-def rewrite_report_3_structure_with_gpt(raw_struct_report: dict):
+def rewrite_report_3_structure_with_gpt(raw_struct_report: dict, max_retry: int = 5):
     payload = json.dumps(raw_struct_report, ensure_ascii=False, indent=2)
     prompt = PROMPT_REPORT_3_STRUCTURE.replace("{data}", payload)
 
-    # Dùng đúng hàm GPT đang dùng trong report_pipeline hiện tại
-    # Ví dụ:
-    resp = client.responses.create(
-        model=GPT5_MODEL,
-        input=[
-            {
-                "role": "user",
-                "content": [
+    for attempt in range(max_retry):
+        try:
+            resp = client.responses.create(
+                model=GPT5_MODEL,
+                input=[
                     {
-                        "type": "input_text",
-                        "text": prompt
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": prompt
+                            }
+                        ]
                     }
-                ]
-            }
-        ],
-        max_output_tokens=2048
-    )
+                ],
+                max_output_tokens=2048
+            )
 
-    parsed = safe_json_load(resp.output_text)
+            parsed = safe_json_load(resp.output_text)
+            if parsed and "video_insights" in parsed:
+                return parsed
 
-    if parsed and "video_insights" in parsed:
-        return parsed
+        except (RateLimitError, APITimeoutError, APIError):
+            sleep = (2 ** attempt) + random.uniform(0.5, 1.5)
+            time.sleep(sleep)
 
-    # Fallback cứng để không làm gãy pipeline
+        except Exception:
+            break
+
+    # フォールバック（パイプラインを止めない）
     return {
         "video_insights": [
             {
-                "title": "Không thể phân tích",
-                "content": "GPT không trả về đúng định dạng mong muốn."
+                "title": "分析できませんでした",
+                "content": "GPT が期待された形式で結果を返しませんでした。"
             }
         ]
     }
-
 
 
 
