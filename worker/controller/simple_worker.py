@@ -36,6 +36,11 @@ VISIBILITY_RENEW_INTERVAL = 30 * 60  # 1800 seconds
 active_jobs: dict[str, dict] = {}
 active_jobs_lock = Lock()
 
+# Separate executor for lightweight live_monitor jobs (not subject to MAX_WORKERS)
+live_monitor_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="live-monitor")
+live_monitor_jobs: dict[str, dict] = {}
+live_monitor_lock = Lock()
+
 # Graceful shutdown flag
 shutdown_requested = False
 
@@ -330,20 +335,16 @@ def get_active_count():
 
 
 def poll_and_process(executor: ThreadPoolExecutor):
-    """Poll queue and submit jobs to the thread pool."""
+    """Poll queue and submit jobs to the thread pool.
+    live_monitor jobs bypass MAX_WORKERS and run on a separate executor."""
     active_count = get_active_count()
-
-    if active_count >= MAX_WORKERS:
-        return  # All worker slots are busy
-
-    # How many slots are available
-    available_slots = MAX_WORKERS - active_count
+    heavy_slots_full = active_count >= MAX_WORKERS
 
     client = get_queue_client()
 
-    # Receive up to available_slots messages
+    # Always peek up to 5 messages (we may still accept live_monitor even when heavy slots full)
     messages = client.receive_messages(
-        messages_per_page=min(available_slots, 5),
+        messages_per_page=5,
         visibility_timeout=VISIBILITY_TIMEOUT,
     )
 
@@ -353,6 +354,27 @@ def poll_and_process(executor: ThreadPoolExecutor):
             job_type = payload.get("job_type", "video_analysis")
             job_id = payload.get("video_id", payload.get("clip_id", "unknown"))
 
+            # --- live_monitor: runs on separate lightweight executor ---
+            if job_type == "live_monitor":
+                with live_monitor_lock:
+                    if job_id in live_monitor_jobs and not live_monitor_jobs[job_id]["future"].done():
+                        print(f"[worker] Live monitor {job_id} already running, skipping")
+                        continue
+                print(f"[worker] Received live_monitor job: id={job_id} (bypasses MAX_WORKERS)")
+                future = live_monitor_executor.submit(process_job, payload, msg.id, msg.pop_receipt)
+                with live_monitor_lock:
+                    live_monitor_jobs[job_id] = {
+                        "future": future,
+                        "msg_id": msg.id,
+                        "pop_receipt": msg.pop_receipt,
+                    }
+                continue
+
+            # --- Heavy jobs: subject to MAX_WORKERS ---
+            if heavy_slots_full:
+                # Put message back by not processing it (visibility will expire)
+                continue
+
             # Check if this job is already being processed
             with active_jobs_lock:
                 if job_id in active_jobs and not active_jobs[job_id]["future"].done():
@@ -360,10 +382,6 @@ def poll_and_process(executor: ThreadPoolExecutor):
                     continue
 
             print(f"[worker] Received job: type={job_type}, id={job_id} (active: {get_active_count()}/{MAX_WORKERS})")
-
-            # DO NOT delete message here - it will be deleted after successful processing
-            # The message stays invisible for VISIBILITY_TIMEOUT seconds
-            # If the job fails or worker crashes, the message will reappear for retry
 
             # Submit job to thread pool
             future = executor.submit(process_job, payload, msg.id, msg.pop_receipt)
@@ -373,6 +391,7 @@ def poll_and_process(executor: ThreadPoolExecutor):
                     "msg_id": msg.id,
                     "pop_receipt": msg.pop_receipt,
                 }
+            heavy_slots_full = get_active_count() >= MAX_WORKERS
 
         except Exception as e:
             print(f"[worker] Error parsing message: {e}")
