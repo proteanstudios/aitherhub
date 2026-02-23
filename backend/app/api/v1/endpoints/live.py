@@ -100,9 +100,14 @@ async def stream_live_events(
     async def event_generator():
         last_event_ts = time.time() - 60  # Get events from last 60 seconds
         notify = live_event_service.subscribe(video_id)
+        stream_ended_received = False
+        # Grace period: don't check is_live() until we've waited at least 60 seconds
+        # This prevents premature stream_ended when the monitor hasn't started yet
+        grace_start = time.time()
+        GRACE_PERIOD = 120  # 2 minutes grace period
 
         try:
-            # Send initial state
+            # Send initial state if available
             stream_info = live_event_service.get_stream_info(video_id)
             if stream_info:
                 yield f"data: {json.dumps({'event_type': 'stream_url', 'payload': stream_info})}\n\n"
@@ -125,15 +130,25 @@ async def stream_live_events(
                 for event in events:
                     yield f"data: {json.dumps({'event_type': event['event_type'], 'payload': event['payload']})}\n\n"
                     last_event_ts = event["timestamp"]
+                    # Only end if we explicitly received a stream_ended event from the worker
+                    if event["event_type"] == "stream_ended":
+                        stream_ended_received = True
 
-                # Check if stream ended
-                if not live_event_service.is_live(video_id):
-                    yield f"data: {json.dumps({'event_type': 'stream_ended', 'payload': {'message': 'ライブ配信が終了しました'}})}\n\n"
+                if stream_ended_received:
                     break
 
-                # Heartbeat every 30 seconds
+                # After grace period, check if stream is marked as ended
+                elapsed = time.time() - grace_start
+                if elapsed > GRACE_PERIOD and not live_event_service.is_live(video_id):
+                    # Double check: only end if there have been events before
+                    # (if no events ever arrived, the monitor may not have started yet)
+                    if live_event_service.get_latest_metrics(video_id) is not None:
+                        yield f"data: {json.dumps({'event_type': 'stream_ended', 'payload': {'message': 'ライブ配信が終了しました'}})}\n\n"
+                        break
+
+                # Heartbeat every 15 seconds (more frequent for connection keepalive)
                 heartbeat_count += 1
-                if heartbeat_count % 6 == 0:  # 6 * 5 seconds = 30 seconds
+                if heartbeat_count % 3 == 0:  # 3 * 5 seconds = 15 seconds
                     yield f"data: {json.dumps({'event_type': 'heartbeat', 'payload': {'timestamp': datetime.now(timezone.utc).isoformat()}})}\n\n"
 
         except asyncio.CancelledError:
