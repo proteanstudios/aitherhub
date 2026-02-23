@@ -543,7 +543,8 @@ def main():
     parser = argparse.ArgumentParser(description="TikTok Live Real-time Monitor")
     parser.add_argument("--unique-id", required=True, help="TikTok username (without @)")
     parser.add_argument("--video-id", required=True, help="Video ID in the database")
-    parser.add_argument("--backend-url", default="https://aitherhubapi.azurewebsites.net",
+    parser.add_argument("--backend-url",
+                        default=os.environ.get("BACKEND_API_URL", "https://aitherhubapi-cpcjcnezbgf5f7e2.japaneast-01.azurewebsites.net"),
                         help="Backend API URL")
     parser.add_argument("--worker-api-key", default=None, help="Worker API key for backend auth")
     parser.add_argument("--openai-api-key", default=None, help="OpenAI API key")
