@@ -21,4 +21,10 @@ export const URL_CONSTANTS = {
   LCJ_UNLINK: "/api/v1/lcj/unlink",
   LIVE_CHECK: "/api/v1/videos/live-check",
   LIVE_CAPTURE: "/api/v1/videos/live-capture",
+  // Real-time live monitoring
+  LIVE_STREAM_EVENTS: "/api/v1/live",  // /{video_id}/stream
+  LIVE_STATUS: "/api/v1/live",          // /{video_id}/status
+  LIVE_START_MONITOR: "/api/v1/live",   // /{video_id}/start-monitor
+  LIVE_PUSH_EVENTS: "/api/v1/live",     // /{video_id}/events
+  LIVE_ACTIVE: "/api/v1/live/active",
 };

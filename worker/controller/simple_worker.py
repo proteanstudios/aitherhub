@@ -20,6 +20,7 @@ load_dotenv(project_root / ".env")
 
 # Add batch directory to path so we can import if needed
 BATCH_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "batch"))
+REALTIME_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "realtime"))
 sys.path.insert(0, BATCH_DIR)
 
 # Maximum concurrent jobs
@@ -108,6 +109,8 @@ def process_job(payload: dict, msg_id: str, pop_receipt: str):
             success = process_clip_job(payload)
         elif job_type == "live_capture":
             success = process_live_capture_job(payload)
+        elif job_type == "live_monitor":
+            success = process_live_monitor_job(payload)
         else:
             success = process_video_job(payload)
 
@@ -130,9 +133,44 @@ def process_job(payload: dict, msg_id: str, pop_receipt: str):
             active_jobs.pop(job_id, None)
 
 
+def process_live_monitor_job(payload: dict):
+    """Handle TikTok live real-time monitoring job.
+    Runs the live_monitor.py script which connects to TikTok WebSocket,
+    collects metrics, generates AI advice, and pushes to backend SSE."""
+    video_id = payload.get("video_id")
+    live_url = payload.get("live_url", "")
+    username = payload.get("username", "")
+
+    if not video_id or not username:
+        print("[worker] Invalid live_monitor payload, skipping")
+        return False
+
+    print(f"[worker] Starting live monitor for @{username} (video_id={video_id})")
+    cmd = [
+        sys.executable,
+        os.path.join(REALTIME_DIR, "live_monitor.py"),
+        "--unique-id", username,
+        "--video-id", video_id,
+    ]
+
+    result = subprocess.run(
+        cmd,
+        cwd=REALTIME_DIR,
+        env={**os.environ, "PYTHONPATH": f"{REALTIME_DIR}:{BATCH_DIR}"},
+    )
+
+    if result.returncode == 0:
+        print(f"[worker] Live monitor completed for @{username} (video_id={video_id})")
+        return True
+    else:
+        print(f"[worker] Live monitor failed for @{username} with exit code {result.returncode}")
+        return False
+
+
 def process_live_capture_job(payload: dict):
     """Handle TikTok live stream capture job.
-    Captures the stream, uploads to blob, then enqueues a video_analysis job."""
+    Captures the stream, uploads to blob, then enqueues a video_analysis job.
+    Also starts a live_monitor subprocess in parallel for real-time analysis."""
     video_id = payload.get("video_id")
     live_url = payload.get("live_url")
     email = payload.get("email", "")
@@ -143,6 +181,33 @@ def process_live_capture_job(payload: dict):
         print("[worker] Invalid live_capture payload, skipping")
         return False
 
+    # Extract username from URL for live monitor
+    import re
+    match = re.search(r"@([^/]+)", live_url)
+    username = match.group(1) if match else ""
+
+    # Start live monitor as a background subprocess (non-blocking)
+    # Uses WORKER_API_KEY env var for backend auth (no user JWT needed)
+    monitor_proc = None
+    if username:
+        try:
+            monitor_cmd = [
+                sys.executable,
+                os.path.join(REALTIME_DIR, "live_monitor.py"),
+                "--unique-id", username,
+                "--video-id", video_id,
+            ]
+            monitor_proc = subprocess.Popen(
+                monitor_cmd,
+                cwd=REALTIME_DIR,
+                env={**os.environ, "PYTHONPATH": f"{REALTIME_DIR}:{BATCH_DIR}"},
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            print(f"[worker] Live monitor started for @{username} (pid={monitor_proc.pid})")
+        except Exception as e:
+            print(f"[worker] Warning: Failed to start live monitor: {e}")
+
     print(f"[worker] Starting live capture for video_id={video_id}, url={live_url}")
     cmd = [
         sys.executable,
@@ -150,7 +215,7 @@ def process_live_capture_job(payload: dict):
         "--video-id", video_id,
         "--live-url", live_url,
         "--email", email,
-        "--user-id", user_id,
+        "--user-id", str(user_id),
     ]
     if duration > 0:
         cmd.extend(["--duration", str(duration)])
@@ -160,6 +225,15 @@ def process_live_capture_job(payload: dict):
         cwd=BATCH_DIR,
         env={**os.environ, "PYTHONPATH": BATCH_DIR},
     )
+
+    # Stop live monitor when capture ends
+    if monitor_proc and monitor_proc.poll() is None:
+        print(f"[worker] Stopping live monitor (pid={monitor_proc.pid})")
+        monitor_proc.terminate()
+        try:
+            monitor_proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            monitor_proc.kill()
 
     if result.returncode == 0:
         print(f"[worker] Live capture completed for {video_id}")

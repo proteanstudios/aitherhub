@@ -637,6 +637,175 @@ class VideoService extends BaseApiService {
       throw error;
     }
   }
+
+  // =========================================================
+  // Real-time Live Monitoring API
+  // =========================================================
+
+  /**
+   * Start real-time monitoring for a live capture.
+   * @param {string} videoId - Video ID
+   * @param {string} liveUrl - TikTok live URL
+   * @returns {Promise}
+   */
+  async startLiveMonitor(videoId, liveUrl) {
+    try {
+      const response = await this.post(`${URL_CONSTANTS.LIVE_START_MONITOR}/${videoId}/start-monitor`, {
+        live_url: liveUrl,
+        video_id: videoId,
+      });
+      return response;
+    } catch (error) {
+      console.error('Failed to start live monitor:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get current live monitoring status.
+   * @param {string} videoId - Video ID
+   * @returns {Promise}
+   */
+  async getLiveStatus(videoId) {
+    try {
+      const response = await this.get(`${URL_CONSTANTS.LIVE_STATUS}/${videoId}/status`);
+      return response;
+    } catch (error) {
+      console.error('Failed to get live status:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all active live monitoring sessions.
+   * @returns {Promise}
+   */
+  async getActiveLiveSessions() {
+    try {
+      const response = await this.get(URL_CONSTANTS.LIVE_ACTIVE);
+      return response;
+    } catch (error) {
+      console.error('Failed to get active sessions:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Stream real-time live events via SSE.
+   * @param {Object} params
+   * @param {string} params.videoId - Video ID to monitor
+   * @param {Function} params.onMetrics - Callback for metrics updates
+   * @param {Function} params.onAdvice - Callback for AI advice
+   * @param {Function} params.onStreamUrl - Callback for stream URL
+   * @param {Function} params.onStreamEnded - Callback when stream ends
+   * @param {Function} params.onError - Callback on error
+   * @returns {Object} - Control object with close() method
+   */
+  streamLiveEvents({ videoId, onMetrics = () => {}, onAdvice = () => {}, onStreamUrl = () => {}, onStreamEnded = () => {}, onError = () => {} }) {
+    const base = (this.client && this.client.defaults && this.client.defaults.baseURL) || import.meta.env.VITE_API_BASE_URL || "";
+    const url = `${base.replace(/\/$/, "")}/api/v1/live/${encodeURIComponent(videoId)}/stream`;
+
+    const controller = new AbortController();
+    const signal = controller.signal;
+
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY = 3000;
+    let retryCount = 0;
+
+    const connect = async () => {
+      try {
+        console.log(`LiveSSE: Connecting to live stream ${videoId}`);
+
+        const headers = { Accept: "text/event-stream" };
+        const token = TokenManager.getToken();
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+
+        const resp = await fetch(url, {
+          method: "GET",
+          headers,
+          credentials: "same-origin",
+          signal,
+        });
+
+        if (!resp.ok) {
+          throw new Error(`LiveSSE request failed: ${resp.status}`);
+        }
+
+        if (!resp.body) {
+          throw new Error("LiveSSE response has no body");
+        }
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+        retryCount = 0; // Reset on successful connection
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          let idx;
+          while ((idx = buffer.indexOf("\n\n")) !== -1) {
+            const raw = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+
+            const lines = raw.split(/\r?\n/);
+            for (const line of lines) {
+              if (!line.startsWith("data:")) continue;
+              const payload = line.slice(5).trim();
+
+              try {
+                const data = JSON.parse(payload);
+                const { event_type, payload: eventPayload } = data;
+
+                switch (event_type) {
+                  case 'metrics':
+                    onMetrics(eventPayload);
+                    break;
+                  case 'advice':
+                    onAdvice(eventPayload);
+                    break;
+                  case 'stream_url':
+                    onStreamUrl(eventPayload);
+                    break;
+                  case 'stream_ended':
+                    onStreamEnded(eventPayload);
+                    return;
+                  case 'heartbeat':
+                    break; // Ignore heartbeats
+                  default:
+                    console.log('LiveSSE: Unknown event type:', event_type);
+                }
+              } catch (parseErr) {
+                console.error('LiveSSE parse error:', parseErr);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        if (signal.aborted) return;
+        console.error('LiveSSE error:', err);
+
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          console.log(`LiveSSE: Retrying in ${RETRY_DELAY}ms (${retryCount}/${MAX_RETRIES})`);
+          setTimeout(connect, RETRY_DELAY);
+        } else {
+          onError(err);
+        }
+      }
+    };
+
+    connect();
+
+    return {
+      close: () => {
+        controller.abort();
+      },
+    };
+  }
 }
 
 export default new VideoService();

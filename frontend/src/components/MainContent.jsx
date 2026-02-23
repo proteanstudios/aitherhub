@@ -8,6 +8,7 @@ import LoginModal from "./modals/LoginModal";
 import ProcessingSteps from "./ProcessingSteps";
 import VideoDetail from "./VideoDetail";
 import FeedbackPage from "./FeedbackPage";
+import LiveDashboard from "./LiveDashboard";
 
 export default function MainContent({
   children,
@@ -63,6 +64,8 @@ export default function MainContent({
   const [liveChecking, setLiveChecking] = useState(false);
   const [liveInfo, setLiveInfo] = useState(null); // { is_live, username, title }
   const [liveCapturing, setLiveCapturing] = useState(false);
+  const [showLiveDashboard, setShowLiveDashboard] = useState(false);
+  const [liveDashboardData, setLiveDashboardData] = useState(null);
 
   useEffect(() => {
     console.log("[MainContent] user", user);
@@ -610,11 +613,14 @@ export default function MainContent({
       setMessage(`@${result.username} のライブ録画を開始しました`);
       setMessageType('success');
       setUploadedVideoId(result.video_id);
-      // Navigate to the video page to show processing status
-      if (onUploadSuccess) onUploadSuccess();
-      setTimeout(() => {
-        navigate(`/video/${result.video_id}`);
-      }, 1500);
+      // Open LiveDashboard instead of navigating away
+      setLiveDashboardData({
+        videoId: result.video_id,
+        liveUrl: liveUrl.trim(),
+        username: result.username,
+        title: result.stream_title || liveInfo?.title || '',
+      });
+      setShowLiveDashboard(true);
     } catch (err) {
       const detail = err?.response?.data?.detail || err.message || 'ライブキャプチャの開始に失敗しました';
       setMessage(detail);
@@ -622,6 +628,16 @@ export default function MainContent({
     } finally {
       setLiveCapturing(false);
     }
+  };
+
+  const handleCloseLiveDashboard = () => {
+    setShowLiveDashboard(false);
+    // Navigate to video detail page for post-processing
+    if (liveDashboardData?.videoId) {
+      if (onUploadSuccess) onUploadSuccess();
+      navigate(`/video/${liveDashboardData.videoId}`);
+    }
+    setLiveDashboardData(null);
   };
 
   const handleCancelLive = () => {
@@ -849,6 +865,16 @@ export default function MainContent({
 
   return (
     <div className="flex flex-col h-screen">
+      {/* Real-time Live Dashboard Overlay */}
+      {showLiveDashboard && liveDashboardData && (
+        <LiveDashboard
+          videoId={liveDashboardData.videoId}
+          liveUrl={liveDashboardData.liveUrl}
+          username={liveDashboardData.username}
+          title={liveDashboardData.title}
+          onClose={handleCloseLiveDashboard}
+        />
+      )}
       <Header onOpenSidebar={onOpenSidebar} user={user} setUser={setUser} />
 
       <LoginModal
