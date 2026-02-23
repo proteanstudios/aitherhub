@@ -130,11 +130,89 @@ const Sparkline = ({ data, color = '#7D01FF', height = 60, label }) => {
   );
 };
 
+// ─── Animated Live Placeholder ─────────────────────────────
+const LivePlaceholder = ({ username, viewerCount, elapsedTime, formatTime, formatNum }) => {
+  return (
+    <div className="flex flex-col items-center justify-center h-full w-full relative overflow-hidden">
+      {/* Animated background rings */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div
+          className="absolute w-64 h-64 rounded-full border border-[#FF0050]/10"
+          style={{ animation: 'ping 3s cubic-bezier(0, 0, 0.2, 1) infinite' }}
+        />
+        <div
+          className="absolute w-48 h-48 rounded-full border border-[#00F2EA]/10"
+          style={{ animation: 'ping 3s cubic-bezier(0, 0, 0.2, 1) infinite', animationDelay: '1s' }}
+        />
+        <div
+          className="absolute w-32 h-32 rounded-full border border-[#FF0050]/15"
+          style={{ animation: 'ping 3s cubic-bezier(0, 0, 0.2, 1) infinite', animationDelay: '2s' }}
+        />
+      </div>
+
+      {/* Main content */}
+      <div className="relative z-10 text-center">
+        {/* Animated live icon */}
+        <div className="w-28 h-28 rounded-full bg-gradient-to-br from-[#FF0050]/20 via-[#FF0050]/10 to-[#00F2EA]/20 flex items-center justify-center mx-auto mb-6 backdrop-blur-sm border border-white/10">
+          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#FF0050]/30 to-[#00F2EA]/30 flex items-center justify-center">
+            <div className="relative">
+              <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <circle cx="12" cy="12" r="3"/>
+                <line x1="12" y1="2" x2="12" y2="6" opacity="0.5"/>
+                <line x1="12" y1="18" x2="12" y2="22" opacity="0.5"/>
+                <line x1="2" y1="12" x2="6" y2="12" opacity="0.5"/>
+                <line x1="18" y1="12" x2="22" y2="12" opacity="0.5"/>
+              </svg>
+              {/* Pulsing red dot */}
+              <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500"></span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Title */}
+        <h2 className="text-white text-xl font-bold mb-1">ライブ配信モニタリング中</h2>
+        <p className="text-gray-400 text-sm mb-4">@{username}</p>
+
+        {/* Live stats bar */}
+        <div className="flex items-center justify-center gap-6 mb-6">
+          <div className="flex items-center gap-2 bg-white/5 rounded-full px-4 py-2 backdrop-blur-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FF0050" strokeWidth="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+            <span className="text-white font-bold text-sm">{formatNum(viewerCount)}</span>
+            <span className="text-gray-500 text-xs">視聴中</span>
+          </div>
+          <div className="flex items-center gap-2 bg-white/5 rounded-full px-4 py-2 backdrop-blur-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00F2EA" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <span className="text-white font-bold text-sm">{formatTime(elapsedTime)}</span>
+            <span className="text-gray-500 text-xs">経過</span>
+          </div>
+        </div>
+
+        {/* Data receiving indicator */}
+        <div className="flex items-center justify-center gap-2">
+          <div className="flex gap-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></div>
+            <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+            <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+          </div>
+          <span className="text-green-400 text-xs">リアルタイムデータ受信中</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Main LiveDashboard Component ──────────────────────────
 const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
   // State
   const [isConnected, setIsConnected] = useState(false);
-  const [streamUrl, setStreamUrl] = useState(null);
   const [metrics, setMetrics] = useState({
     viewer_count: 0,
     like_count: 0,
@@ -156,6 +234,7 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
   const [error, setError] = useState(null);
   const [loadProgress, setLoadProgress] = useState(0);
   const [loadStep, setLoadStep] = useState(0); // 0-5
+  const [metricsReceived, setMetricsReceived] = useState(false);
   const loadSteps = [
     { label: 'モニター起動中...', pct: 10 },
     { label: 'TikTokライブに接続中...', pct: 30 },
@@ -167,7 +246,6 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
 
   const sseRef = useRef(null);
   const timerRef = useRef(null);
-  const videoRef = useRef(null);
   const adviceContainerRef = useRef(null);
   const startTimeRef = useRef(Date.now());
 
@@ -190,6 +268,7 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
 
   // Handle metrics update
   const handleMetrics = useCallback((data) => {
+    console.log('LiveDashboard: Received metrics:', JSON.stringify(data));
     setMetrics(prev => ({
       ...prev,
       viewer_count: data.viewer_count ?? prev.viewer_count,
@@ -204,6 +283,7 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
       likes: [...prev.likes.slice(-59), data.likes_in_interval || 0],
       gifts: [...prev.gifts.slice(-59), data.gifts_in_interval || 0],
     }));
+    setMetricsReceived(true);
   }, []);
 
   // Handle AI advice
@@ -216,15 +296,6 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
     // Auto-scroll to top
     if (adviceContainerRef.current) {
       adviceContainerRef.current.scrollTop = 0;
-    }
-  }, []);
-
-  // Handle stream URL
-  const handleStreamUrl = useCallback((data) => {
-    if (data.stream_url) {
-      setStreamUrl(data.stream_url);
-    } else if (data.flv_url || data.hls_url) {
-      setStreamUrl(data.flv_url || data.hls_url);
     }
   }, []);
 
@@ -275,7 +346,7 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
       onAdvice: handleAdvice,
       onStreamUrl: (data) => {
         setLoadStep(prev => Math.max(prev, 3)); // Step 3: Stream URL received
-        handleStreamUrl(data);
+        console.log('LiveDashboard: Stream URL received:', data);
       },
       onStreamEnded: handleStreamEnded,
       onError: (err) => {
@@ -304,10 +375,13 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
     return String(n || 0);
   };
 
+  // Check if dashboard should show (metrics received or loadStep >= 5)
+  const showDashboard = loadStep >= 5 || metricsReceived;
+
   return (
-    <div className="fixed inset-0 bg-black/90 z-50 flex flex-col">
+    <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-gray-900 to-gray-800 border-b border-gray-700">
+      <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-gray-900 to-gray-800 border-b border-gray-700/50">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="relative flex h-3 w-3">
@@ -332,31 +406,19 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left: Live Video */}
-        <div className="flex-1 flex flex-col bg-black">
+        {/* Left: Live Video Area */}
+        <div className="flex-1 flex flex-col bg-gradient-to-b from-gray-900 to-black">
           {/* Video Player Area */}
           <div className="flex-1 relative flex items-center justify-center">
-            {loadStep >= 5 ? (
-              /* Connected - show video or live placeholder */
-              streamUrl ? (
-                <video
-                  ref={videoRef}
-                  src={streamUrl}
-                  autoPlay
-                  muted
-                  playsInline
-                  className="max-w-full max-h-full object-contain"
-                />
-              ) : (
-                <div className="text-center">
-                  <div className="w-32 h-32 rounded-full bg-gradient-to-r from-[#FF0050]/20 to-[#00F2EA]/20 flex items-center justify-center mx-auto mb-4 animate-pulse">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#FF0050" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
-                  </div>
-                  <p className="text-white text-lg font-bold">ライブ配信中</p>
-                  <p className="text-gray-400 text-sm mt-1">@{username}</p>
-                  <p className="text-gray-500 text-xs mt-2">リアルタイムデータを受信中</p>
-                </div>
-              )
+            {showDashboard ? (
+              /* Connected - show live placeholder with animated visualization */
+              <LivePlaceholder
+                username={username}
+                viewerCount={metrics.viewer_count}
+                elapsedTime={elapsedTime}
+                formatTime={formatTime}
+                formatNum={formatNum}
+              />
             ) : (
               <div className="text-center w-80">
                 {/* Animated icon */}
@@ -397,26 +459,30 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
               </div>
             )}
 
-            {/* Overlay Metrics */}
-            <div className="absolute top-4 left-4 flex gap-2">
-              <div className="bg-black/60 backdrop-blur-sm rounded-full px-3 py-1 flex items-center gap-1">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FF0050" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                <span className="text-white text-xs font-bold">{formatNum(metrics.viewer_count)}</span>
+            {/* Overlay Metrics (only when dashboard is showing) */}
+            {showDashboard && (
+              <div className="absolute top-4 left-4 flex gap-2">
+                <div className="bg-black/60 backdrop-blur-sm rounded-full px-3 py-1 flex items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FF0050" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <span className="text-white text-xs font-bold">{formatNum(metrics.viewer_count)}</span>
+                </div>
+                <div className="bg-black/60 backdrop-blur-sm rounded-full px-3 py-1 flex items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="#FF0050" stroke="#FF0050" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                  <span className="text-white text-xs font-bold">{formatNum(metrics.like_count)}</span>
+                </div>
               </div>
-              <div className="bg-black/60 backdrop-blur-sm rounded-full px-3 py-1 flex items-center gap-1">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="#FF0050" stroke="#FF0050" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-                <span className="text-white text-xs font-bold">{formatNum(metrics.like_count)}</span>
-              </div>
-            </div>
+            )}
           </div>
 
           {/* Bottom Sparklines */}
-          <div className="h-20 bg-gray-900/80 border-t border-gray-800 px-4 py-2 grid grid-cols-4 gap-4">
-            <Sparkline data={metricsHistory.viewers} color="#FF0050" height={50} label="視聴者" />
-            <Sparkline data={metricsHistory.comments} color="#00F2EA" height={50} label="コメント/分" />
-            <Sparkline data={metricsHistory.likes} color="#FF6B6B" height={50} label="いいね" />
-            <Sparkline data={metricsHistory.gifts} color="#FFD93D" height={50} label="ギフト" />
-          </div>
+          {showDashboard && (
+            <div className="h-20 bg-gray-900/80 border-t border-gray-800 px-4 py-2 grid grid-cols-4 gap-4">
+              <Sparkline data={metricsHistory.viewers} color="#FF0050" height={50} label="視聴者" />
+              <Sparkline data={metricsHistory.comments} color="#00F2EA" height={50} label="コメント/分" />
+              <Sparkline data={metricsHistory.likes} color="#FF6B6B" height={50} label="いいね" />
+              <Sparkline data={metricsHistory.gifts} color="#FFD93D" height={50} label="ギフト" />
+            </div>
+          )}
         </div>
 
         {/* Right: Dashboard */}
@@ -493,6 +559,9 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
                   <p className="text-xs text-gray-400 mt-1">
                     視聴者の動きやコメントの変化を<br/>監視しています
                   </p>
+                  <p className="text-[10px] text-gray-300 mt-3">
+                    約30秒後にデータが蓄積されると<br/>AIアドバイスが表示されます
+                  </p>
                 </div>
               ) : (
                 advices.map((advice) => (
@@ -514,6 +583,12 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
                 {streamEnded ? 'ライブ終了' : isConnected ? '接続中' : '接続待ち'}
               </span>
             </div>
+            {metricsReceived && (
+              <span className="text-[10px] text-green-500 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                データ受信中
+              </span>
+            )}
             {error && (
               <span className="text-[10px] text-red-500">{error}</span>
             )}
