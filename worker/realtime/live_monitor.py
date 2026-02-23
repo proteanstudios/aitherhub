@@ -266,7 +266,7 @@ class LiveMetricsCollector:
 
 
 class AIAdvisor:
-    """Generates real-time advice using GPT-4o-mini."""
+    """Generates real-time advice using GPT-4o-mini (supports Azure OpenAI)."""
 
     TRIGGER_PROMPTS = {
         "viewer_drop": """視聴者数が直近2分で{viewer_change_pct}%減少しました（{from}人→{to}人）。
@@ -300,9 +300,10 @@ class AIAdvisor:
 {"message": "具体的なアドバイス文", "action_type": "price|product|engagement|switch|urgency"}
 """
 
-    def __init__(self, api_key: str, api_base: str | None = None):
+    def __init__(self, api_key: str, api_base: str | None = None, use_azure: bool = False):
         self.api_key = api_key
         self.api_base = api_base or "https://api.openai.com/v1"
+        self.use_azure = use_azure
 
     async def generate_advice(
         self, trigger: dict, context_summary: str
@@ -323,12 +324,23 @@ JSON形式で回答してください。"""
 
         try:
             async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-                resp = await client.post(
-                    f"{self.api_base}/chat/completions",
-                    headers={
+                if self.use_azure:
+                    # Azure OpenAI format
+                    url = f"{self.api_base}/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-08-01-preview"
+                    headers = {
+                        "api-key": self.api_key,
+                        "Content-Type": "application/json",
+                    }
+                else:
+                    # Standard OpenAI format
+                    url = f"{self.api_base}/chat/completions"
+                    headers = {
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
-                    },
+                    }
+                resp = await client.post(
+                    url,
+                    headers=headers,
                     json={
                         "model": "gpt-4o-mini",
                         "messages": [
@@ -374,13 +386,14 @@ class TikTokLiveMonitor:
         worker_api_key: str,
         openai_api_key: str,
         openai_api_base: str | None = None,
+        use_azure: bool = False,
     ):
         self.unique_id = unique_id
         self.video_id = video_id
         self.backend_url = backend_url.rstrip("/")
         self.worker_api_key = worker_api_key
         self.collector = LiveMetricsCollector()
-        self.advisor = AIAdvisor(openai_api_key, openai_api_base)
+        self.advisor = AIAdvisor(openai_api_key, openai_api_base, use_azure=use_azure)
         self.running = False
         self._stream_url = None
 
@@ -551,11 +564,25 @@ def main():
     parser.add_argument("--openai-api-base", default=None, help="OpenAI API base URL")
     args = parser.parse_args()
 
+    # Support both standard OpenAI and Azure OpenAI
+    use_azure = False
+    azure_key = os.environ.get("AZURE_OPENAI_KEY", "")
+    azure_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+
     openai_key = args.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
     openai_base = args.openai_api_base or os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
 
-    if not openai_key:
-        logger.error("OPENAI_API_KEY is required")
+    if azure_key and azure_endpoint:
+        # Prefer Azure OpenAI if configured
+        openai_key = azure_key
+        # Extract base URL from endpoint (remove path after .com/)
+        import re as _re
+        base_match = _re.match(r'(https://[^/]+)', azure_endpoint)
+        openai_base = base_match.group(1) if base_match else azure_endpoint
+        use_azure = True
+        logger.info(f"Using Azure OpenAI: {openai_base}")
+    elif not openai_key or openai_key.startswith("your-"):
+        logger.error("OPENAI_API_KEY or AZURE_OPENAI_KEY is required")
         sys.exit(1)
 
     worker_key = args.worker_api_key or os.environ.get("WORKER_API_KEY", "aitherhub-worker-internal-key-2026")
@@ -567,6 +594,7 @@ def main():
         worker_api_key=worker_key,
         openai_api_key=openai_key,
         openai_api_base=openai_base,
+        use_azure=use_azure,
     )
 
     try:
