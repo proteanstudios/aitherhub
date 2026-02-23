@@ -106,6 +106,8 @@ def process_job(payload: dict, msg_id: str, pop_receipt: str):
     try:
         if job_type == "generate_clip":
             success = process_clip_job(payload)
+        elif job_type == "live_capture":
+            success = process_live_capture_job(payload)
         else:
             success = process_video_job(payload)
 
@@ -126,6 +128,48 @@ def process_job(payload: dict, msg_id: str, pop_receipt: str):
     finally:
         with active_jobs_lock:
             active_jobs.pop(job_id, None)
+
+
+def process_live_capture_job(payload: dict):
+    """Handle TikTok live stream capture job.
+    Captures the stream, uploads to blob, then enqueues a video_analysis job."""
+    video_id = payload.get("video_id")
+    live_url = payload.get("live_url")
+    email = payload.get("email", "")
+    user_id = payload.get("user_id", "")
+    duration = payload.get("duration", 0)
+
+    if not video_id or not live_url:
+        print("[worker] Invalid live_capture payload, skipping")
+        return False
+
+    print(f"[worker] Starting live capture for video_id={video_id}, url={live_url}")
+    cmd = [
+        sys.executable,
+        os.path.join(BATCH_DIR, "tiktok_stream_capture.py"),
+        "--video-id", video_id,
+        "--live-url", live_url,
+        "--email", email,
+        "--user-id", user_id,
+    ]
+    if duration > 0:
+        cmd.extend(["--duration", str(duration)])
+
+    result = subprocess.run(
+        cmd,
+        cwd=BATCH_DIR,
+        env={**os.environ, "PYTHONPATH": BATCH_DIR},
+    )
+
+    if result.returncode == 0:
+        print(f"[worker] Live capture completed for {video_id}")
+        return True
+    elif result.returncode == 2:
+        print(f"[worker] Live capture: user is not currently live (video_id={video_id})")
+        return True  # Don't retry - user is offline
+    else:
+        print(f"[worker] Live capture failed for {video_id} with exit code {result.returncode}")
+        return False
 
 
 def process_clip_job(payload: dict):

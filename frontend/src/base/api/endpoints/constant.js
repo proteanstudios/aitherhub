@@ -19,4 +19,6 @@ export const URL_CONSTANTS = {
   LCJ_VERIFY_LIVER: "/api/v1/lcj/verify-liver",
   LCJ_LINK: "/api/v1/lcj/link",
   LCJ_UNLINK: "/api/v1/lcj/unlink",
+  LIVE_CHECK: "/api/v1/videos/live-check",
+  LIVE_CAPTURE: "/api/v1/videos/live-capture",
 };

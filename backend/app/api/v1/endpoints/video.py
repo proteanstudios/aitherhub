@@ -25,6 +25,9 @@ from app.schema.video_schema import (
     VideoResponse,
     BatchUploadCompleteRequest,
     BatchUploadCompleteResponse,
+    LiveCaptureRequest,
+    LiveCaptureResponse,
+    LiveCheckResponse,
 )
 from app.services.video_service import VideoService
 from app.repository.video_repository import VideoRepository
@@ -2122,3 +2125,110 @@ async def remap_all_product_names(
     except Exception as exc:
         logger.exception(f"Failed to list videos for remap: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ============================================================
+# TikTok Live Capture Endpoints
+# ============================================================
+
+@router.post("/live-check", response_model=LiveCheckResponse)
+async def live_check(
+    payload: LiveCaptureRequest,
+    current_user=Depends(get_current_user),
+):
+    """Check if a TikTok user is currently live."""
+    from app.services.tiktok_service import TikTokLiveService
+
+    try:
+        info = await TikTokLiveService.check_and_get_info(payload.live_url)
+        return LiveCheckResponse(
+            is_live=info["is_live"],
+            username=info.get("username"),
+            room_id=info.get("room_id"),
+            title=info.get("title"),
+            message="LIVE" if info["is_live"] else "User is not currently live",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as exc:
+        logger.exception(f"Live check failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Live check failed: {exc}")
+
+
+@router.post("/live-capture", response_model=LiveCaptureResponse)
+async def live_capture(
+    payload: LiveCaptureRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Start capturing a TikTok live stream.
+    1. Validates the URL and checks if the user is live
+    2. Creates a video record in the database
+    3. Enqueues a live_capture job for the worker
+    """
+    from app.services.tiktok_service import TikTokLiveService
+    from app.services.queue_service import enqueue_job
+
+    # Step 1: Check live status
+    try:
+        info = await TikTokLiveService.check_and_get_info(payload.live_url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as exc:
+        logger.exception(f"Live check failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to check live status: {exc}")
+
+    if not info["is_live"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"@{info.get('username', 'unknown')} is not currently live",
+        )
+
+    username = info["username"]
+    title = info.get("title", "")
+
+    # Step 2: Create video record
+    video_id = str(uuid_module.uuid4())
+    original_filename = f"tiktok_live_{username}.mp4"
+
+    try:
+        video_repo = VideoRepository(lambda: db)
+        service = VideoService(video_repository=video_repo)
+
+        video = await video_repo.create_video(
+            user_id=current_user["id"],
+            video_id=video_id,
+            original_filename=original_filename,
+            status="capturing",
+            upload_type="live_capture",
+        )
+        await db.commit()
+    except Exception as exc:
+        logger.exception(f"Failed to create video record: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to create video record: {exc}")
+
+    # Step 3: Enqueue live_capture job
+    try:
+        queue_payload = {
+            "job_type": "live_capture",
+            "video_id": video_id,
+            "live_url": payload.live_url,
+            "email": current_user["email"],
+            "user_id": current_user["id"],
+            "duration": payload.duration or 0,
+            "username": username,
+            "stream_title": title,
+        }
+        await enqueue_job(queue_payload)
+    except Exception as exc:
+        logger.exception(f"Failed to enqueue live capture job: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to start capture: {exc}")
+
+    return LiveCaptureResponse(
+        video_id=video_id,
+        status="capturing",
+        stream_title=title,
+        username=username,
+        message=f"Live capture started for @{username}; recording and analysis will begin automatically",
+    )

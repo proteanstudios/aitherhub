@@ -597,6 +597,46 @@ class VideoService extends BaseApiService {
       throw error;
     }
   }
+
+  // =========================================================
+  // TikTok Live Capture API
+  // =========================================================
+
+  /**
+   * Check if a TikTok user is currently live.
+   * @param {string} liveUrl - TikTok live URL
+   * @returns {Promise<{is_live, username, room_id, title, message}>}
+   */
+  async checkLiveStatus(liveUrl) {
+    try {
+      const response = await this.post(URL_CONSTANTS.LIVE_CHECK, {
+        live_url: liveUrl,
+      });
+      return response;
+    } catch (error) {
+      console.error('Failed to check live status:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Start capturing a TikTok live stream.
+   * @param {string} liveUrl - TikTok live URL
+   * @param {number} [duration=0] - Max recording duration in seconds (0 = until stream ends)
+   * @returns {Promise<{video_id, status, stream_title, username, message}>}
+   */
+  async startLiveCapture(liveUrl, duration = 0) {
+    try {
+      const response = await this.post(URL_CONSTANTS.LIVE_CAPTURE, {
+        live_url: liveUrl,
+        duration,
+      });
+      return response;
+    } catch (error) {
+      console.error('Failed to start live capture:', error);
+      throw error;
+    }
+  }
 }
 
 export default new VideoService();

@@ -58,6 +58,11 @@ export default function MainContent({
   const prevSelectedVideoIdRef = useRef(selectedVideoId);
   const processingVideoTitleRef = useRef("");
   const [duplicateVideo, setDuplicateVideo] = useState(null); // { id, original_filename } of existing video
+  // Live capture states
+  const [liveUrl, setLiveUrl] = useState('');
+  const [liveChecking, setLiveChecking] = useState(false);
+  const [liveInfo, setLiveInfo] = useState(null); // { is_live, username, title }
+  const [liveCapturing, setLiveCapturing] = useState(false);
 
   useEffect(() => {
     console.log("[MainContent] user", user);
@@ -566,6 +571,65 @@ export default function MainContent({
     setUploadedVideoId(null);
     setVideoData(null);
     setMessage("");
+  };
+
+  // =========================================================
+  // Live Capture Handlers
+  // =========================================================
+  const handleLiveCheck = async () => {
+    if (!liveUrl.trim()) {
+      setMessage('URLを入力してください');
+      setMessageType('error');
+      return;
+    }
+    setLiveChecking(true);
+    setLiveInfo(null);
+    setMessage('');
+    try {
+      const result = await VideoService.checkLiveStatus(liveUrl.trim());
+      setLiveInfo(result);
+      if (!result.is_live) {
+        setMessage(`@${result.username || 'unknown'} は現在ライブ配信していません`);
+        setMessageType('error');
+      }
+    } catch (err) {
+      const detail = err?.response?.data?.detail || err.message || 'ライブチェックに失敗しました';
+      setMessage(detail);
+      setMessageType('error');
+    } finally {
+      setLiveChecking(false);
+    }
+  };
+
+  const handleLiveCapture = async () => {
+    if (!liveUrl.trim()) return;
+    setLiveCapturing(true);
+    setMessage('');
+    try {
+      const result = await VideoService.startLiveCapture(liveUrl.trim());
+      setMessage(`@${result.username} のライブ録画を開始しました`);
+      setMessageType('success');
+      setUploadedVideoId(result.video_id);
+      // Navigate to the video page to show processing status
+      if (onUploadSuccess) onUploadSuccess();
+      setTimeout(() => {
+        navigate(`/video/${result.video_id}`);
+      }, 1500);
+    } catch (err) {
+      const detail = err?.response?.data?.detail || err.message || 'ライブキャプチャの開始に失敗しました';
+      setMessage(detail);
+      setMessageType('error');
+    } finally {
+      setLiveCapturing(false);
+    }
+  };
+
+  const handleCancelLive = () => {
+    setUploadMode(null);
+    setLiveUrl('');
+    setLiveInfo(null);
+    setLiveCapturing(false);
+    setMessage('');
   };
 
   const handleDragOver = (e) => {
@@ -1197,6 +1261,90 @@ export default function MainContent({
                             </div>
                           </div>
                         </>
+                      ) : uploadMode === 'live_capture' ? (
+                        <>
+                          <div className="flex flex-col items-center text-center space-y-6">
+                            <div className="w-20 h-20 rounded-full bg-gradient-to-r from-[#FF0050] to-[#00F2EA] flex items-center justify-center shadow-lg">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M2 12h2"/><path d="M20 12h2"/></svg>
+                            </div>
+                            <div className="w-full max-w-sm">
+                              <p className="text-sm font-semibold text-gray-800 mb-3">
+                                TikTokライブURLを貼り付け
+                              </p>
+                              <input
+                                type="text"
+                                value={liveUrl}
+                                onChange={(e) => setLiveUrl(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && !liveChecking && !liveCapturing) {
+                                    handleLiveCheck();
+                                  }
+                                }}
+                                placeholder="https://www.tiktok.com/@user/live"
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#FF0050] focus:border-transparent transition-all"
+                                disabled={liveCapturing}
+                              />
+                              {liveInfo && liveInfo.is_live && (
+                                <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                                  <div className="flex items-center gap-2">
+                                    <span className="relative flex h-3 w-3">
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                      <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                                    </span>
+                                    <span className="text-sm font-medium text-green-800">
+                                      @{liveInfo.username} がライブ配信中
+                                    </span>
+                                  </div>
+                                  {liveInfo.title && (
+                                    <p className="text-xs text-green-600 mt-1 truncate">
+                                      {liveInfo.title}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex gap-2">
+                              {liveInfo && liveInfo.is_live ? (
+                                <button
+                                  onClick={handleLiveCapture}
+                                  disabled={liveCapturing}
+                                  className="w-[180px] h-[41px] flex items-center justify-center bg-gradient-to-r from-[#FF0050] to-[#00F2EA] text-white rounded-md text-sm cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-50"
+                                >
+                                  {liveCapturing ? (
+                                    <>
+                                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                      接続中...
+                                    </>
+                                  ) : (
+                                    <>録画・解析開始</>
+                                  )}
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={handleLiveCheck}
+                                  disabled={liveChecking || !liveUrl.trim()}
+                                  className="w-[180px] h-[41px] flex items-center justify-center bg-white text-[#7D01FF] border border-[#7D01FF] rounded-md text-sm cursor-pointer hover:bg-gray-100 transition-colors disabled:opacity-50"
+                                >
+                                  {liveChecking ? (
+                                    <>
+                                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-[#7D01FF]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                      チェック中...
+                                    </>
+                                  ) : (
+                                    <>ライブチェック</>
+                                  )}
+                                </button>
+                              )}
+                              <button
+                                onClick={handleCancelLive}
+                                disabled={liveCapturing}
+                                className="w-[143px] h-[41px] bg-gray-300 text-gray-700 rounded-md text-sm cursor-pointer hover:bg-gray-100 disabled:opacity-50"
+                              >
+                                戻る
+                              </button>
+                            </div>
+                          </div>
+                        </>
                       ) : (
                         <>
                           <div className="flex flex-col items-center text-center space-y-6">
@@ -1275,6 +1423,32 @@ export default function MainContent({
                                 }}
                               >
                                 クリーン動画アップ
+                              </button>
+                              <button
+                                className="
+                                  w-[180px] h-[41px]
+                                  flex items-center justify-center
+                                  bg-gradient-to-r from-[#FF0050] to-[#00F2EA] text-white
+                                  border-0
+                                  rounded-md
+                                  text-[13px] leading-[28px]
+                                  font-extralight
+                                  cursor-pointer
+                                  transition-transform duration-150 ease-out
+                                  active:scale-[0.96]
+                                  select-none
+                                  hover:opacity-90
+                                "
+                                onClick={() => {
+                                  if (!isLoggedIn) {
+                                    setShowLoginModal(true);
+                                    return;
+                                  }
+                                  setUploadMode('live_capture');
+                                }}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M2 12h2"/><path d="M20 12h2"/></svg>
+                                ライブURL
                               </button>
                             </div>
                           </div>

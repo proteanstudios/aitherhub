@@ -198,6 +198,38 @@ class BatchUploadCompleteResponse(BaseModel):
     message: str
 
 
+class LiveCaptureRequest(BaseModel):
+    """Request schema for TikTok live stream capture"""
+    live_url: str  # TikTok live URL (e.g., https://www.tiktok.com/@user/live)
+    duration: Optional[int] = 0  # Max recording duration in seconds (0 = until stream ends)
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "live_url": "https://www.tiktok.com/@hapimaruuu/live",
+                "duration": 0
+            }
+        }
+
+
+class LiveCaptureResponse(BaseModel):
+    """Response schema for live capture initiation"""
+    video_id: str
+    status: str
+    stream_title: Optional[str] = None
+    username: Optional[str] = None
+    message: str
+
+
+class LiveCheckResponse(BaseModel):
+    """Response schema for checking if a TikTok user is live"""
+    is_live: bool
+    username: Optional[str] = None
+    room_id: Optional[str] = None
+    title: Optional[str] = None
+    message: str
+
+
 class VideoResponse(ModelBaseInfo):
     """Video response schema"""
     original_filename: Optional[str] = None
