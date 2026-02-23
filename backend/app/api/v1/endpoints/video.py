@@ -457,19 +457,40 @@ async def delete_video(
 
         # Delete ALL related records first to avoid FK constraint violations
         # Order matters: delete child tables before parent tables
-        await db.execute(text("DELETE FROM frame_analysis_results WHERE frame_id IN (SELECT id FROM video_frames WHERE video_id = :vid)"), {"vid": video_id})
-        await db.execute(text("DELETE FROM video_frames WHERE video_id = :vid"), {"vid": video_id})
-        await db.execute(text("DELETE FROM video_product_exposures WHERE video_id = :vid"), {"vid": video_id})
-        await db.execute(text("DELETE FROM video_clips WHERE video_id = :vid"), {"vid": video_id})
-        await db.execute(text("DELETE FROM audio_chunks WHERE video_id = :vid"), {"vid": video_id})
-        await db.execute(text("DELETE FROM chats WHERE video_id = :vid"), {"vid": video_id})
-        await db.execute(text("DELETE FROM phase_group_best_phases WHERE video_id = :vid"), {"vid": video_id})
-        await db.execute(text("DELETE FROM phase_insights WHERE video_id = :vid"), {"vid": video_id})
-        await db.execute(text("DELETE FROM video_phases WHERE video_id = :vid"), {"vid": video_id})
-        await db.execute(text("DELETE FROM video_insights WHERE video_id = :vid"), {"vid": video_id})
-        await db.execute(text("DELETE FROM processing_jobs WHERE video_id = :vid"), {"vid": video_id})
-        await db.execute(text("DELETE FROM reports WHERE video_id = :vid"), {"vid": video_id})
-        await db.execute(text("DELETE FROM video_states WHERE video_id = :vid"), {"vid": video_id})
+        # Use safe_delete to skip tables that may not exist yet
+        tables_to_delete = [
+            # Level 3: grandchild tables (FK to child tables)
+            "DELETE FROM speech_segments WHERE audio_chunk_id IN (SELECT id FROM audio_chunks WHERE video_id = :vid)",
+            "DELETE FROM frame_analysis_results WHERE frame_id IN (SELECT id FROM video_frames WHERE video_id = :vid)",
+            # Level 2: child tables with video_id FK
+            "DELETE FROM video_frames WHERE video_id = :vid",
+            "DELETE FROM video_product_exposures WHERE video_id = :vid",
+            "DELETE FROM video_clips WHERE video_id = :vid",
+            "DELETE FROM audio_chunks WHERE video_id = :vid",
+            "DELETE FROM chats WHERE video_id = :vid",
+            "DELETE FROM group_best_phases WHERE video_id = :vid",
+            "DELETE FROM phase_insights WHERE video_id = :vid",
+            "DELETE FROM video_phases WHERE video_id = :vid",
+            "DELETE FROM video_insights WHERE video_id = :vid",
+            "DELETE FROM processing_jobs WHERE video_id = :vid",
+            "DELETE FROM reports WHERE video_id = :vid",
+            "DELETE FROM video_processing_state WHERE video_id = :vid",
+            # Structure tables
+            "DELETE FROM video_structure_group_best_videos WHERE video_id = :vid",
+            "DELETE FROM video_structure_group_members WHERE video_id = :vid",
+            "DELETE FROM video_structure_features WHERE video_id = :vid",
+        ]
+
+        for sql in tables_to_delete:
+            try:
+                await db.execute(text(sql), {"vid": video_id})
+            except Exception as table_err:
+                # Skip if table doesn't exist (e.g., migration not yet applied)
+                logger.warning(f"Skipping delete for non-existent table: {table_err}")
+                await db.rollback()
+                # Re-start transaction for next delete
+                continue
+
         await db.commit()
 
         # Delete the video record
