@@ -790,6 +790,85 @@ export default function MainContent({
     };
   }, [uploadedVideoId, selectedVideoId, isLoggedIn]);
 
+  // ── Auto-detect active live session ──
+  // When videoData is loaded and it's a live_capture with 'capturing' status,
+  // or when the video has an active live session, auto-open LiveDashboard.
+  useEffect(() => {
+    if (!videoData || showLiveDashboard) return;
+
+    const videoId = videoData.id;
+    if (!videoId) return;
+
+    // Case 1: Video is a live_capture currently being captured
+    if (videoData.upload_type === 'live_capture' && videoData.status === 'capturing') {
+      // Check if there's an active live session for this video
+      VideoService.getLiveStatus(videoId)
+        .then((res) => {
+          const data = res?.data || res || {};
+          if (data.is_live) {
+            // Extract username from original_filename (format: tiktok_live_{username}.mp4)
+            const match = videoData.original_filename?.match(/tiktok_live_(.+)\.mp4/);
+            const username = data.stream_info?.username || (match ? match[1] : 'unknown');
+            setLiveDashboardData({
+              videoId,
+              liveUrl: `https://www.tiktok.com/@${username}/live`,
+              username,
+              title: data.stream_info?.title || '',
+            });
+            setShowLiveDashboard(true);
+          }
+        })
+        .catch(() => { /* ignore - not a live session */ });
+      return;
+    }
+
+    // Case 2: Check if this is an extension-based live session (video_id starts with ext_)
+    if (typeof videoId === 'string' && videoId.startsWith('ext_')) {
+      VideoService.getLiveStatus(videoId)
+        .then((res) => {
+          const data = res?.data || res || {};
+          if (data.is_live) {
+            const username = data.stream_info?.account || data.stream_info?.username || 'unknown';
+            setLiveDashboardData({
+              videoId,
+              liveUrl: '',
+              username,
+              title: '',
+            });
+            setShowLiveDashboard(true);
+          }
+        })
+        .catch(() => { /* ignore */ });
+    }
+  }, [videoData, showLiveDashboard]);
+
+  // ── Auto-detect active extension sessions on page load ──
+  // When user navigates to home (no video selected), check for active extension sessions
+  useEffect(() => {
+    if (showLiveDashboard || !isLoggedIn) return;
+    const videoId = selectedVideoId || uploadedVideoId;
+    if (videoId) return; // Already viewing a specific video
+
+    VideoService.getActiveExtensionSessions()
+      .then((res) => {
+        const data = res?.data || res || {};
+        const sessions = data.sessions || [];
+        if (sessions.length > 0) {
+          const session = sessions[0]; // Take the most recent active session
+          const extVideoId = session.video_id;
+          const username = session.account || 'unknown';
+          setLiveDashboardData({
+            videoId: extVideoId,
+            liveUrl: '',
+            username,
+            title: '',
+          });
+          setShowLiveDashboard(true);
+        }
+      })
+      .catch(() => { /* ignore */ });
+  }, [isLoggedIn, selectedVideoId, uploadedVideoId, showLiveDashboard]);
+
   // Handle processing complete - reload video data
   const handleProcessingComplete = useCallback(async () => {
     const videoId = selectedVideoId || uploadedVideoId;

@@ -519,14 +519,20 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
 
     // Step 0: Start monitoring
     setLoadStep(0);
-    VideoService.startLiveMonitor(videoId, liveUrl)
-      .then(() => {
-        setLoadStep(1); // Step 1: Connected to TikTok
-      })
-      .catch(err => {
-        console.error('Failed to start monitor:', err);
-        setLoadStep(1); // Continue anyway
-      });
+    if (liveUrl) {
+      // Only call startLiveMonitor if we have a live URL (new capture flow)
+      VideoService.startLiveMonitor(videoId, liveUrl)
+        .then(() => {
+          setLoadStep(1); // Step 1: Connected to TikTok
+        })
+        .catch(err => {
+          console.error('Failed to start monitor:', err);
+          setLoadStep(1); // Continue anyway
+        });
+    } else {
+      // Reconnecting to an existing live session - skip startLiveMonitor
+      setLoadStep(1);
+    }
 
     // Step 2: SSE stream
     setTimeout(() => setLoadStep(2), 3000);

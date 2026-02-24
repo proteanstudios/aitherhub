@@ -691,6 +691,20 @@ class VideoService extends BaseApiService {
   }
 
   /**
+   * Get active Chrome extension sessions for the current user.
+   * @returns {Promise}
+   */
+  async getActiveExtensionSessions() {
+    try {
+      const response = await this.get(`${URL_CONSTANTS.LIVE_EXTENSION_SESSIONS}?active_only=true`);
+      return response;
+    } catch (error) {
+      console.error('Failed to get extension sessions:', error);
+      return { sessions: [], count: 0 };
+    }
+  }
+
+  /**
    * Stream real-time live events via SSE.
    * @param {Object} params
    * @param {string} params.videoId - Video ID to monitor
