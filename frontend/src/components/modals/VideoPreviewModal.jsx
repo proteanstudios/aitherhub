@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import CloseSvg from "../../assets/icons/close.svg";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogClose } from "../ui/dialog";
 
@@ -13,16 +13,23 @@ export default function VideoPreviewModal({
   const videoRef = useRef(null);
   const hasSetupRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [bufferedProgress, setBufferedProgress] = useState(0);
   const [showCustomLoading, setShowCustomLoading] = useState(true);
   const prevOpenRef = useRef(false);
   const prevVideoUrlRef = useRef(null);
+  const bufferCheckRef = useRef(null);
 
   const resetUiState = () => {
     setIsLoading(true);
+    setIsBuffering(false);
     setBufferedProgress(0);
-    setShowCustomLoading(true); // Always show custom loading initially
+    setShowCustomLoading(true);
     hasSetupRef.current = false;
+    if (bufferCheckRef.current) {
+      clearInterval(bufferCheckRef.current);
+      bufferCheckRef.current = null;
+    }
   };
 
   // Reset states when modal closes or URL changes
@@ -30,7 +37,6 @@ export default function VideoPreviewModal({
     const prevOpen = prevOpenRef.current;
     const prevVideoUrl = prevVideoUrlRef.current;
 
-    // Reset when modal closes or video URL changes
     if ((!open && prevOpen) || (videoUrl !== prevVideoUrl)) {
       queueMicrotask(() => {
         resetUiState();
@@ -41,9 +47,23 @@ export default function VideoPreviewModal({
     prevVideoUrlRef.current = videoUrl;
   }, [open, videoUrl]);
 
+  // Buffering state handlers
+  const handleWaiting = useCallback(() => {
+    setIsBuffering(true);
+  }, []);
+
+  const handlePlaying = useCallback(() => {
+    setIsBuffering(false);
+    setIsLoading(false);
+    setShowCustomLoading(false);
+  }, []);
+
+  const handleCanPlayThrough = useCallback(() => {
+    setIsBuffering(false);
+  }, []);
+
   // Setup seek/play when modal opens or URL changes
   useEffect(() => {
-    // Skip if modal closed or no video
     if (!open || !videoUrl) {
       return;
     }
@@ -59,7 +79,6 @@ export default function VideoPreviewModal({
 
       const seekAndPlay = async () => {
         try {
-          // Show custom loading when starting seek/play process
           setShowCustomLoading(true);
           setIsLoading(true);
           vid.defaultMuted = true;
@@ -74,14 +93,66 @@ export default function VideoPreviewModal({
             hasSeeked = true;
           }
 
-          // Try autoplay; if blocked, keep native controls so user can start playback.
+          // Wait for sufficient buffer before playing to avoid stuttering
+          const waitForBuffer = () => {
+            return new Promise((resolve) => {
+              const checkBuffer = () => {
+                if (!vid || vid.readyState >= 4) {
+                  // HAVE_ENOUGH_DATA - sufficient buffer
+                  resolve();
+                  return;
+                }
+                // Check if we have at least 3 seconds buffered ahead
+                const currentTime = vid.currentTime;
+                for (let i = 0; i < vid.buffered.length; i++) {
+                  const start = vid.buffered.start(i);
+                  const end = vid.buffered.end(i);
+                  if (currentTime >= start && currentTime <= end) {
+                    if (end - currentTime >= 3) {
+                      resolve();
+                      return;
+                    }
+                  }
+                }
+                // Not enough buffer yet, check again soon
+                setTimeout(checkBuffer, 200);
+              };
+              // Start checking, but resolve after max 5 seconds regardless
+              const timeout = setTimeout(() => resolve(), 5000);
+              const wrappedResolve = () => {
+                clearTimeout(timeout);
+                resolve();
+              };
+              const checkBufferWithResolve = () => {
+                if (!vid || vid.readyState >= 4) {
+                  wrappedResolve();
+                  return;
+                }
+                const currentTime = vid.currentTime;
+                for (let i = 0; i < vid.buffered.length; i++) {
+                  const start = vid.buffered.start(i);
+                  const end = vid.buffered.end(i);
+                  if (currentTime >= start && currentTime <= end) {
+                    if (end - currentTime >= 3) {
+                      wrappedResolve();
+                      return;
+                    }
+                  }
+                }
+                setTimeout(checkBufferWithResolve, 200);
+              };
+              checkBufferWithResolve();
+            });
+          };
+
+          await waitForBuffer();
+
           try {
             await vid.play();
-            // Keep custom loading for a moment to show success, then hide
             setIsLoading(false);
-            setTimeout(() => setShowCustomLoading(false), 500);
+            setIsBuffering(false);
+            setTimeout(() => setShowCustomLoading(false), 300);
           } catch {
-            // Autoplay can be blocked by browser policy. Let user click native play.
             setIsLoading(false);
             setShowCustomLoading(false);
           }
@@ -99,11 +170,8 @@ export default function VideoPreviewModal({
       };
 
       const handleLoadedMetadata = () => {
-        // If video is already ready to play, seek immediately
-        if (vid.readyState >= 3) { // HAVE_FUTURE_DATA or higher
+        if (vid.readyState >= 3) {
           seekAndPlay();
-        } else {
-          // wait for canplay
         }
       };
 
@@ -115,10 +183,7 @@ export default function VideoPreviewModal({
       if (vid.readyState >= 3) {
         seekAndPlay();
       } else if (vid.readyState >= 1) {
-        // Metadata loaded but not ready to play yet
         handleLoadedMetadata();
-      } else {
-        // wait for events
       }
 
       return () => {
@@ -127,10 +192,8 @@ export default function VideoPreviewModal({
       };
     };
 
-    // Try to setup immediately if video element exists
     const cleanup = setupVideoPlay();
 
-    // If setup failed (video element not ready), try again after a short delay
     if (!hasSetupRef.current) {
       const timeoutId = setTimeout(() => {
         if (open && videoUrl && !hasSetupRef.current) {
@@ -153,10 +216,8 @@ export default function VideoPreviewModal({
     const video = videoRef.current;
     if (!video || video.duration === 0) return;
 
-    // Calculate buffered progress within the current source duration
     const currentTime = video.currentTime;
 
-    // Find the buffered range that covers current position
     let bufferedEnd = 0;
     for (let i = 0; i < video.buffered.length; i++) {
       const start = video.buffered.start(i);
@@ -167,11 +228,18 @@ export default function VideoPreviewModal({
       }
     }
 
-    // Calculate progress in full clip duration (0-100%)
     const progress = Math.max(0, Math.min(100, (bufferedEnd / video.duration) * 100));
-
     setBufferedProgress(progress);
   };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (bufferCheckRef.current) {
+        clearInterval(bufferCheckRef.current);
+      }
+    };
+  }, []);
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => (!nextOpen ? onClose?.() : null)}>
@@ -203,15 +271,18 @@ export default function VideoPreviewModal({
               muted
               defaultMuted
               playsInline
-              preload="metadata"
-              poster="" // Disable default poster/loading
+              preload="auto"
+              poster=""
               className="w-full h-full"
-              style={{ backgroundColor: "black" }} // Prevent flash of white
+              style={{ backgroundColor: "black" }}
               onProgress={handleProgress}
+              onWaiting={handleWaiting}
+              onPlaying={handlePlaying}
+              onCanPlayThrough={handleCanPlayThrough}
               onError={(e) => console.error("Video error:", e)}
             />
 
-            {/* Loading Overlay */}
+            {/* Initial Loading Overlay */}
             {isLoading && showCustomLoading && (
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
@@ -231,6 +302,16 @@ export default function VideoPreviewModal({
               </div>
             )}
 
+            {/* Buffering Overlay (during playback) */}
+            {isBuffering && !isLoading && (
+              <div className="absolute inset-0 bg-black/30 flex items-center justify-center pointer-events-none">
+                <div className="flex flex-col items-center gap-2">
+                  <div className="animate-spin rounded-full h-10 w-10 border-2 border-white/30 border-t-white"></div>
+                  <p className="text-white/80 text-xs">バッファリング中...</p>
+                </div>
+              </div>
+            )}
+
           </div>
         ) : (
           <div className="w-full aspect-video flex items-center justify-center text-white/80">
@@ -241,4 +322,3 @@ export default function VideoPreviewModal({
     </Dialog>
   );
 }
-
