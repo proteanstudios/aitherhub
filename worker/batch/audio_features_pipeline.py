@@ -39,7 +39,7 @@ CTA_SCORE_THRESHOLD = int(env("AUDIO_FEATURES_CTA_THRESHOLD", "3"))
 IMPORTANCE_SCORE_THRESHOLD = float(env("AUDIO_FEATURES_IMPORTANCE_THRESHOLD", "0.5"))
 
 # v4: Parallel workers for audio feature extraction
-AUDIO_FEATURES_WORKERS = int(env("AUDIO_FEATURES_WORKERS", "4"))
+AUDIO_FEATURES_WORKERS = int(env("AUDIO_FEATURES_WORKERS", "8"))
 
 
 def should_analyze_phase(phase: dict) -> bool:

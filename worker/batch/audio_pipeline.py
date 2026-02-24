@@ -1,4 +1,13 @@
 # audio_pipeline.py
+"""
+v6: BatchedInferencePipeline for 2-4x faster transcription.
+
+Changes from v5:
+  - Uses BatchedInferencePipeline instead of chunk-by-chunk sequential transcription
+  - Eliminates the need for _whisper_lock (batched pipeline handles GPU internally)
+  - Falls back to sequential chunk processing if batched mode fails
+  - Keeps Azure engine path unchanged
+"""
 import os
 import time
 import subprocess
@@ -34,8 +43,10 @@ WHISPER_COMPUTE_TYPE = env("WHISPER_COMPUTE_TYPE", "auto")  # "auto", "float16",
 WHISPER_BEAM_SIZE = int(env("WHISPER_BEAM_SIZE", "5"))
 WHISPER_LANGUAGE = env("WHISPER_LANGUAGE", "ja")
 
-# v4: Parallel transcription workers (limited by GPU VRAM)
-# T4 16GB: large-v3 uses ~4GB, so 2 parallel is safe; 3 might OOM
+# v6: Batch size for BatchedInferencePipeline (T4 16GB: 16 is safe)
+WHISPER_BATCH_SIZE = int(env("WHISPER_BATCH_SIZE", "16"))
+
+# v4: Parallel transcription workers (kept for fallback)
 WHISPER_PARALLEL_WORKERS = int(env("WHISPER_PARALLEL_WORKERS", "2"))
 
 MAX_RETRY = 10
@@ -47,6 +58,7 @@ SLEEP_BETWEEN_REQUESTS = 2
 # =========================
 
 _whisper_model = None
+_batched_pipeline = None
 
 
 def _get_whisper_model():
@@ -89,9 +101,54 @@ def _get_whisper_model():
     return _whisper_model
 
 
+def _get_batched_pipeline():
+    """
+    Lazy-load the BatchedInferencePipeline for faster transcription.
+    v6: Uses batched inference for 2-4x speedup over sequential.
+    """
+    global _batched_pipeline
+    if _batched_pipeline is not None:
+        return _batched_pipeline
+
+    from faster_whisper import BatchedInferencePipeline
+
+    model = _get_whisper_model()
+    _batched_pipeline = BatchedInferencePipeline(model=model)
+    print(f"[WHISPER-LOCAL] BatchedInferencePipeline initialized (batch_size={WHISPER_BATCH_SIZE})")
+    return _batched_pipeline
+
+
 # =========================
-# STEP 3.1 – EXTRACT AUDIO (GPU-accelerated)
+# STEP 3.1 – EXTRACT AUDIO (full file, no chunking for batched mode)
 # =========================
+
+def extract_audio_full(video_path: str, out_dir: str) -> str:
+    """
+    Extract full audio as a single WAV file (for BatchedInferencePipeline).
+    WAV, mono, 16kHz – safe for Whisper.
+    Returns the path to the full audio file.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    full_audio_path = os.path.join(out_dir, "full_audio.wav")
+
+    subprocess.run(
+        [
+            FFMPEG_BIN, "-y",
+            "-i", video_path,
+            "-map", "0:a:0",
+            "-vn",
+            "-ac", "1",
+            "-ar", "16000",
+            full_audio_path
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
+    if os.path.exists(full_audio_path) and os.path.getsize(full_audio_path) > 100:
+        return full_audio_path
+    return None
+
 
 def extract_audio_chunks(video_path: str, out_dir: str) -> str:
     """
@@ -124,7 +181,93 @@ def extract_audio_chunks(video_path: str, out_dir: str) -> str:
 
 
 # =========================
-# STEP 3.2 – TRANSCRIBE (LOCAL)
+# STEP 3.2 – TRANSCRIBE (LOCAL) – v6 BATCHED
+# =========================
+
+def _transcribe_batched_local(audio_path: str, text_dir: str, on_progress=None):
+    """
+    v6: Transcribe a full audio file using BatchedInferencePipeline.
+    This is 2-4x faster than sequential chunk processing because:
+    - VAD splits audio into segments internally
+    - Multiple segments are batched together for GPU inference
+    - No chunk boundary artifacts
+
+    Output: writes chunk-compatible .txt files to text_dir for backward compatibility.
+    """
+    pipeline = _get_batched_pipeline()
+
+    t0 = time.time()
+    print(f"[WHISPER-BATCHED] Starting batched transcription (batch_size={WHISPER_BATCH_SIZE})")
+
+    segments_iter, info = pipeline.transcribe(
+        audio_path,
+        batch_size=WHISPER_BATCH_SIZE,
+        language=WHISPER_LANGUAGE,
+        word_timestamps=True,
+    )
+
+    # Collect all segments
+    all_segments = []
+    full_text_parts = []
+    for seg in segments_iter:
+        all_segments.append({
+            "start": seg.start,
+            "end": seg.end,
+            "text": seg.text.strip(),
+        })
+        full_text_parts.append(seg.text.strip())
+
+        # Progress callback based on segment timestamps
+        if on_progress and info.duration and info.duration > 0:
+            pct = min(int(seg.end / info.duration * 100), 100)
+            on_progress(pct)
+
+    elapsed = time.time() - t0
+    print(
+        f"[WHISPER-BATCHED] Done in {elapsed:.1f}s "
+        f"(lang={info.language}, prob={info.language_probability:.2f}, "
+        f"segments={len(all_segments)}, duration={info.duration:.0f}s)"
+    )
+
+    # Write output in chunk-compatible format for backward compatibility
+    # Split segments into virtual chunks based on CHUNK_SECONDS
+    os.makedirs(text_dir, exist_ok=True)
+
+    if not all_segments:
+        # Write a single empty chunk file
+        txt_path = os.path.join(text_dir, "chunk_000.txt")
+        _write_transcription(txt_path, {"text": "", "segments": []})
+        return
+
+    # Determine total duration and number of virtual chunks
+    max_end = max(s["end"] for s in all_segments)
+    num_chunks = max(1, int(max_end // CHUNK_SECONDS) + 1)
+
+    for chunk_idx in range(num_chunks):
+        chunk_start = chunk_idx * CHUNK_SECONDS
+        chunk_end = (chunk_idx + 1) * CHUNK_SECONDS
+
+        # Filter segments that belong to this chunk
+        chunk_segments = [
+            s for s in all_segments
+            if s["start"] >= chunk_start and s["start"] < chunk_end
+        ]
+
+        chunk_text = " ".join(s["text"] for s in chunk_segments)
+
+        txt_path = os.path.join(text_dir, f"chunk_{chunk_idx:03d}.txt")
+        _write_transcription(txt_path, {
+            "text": chunk_text,
+            "segments": chunk_segments,
+        })
+        print(f"[OK] Saved → {txt_path} ({len(chunk_segments)} segments)")
+
+    if on_progress:
+        on_progress(100)
+
+
+# =========================
+# STEP 3.2 – TRANSCRIBE (LOCAL) – FALLBACK SEQUENTIAL
 # =========================
 
 import threading
@@ -268,14 +411,12 @@ def _transcribe_chunk_azure(audio_path: str, chunk_index: int, filename: str) ->
 
 def transcribe_audio_chunks(audio_dir: str, text_dir: str, on_progress=None):
     """
-    Transcribe all audio chunks in audio_dir, write results to text_dir.
+    Transcribe all audio in audio_dir, write results to text_dir.
 
-    v4: Parallel transcription for local engine.
-    - Local engine: uses ThreadPoolExecutor with WHISPER_PARALLEL_WORKERS threads
-      (model access is serialized via lock, but I/O and pre/post processing overlap)
-    - Azure engine: sequential with rate-limit throttle
+    v6: Uses BatchedInferencePipeline for local engine (2-4x faster).
+    Falls back to sequential chunk processing if batched mode fails.
 
-    Output format is identical for both engines:
+    Output format is identical for all engines:
       [TEXT]
       <full transcription>
 
@@ -287,76 +428,94 @@ def transcribe_audio_chunks(audio_dir: str, text_dir: str, on_progress=None):
     """
     os.makedirs(text_dir, exist_ok=True)
 
-    files = sorted([
-        f for f in os.listdir(audio_dir)
-        if f.startswith("chunk_") and f.endswith(".wav")
-    ])
-
-    total_chunks = len(files)
     engine = WHISPER_ENGINE.lower()
-    print(f"[TRANSCRIBE] Engine: {engine}, Chunks: {total_chunks}, Workers: {WHISPER_PARALLEL_WORKERS}")
 
-    if engine == "local" and total_chunks > 1:
-        # ---- PARALLEL LOCAL TRANSCRIPTION ----
-        # Pre-load model before spawning threads
-        _get_whisper_model()
+    if engine == "local":
+        # v6: Try batched transcription first (uses full_audio.wav if available)
+        full_audio_path = os.path.join(audio_dir, "full_audio.wav")
 
-        completed = [0]
-        results_map = {}  # {chunk_index: result}
+        if os.path.exists(full_audio_path) and os.path.getsize(full_audio_path) > 100:
+            print(f"[TRANSCRIBE] v6: Using BatchedInferencePipeline on full audio")
+            try:
+                _transcribe_batched_local(full_audio_path, text_dir, on_progress)
+                return
+            except Exception as e:
+                print(f"[TRANSCRIBE][WARN] Batched transcription failed, falling back to chunks: {e}")
 
-        def _process_chunk(f):
-            audio_path = os.path.join(audio_dir, f)
-            chunk_index = int(f.split("_")[1].split(".")[0])
-            result = _transcribe_chunk_local(audio_path, chunk_index)
-            results_map[chunk_index] = (f, result)
+        # Fallback: chunk-based transcription
+        files = sorted([
+            f for f in os.listdir(audio_dir)
+            if f.startswith("chunk_") and f.endswith(".wav")
+        ])
+        total_chunks = len(files)
+        print(f"[TRANSCRIBE] Engine: {engine}, Chunks: {total_chunks}, Workers: {WHISPER_PARALLEL_WORKERS}")
 
-            completed[0] += 1
-            if on_progress and total_chunks > 0:
-                pct = min(int(completed[0] / total_chunks * 100), 100)
-                on_progress(pct)
+        if total_chunks > 1:
+            # ---- PARALLEL LOCAL TRANSCRIPTION ----
+            _get_whisper_model()
+            completed = [0]
+            results_map = {}
 
-            return chunk_index
+            def _process_chunk(f):
+                audio_path = os.path.join(audio_dir, f)
+                chunk_index = int(f.split("_")[1].split(".")[0])
+                result = _transcribe_chunk_local(audio_path, chunk_index)
+                results_map[chunk_index] = (f, result)
+                completed[0] += 1
+                if on_progress and total_chunks > 0:
+                    pct = min(int(completed[0] / total_chunks * 100), 100)
+                    on_progress(pct)
+                return chunk_index
 
-        with ThreadPoolExecutor(max_workers=WHISPER_PARALLEL_WORKERS) as pool:
-            futures = [pool.submit(_process_chunk, f) for f in files]
-            for fut in as_completed(futures):
-                try:
-                    fut.result()
-                except Exception as e:
-                    print(f"[TRANSCRIBE][ERROR] Chunk failed: {e}")
+            with ThreadPoolExecutor(max_workers=WHISPER_PARALLEL_WORKERS) as pool:
+                futures = [pool.submit(_process_chunk, f) for f in files]
+                for fut in as_completed(futures):
+                    try:
+                        fut.result()
+                    except Exception as e:
+                        print(f"[TRANSCRIBE][ERROR] Chunk failed: {e}")
 
-        # Write results in order
-        for f in files:
-            chunk_index = int(f.split("_")[1].split(".")[0])
-            if chunk_index not in results_map:
-                continue
-            _, result = results_map[chunk_index]
-            txt_path = os.path.join(text_dir, f.replace(".wav", ".txt"))
-            _write_transcription(txt_path, result)
-            print(f"[OK] Saved → {txt_path}")
+            for f in files:
+                chunk_index = int(f.split("_")[1].split(".")[0])
+                if chunk_index not in results_map:
+                    continue
+                _, result = results_map[chunk_index]
+                txt_path = os.path.join(text_dir, f.replace(".wav", ".txt"))
+                _write_transcription(txt_path, result)
+                print(f"[OK] Saved → {txt_path}")
+        else:
+            for idx, f in enumerate(files):
+                audio_path = os.path.join(audio_dir, f)
+                txt_path = os.path.join(text_dir, f.replace(".wav", ".txt"))
+                chunk_index = int(f.split("_")[1].split(".")[0])
+                result = _transcribe_chunk_local(audio_path, chunk_index)
+                _write_transcription(txt_path, result)
+                print(f"[OK] Saved → {txt_path}")
+                if on_progress and total_chunks > 0:
+                    pct = min(int((idx + 1) / total_chunks * 100), 100)
+                    on_progress(pct)
 
     else:
-        # ---- SEQUENTIAL (Azure or single chunk) ----
+        # ---- SEQUENTIAL AZURE ----
+        files = sorted([
+            f for f in os.listdir(audio_dir)
+            if f.startswith("chunk_") and f.endswith(".wav")
+        ])
+        total_chunks = len(files)
+        print(f"[TRANSCRIBE] Engine: {engine}, Chunks: {total_chunks}")
+
         for idx, f in enumerate(files):
             audio_path = os.path.join(audio_dir, f)
             txt_path = os.path.join(text_dir, f.replace(".wav", ".txt"))
             chunk_index = int(f.split("_")[1].split(".")[0])
-
-            if engine == "local":
-                result = _transcribe_chunk_local(audio_path, chunk_index)
-            else:
-                result = _transcribe_chunk_azure(audio_path, chunk_index, f)
-
+            result = _transcribe_chunk_azure(audio_path, chunk_index, f)
             _write_transcription(txt_path, result)
             print(f"[OK] Saved → {txt_path}")
-
             if on_progress and total_chunks > 0:
                 pct = min(int((idx + 1) / total_chunks * 100), 100)
                 on_progress(pct)
-
-            if engine == "azure":
-                print(f"[SLEEP] {SLEEP_BETWEEN_REQUESTS}s to avoid quota")
-                time.sleep(SLEEP_BETWEEN_REQUESTS)
+            print(f"[SLEEP] {SLEEP_BETWEEN_REQUESTS}s to avoid quota")
+            time.sleep(SLEEP_BETWEEN_REQUESTS)
 
 
 def _write_transcription(txt_path: str, result: dict):

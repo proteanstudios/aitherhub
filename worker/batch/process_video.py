@@ -38,7 +38,7 @@ from phase_pipeline import (
     build_phase_units,
     build_phase_descriptions,
 )
-from audio_pipeline import extract_audio_chunks, transcribe_audio_chunks
+from audio_pipeline import extract_audio_chunks, extract_audio_full, transcribe_audio_chunks
 from audio_features_pipeline import analyze_phase_audio_features
 from grouping_pipeline import (
     embed_phase_descriptions,
@@ -478,6 +478,9 @@ def main():
 
             def _do_audio_transcription():
                 logger.info("[PARALLEL] Starting audio extraction + transcription")
+                # v6: Extract full audio for BatchedInferencePipeline
+                extract_audio_full(video_path, ad)
+                # Also extract chunks as fallback
                 extract_audio_chunks(video_path, ad)
                 transcribe_audio_chunks(ad, atd, on_progress=_on_audio_progress)
                 logger.info("[PARALLEL] Audio transcription DONE")
@@ -624,6 +627,8 @@ def main():
             # Only run if we're resuming and audio wasn't done in parallel
             update_video_status_sync(video_id, VideoStatus.STEP_3_TRANSCRIBE_AUDIO)
             logger.info("=== STEP 3 – AUDIO TO TEXT ===")
+            # v6: Extract full audio for BatchedInferencePipeline
+            extract_audio_full(video_path, ad)
             extract_audio_chunks(video_path, ad)
             transcribe_audio_chunks(ad, atd)
         elif start_step <= 0:
