@@ -418,6 +418,16 @@ def main():
                 original_filename=filename,
             )
             logger.info("Video job enqueued for processing")
+
+            # Step 5: Clean up local capture file (already uploaded to blob)
+            try:
+                import shutil as _shutil
+                if os.path.isdir(output_dir):
+                    _shutil.rmtree(output_dir, ignore_errors=True)
+                    logger.info(f"[CLEANUP] Removed local capture dir: {output_dir}")
+            except Exception as ce:
+                logger.warning(f"[CLEANUP] Could not remove {output_dir}: {ce}")
+
         except Exception as e:
             logger.error(f"Upload/enqueue failed: {e}")
             sys.exit(5)

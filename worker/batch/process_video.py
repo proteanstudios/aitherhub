@@ -33,6 +33,7 @@ logger = logging.getLogger("process_video")
 load_dotenv()
 
 from video_frames import extract_frames, detect_phases
+from disk_guard import cleanup_video_files, cleanup_old_files, ensure_disk_space, get_disk_info
 from phase_pipeline import (
     extract_phase_stats,
     build_phase_units,
@@ -354,83 +355,8 @@ def fire_compress_async(video_path, blob_url, video_id):
 
 
 # =========================
-# CLEANUP HELPER
+# CLEANUP HELPER (delegated to disk_guard.py)
 # =========================
-
-def _cleanup_video_files(video_id: str, logger):
-    """Clean up all local files for a video to prevent disk accumulation.
-    Called both on success and on error."""
-    # 1. Remove uploaded video file
-    try:
-        upload_dir = "uploadedvideo"
-        my_video_file = os.path.join(upload_dir, f"{video_id}.mp4")
-        if os.path.exists(my_video_file):
-            os.remove(my_video_file)
-            logger.info("[CLEANUP] Removed video: %s", my_video_file)
-        # Also remove _preview.mp4 if compress_background left it
-        preview_file = os.path.join(upload_dir, f"{video_id}_preview.mp4")
-        if os.path.exists(preview_file):
-            os.remove(preview_file)
-            logger.info("[CLEANUP] Removed preview: %s", preview_file)
-    except Exception as e:
-        logger.warning("[CLEANUP][WARN] Could not remove video file: %s", e)
-
-    # 2. Remove output artifacts (frames, audio, cache)
-    try:
-        my_art_dir = video_root(video_id)
-        if os.path.isdir(my_art_dir):
-            # Keep only product_exposures.json and reports (small files)
-            for subdir in ["frames", "audio", "audio_text", "cache"]:
-                subpath = os.path.join(my_art_dir, subdir)
-                if os.path.isdir(subpath):
-                    shutil.rmtree(subpath, ignore_errors=True)
-                    logger.info("[CLEANUP] Removed: %s", subpath)
-    except Exception as e:
-        logger.warning("[CLEANUP][WARN] Could not remove output artifacts: %s", e)
-
-
-def _cleanup_old_files(logger, current_video_id: str = None):
-    """Remove old files from previous jobs to free disk space.
-    Called before starting a new job."""
-    import time as _time
-    now = _time.time()
-    MAX_AGE_HOURS = 12  # Files older than 12 hours are safe to delete
-
-    # 1. Clean old uploaded videos (except current)
-    upload_dir = "uploadedvideo"
-    if os.path.isdir(upload_dir):
-        for f in os.listdir(upload_dir):
-            if current_video_id and current_video_id in f:
-                continue
-            fp = os.path.join(upload_dir, f)
-            try:
-                age_hours = (now - os.path.getmtime(fp)) / 3600
-                if age_hours > MAX_AGE_HOURS:
-                    size_mb = os.path.getsize(fp) / (1024 ** 2)
-                    os.remove(fp)
-                    logger.info("[CLEANUP-OLD] Removed %s (%.0f MB, %.1f hours old)", f, size_mb, age_hours)
-            except Exception as e:
-                logger.warning("[CLEANUP-OLD] Could not remove %s: %s", f, e)
-
-    # 2. Clean old output directories (except current)
-    if os.path.isdir(ART_ROOT):
-        for d in os.listdir(ART_ROOT):
-            if current_video_id and d == current_video_id:
-                continue
-            dp = os.path.join(ART_ROOT, d)
-            if not os.path.isdir(dp):
-                continue
-            try:
-                age_hours = (now - os.path.getmtime(dp)) / 3600
-                if age_hours > MAX_AGE_HOURS:
-                    # Only remove large subdirectories (frames, audio)
-                    for subdir in ["frames", "audio", "audio_text", "cache"]:
-                        subpath = os.path.join(dp, subdir)
-                        if os.path.isdir(subpath):
-                            shutil.rmtree(subpath, ignore_errors=True)
-                            logger.info("[CLEANUP-OLD] Removed %s/%s", d, subdir)
-            except Exception as e:
-                logger.warning("[CLEANUP-OLD] Could not clean %s: %s", d, e)
 
 
 # =========================
@@ -452,34 +378,7 @@ def main():
 
         # --- PRE-FLIGHT: Clean old files and check disk space ---
         logger.info("=== PRE-FLIGHT DISK CLEANUP ===")
-        _cleanup_old_files(logger, current_video_id=video_id)
-
-        disk = shutil.disk_usage(".")
-        free_gb = disk.free / (1024 ** 3)
-        logger.info("[DISK] Free space after cleanup: %.1f GB", free_gb)
-        if free_gb < 5.0:
-            logger.warning("[DISK] Low disk space (%.1f GB). Aggressive cleanup...", free_gb)
-            # Aggressive: remove ALL old uploaded videos except current
-            upload_dir = "uploadedvideo"
-            if os.path.isdir(upload_dir):
-                for f in os.listdir(upload_dir):
-                    if video_id in f:
-                        continue
-                    fp = os.path.join(upload_dir, f)
-                    try:
-                        os.remove(fp)
-                        logger.info("[DISK-AGGRESSIVE] Removed %s", f)
-                    except Exception:
-                        pass
-            # Re-check
-            disk = shutil.disk_usage(".")
-            free_gb = disk.free / (1024 ** 3)
-            logger.info("[DISK] Free space after aggressive cleanup: %.1f GB", free_gb)
-            if free_gb < 3.0:
-                raise RuntimeError(
-                    f"Insufficient disk space: {free_gb:.1f} GB free. "
-                    f"Cannot process video. Manual cleanup required."
-                )
+        ensure_disk_space(min_free_gb=5.0, current_video_id=video_id)
 
         current_status = get_video_status_sync(video_id)
         raw_start_step = status_to_step_index(current_status)
@@ -1370,7 +1269,7 @@ def main():
         # =========================
         # CLEANUP – CLEAR THIS video's files
         # =========================
-        _cleanup_video_files(video_id, logger)
+        cleanup_video_files(video_id)
 
 
     except Exception:
@@ -1378,11 +1277,16 @@ def main():
         logger.exception("Video processing failed")
         # Still cleanup on error to prevent disk accumulation
         try:
-            _cleanup_video_files(video_id, logger)
+            cleanup_video_files(video_id)
         except Exception as ce:
             logger.warning("[CLEANUP][ERROR-PATH] Cleanup also failed: %s", ce)
         raise
     finally:
+        # Final safety net: always attempt cleanup regardless of success/error
+        try:
+            cleanup_video_files(video_id)
+        except Exception:
+            pass
         logger.info("[DB] Closing database connection...")
         close_db_sync()
 
