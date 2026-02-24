@@ -26,6 +26,7 @@ from app.models.orm import (
     PhaseInsight,
     Chat,
     Feedback,
+    LiveSession,
 )
 
 config = context.config

@@ -51,3 +51,20 @@ app_creator = AppCreator()
 app = app_creator.app
 db = app_creator.db
 container = app_creator.container
+
+
+@app.on_event("startup")
+async def restore_live_sessions():
+    """Restore active live sessions from DB on startup."""
+    try:
+        from app.core.db import AsyncSessionLocal
+        from app.services.live_event_service import restore_active_sessions
+
+        async with AsyncSessionLocal() as db_session:
+            count = await restore_active_sessions(db_session)
+            if count > 0:
+                logger.info(f"Restored {count} active live sessions from database")
+            else:
+                logger.info("No active live sessions to restore")
+    except Exception as e:
+        logger.warning(f"Failed to restore live sessions on startup: {e}")
