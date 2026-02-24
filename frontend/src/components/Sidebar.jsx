@@ -11,7 +11,7 @@ import ForgotPasswordModal from "./modals/ForgotPasswordModal";
 import AuthService from "../base/services/userService";
 import VideoService from "../base/services/videoService";
 
-import { ChevronDown, LogOut, Settings, User, X, MoreHorizontal, Pencil, Trash2, Scissors, MessageSquareText } from "lucide-react";
+import { ChevronDown, LogOut, Settings, User, X, MoreHorizontal, Pencil, Trash2, Scissors, MessageSquareText, Radio, Video } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -154,6 +154,15 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
       return name.includes(query) || id.includes(query);
     });
   }, [videos, searchValue]);
+
+  // Separate live captures from regular video analyses
+  const liveVideos = useMemo(() => {
+    return filteredVideos.filter(v => v.upload_type === 'live_capture');
+  }, [filteredVideos]);
+
+  const regularVideos = useMemo(() => {
+    return filteredVideos.filter(v => v.upload_type !== 'live_capture');
+  }, [filteredVideos]);
 
   const navigate = useNavigate();
 
@@ -320,7 +329,6 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
 
         {/* ================= COMMON ================= */}
         <div className="mt-6 md:space-y-3 flex flex-col flex-1 min-h-0 pl-4 pr-0 md:px-0">
-          <span className="block text-[#9E9E9E] text-left shrink-0 text-sm">{window.__t('analysisHistory')}</span>
 
           {effectiveUser?.isLoggedIn && (
             <>
@@ -330,108 +338,187 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-400"></div>
                   </div>
                 ) : filteredVideos.length > 0 ? (
-                  <div className="flex flex-col items-start gap-2 flex-1 min-h-0 overflow-y-auto scrollbar-custom">
+                  <div className="flex flex-col items-start gap-1 flex-1 min-h-0 overflow-y-auto scrollbar-custom">
                     {loadingVideos && (
                       <div className="w-full flex justify-center py-1">
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400"></div>
                       </div>
                     )}
-                    {filteredVideos.map((video) => (
-                      <div className={`group relative w-full min-h-10 flex items-center gap-2 font-semibold cursor-pointer text-black p-2 rounded-lg text-left transition-all duration-200 ease-out ${selectedVideoId === video.id
-                        ? "bg-purple-100 text-purple-700"
-                        : "hover:text-gray-400 hover:bg-gray-100"
-                        }`} key={video.id}
-                        onClick={() => { if (renamingVideoId !== video.id && deleteConfirmVideoId !== video.id) handleVideoClick(video); }}>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="min-w-[16px]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
 
-                        {renamingVideoId === video.id ? (
-                          <input
-                            autoFocus
-                            value={renameValue}
-                            onChange={(e) => setRenameValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") handleRenameVideo(video.id);
-                              if (e.key === "Escape") { setRenamingVideoId(null); setRenameValue(""); }
-                            }}
-                            onBlur={() => handleRenameVideo(video.id)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-sm font-medium text-gray-700 bg-white border border-purple-300 rounded px-1 py-0.5 outline-none focus:ring-2 focus:ring-purple-400 w-full"
-                          />
-                        ) : deleteConfirmVideoId === video.id ? (
-                          <div className="flex items-center gap-2 w-full" onClick={(e) => e.stopPropagation()}>
-                            <span className="text-xs text-red-500">削除しますか？</span>
-                            <button onClick={() => handleDeleteVideo(video.id)} className="text-xs bg-red-500 text-white px-2 py-0.5 rounded hover:bg-red-600">削除</button>
-                            <button onClick={() => setDeleteConfirmVideoId(null)} className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded hover:bg-gray-300">取消</button>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="flex flex-col flex-1 min-w-0">
-                              <span className="text-sm font-medium text-[#6b7280] block truncate">
-                                {video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`}
-                              </span>
-                              {video.top_products && video.top_products.length > 0 && (
-                                <div className="flex items-center gap-1 mt-0.5">
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 text-emerald-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-                                  <span className="text-[10px] text-emerald-600 truncate" title={video.top_products.join(' / ')}>
-                                    {video.top_products.map(p => p.length > 15 ? p.slice(0, 15) + '...' : p).join(' / ')}
-                                  </span>
-                                </div>
-                              )}
-                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                {video.total_gmv != null && video.total_gmv > 0 && (
-                                  <span className="inline-flex items-center gap-0.5 text-[10px] text-orange-600">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                                    {video.total_gmv >= 10000 ? `¥${(video.total_gmv / 10000).toFixed(1)}万` : `¥${Math.round(video.total_gmv).toLocaleString()}`}
-                                  </span>
-                                )}
-                                {video.stream_duration != null && video.stream_duration > 0 && (
-                                  <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-500">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                    {(() => { const h = Math.floor(video.stream_duration / 3600); const m = Math.floor((video.stream_duration % 3600) / 60); return h > 0 ? `${h}h${m.toString().padStart(2,'0')}m` : `${m}m`; })()}
-                                  </span>
-                                )}
-                                {video.completed_clip_count > 0 && (
-                                  <span className="inline-flex items-center gap-0.5 text-[10px] text-purple-600">
-                                    <Scissors className="w-3 h-3" />
-                                    {video.completed_clip_count}
-                                  </span>
-                                )}
-                                {video.memo_count > 0 && (
-                                  <span className="inline-flex items-center gap-0.5 text-[10px] text-green-600">
-                                    <MessageSquareText className="w-3 h-3" />
-                                    {video.memo_count}
-                                  </span>
-                                )}
+                    {/* ── Live Analysis Section ── */}
+                    {liveVideos.length > 0 && (
+                      <>
+                        <div className="flex items-center gap-2 w-full px-1 pt-1 pb-0.5 shrink-0">
+                          <Radio className="w-3.5 h-3.5 text-red-500" />
+                          <span className="text-xs font-semibold text-gray-500">ライブ分析</span>
+                          <span className="ml-auto inline-flex items-center gap-1 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                            <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span></span>
+                            LIVE
+                          </span>
+                        </div>
+                        {liveVideos.map((video) => (
+                          <div className={`group relative w-full min-h-10 flex items-center gap-2 font-semibold cursor-pointer text-black p-2 rounded-lg text-left transition-all duration-200 ease-out ${selectedVideoId === video.id
+                            ? "bg-red-50 text-red-700 border border-red-200"
+                            : "hover:text-gray-400 hover:bg-red-50/50"
+                            }`} key={video.id}
+                            onClick={() => { if (renamingVideoId !== video.id && deleteConfirmVideoId !== video.id) handleVideoClick(video); }}>
+                            <Radio className="min-w-[16px] w-4 h-4 text-red-400" />
+
+                            {renamingVideoId === video.id ? (
+                              <input autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") handleRenameVideo(video.id); if (e.key === "Escape") { setRenamingVideoId(null); setRenameValue(""); } }}
+                                onBlur={() => handleRenameVideo(video.id)} onClick={(e) => e.stopPropagation()}
+                                className="text-sm font-medium text-gray-700 bg-white border border-red-300 rounded px-1 py-0.5 outline-none focus:ring-2 focus:ring-red-400 w-full" />
+                            ) : deleteConfirmVideoId === video.id ? (
+                              <div className="flex items-center gap-2 w-full" onClick={(e) => e.stopPropagation()}>
+                                <span className="text-xs text-red-500">削除しますか？</span>
+                                <button onClick={() => handleDeleteVideo(video.id)} className="text-xs bg-red-500 text-white px-2 py-0.5 rounded hover:bg-red-600">削除</button>
+                                <button onClick={() => setDeleteConfirmVideoId(null)} className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded hover:bg-gray-300">取消</button>
                               </div>
-                            </div>
-                            <div className="relative" ref={menuOpenVideoId === video.id ? menuRef : null}>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setMenuOpenVideoId(menuOpenVideoId === video.id ? null : video.id); }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-200"
-                              >
-                                <MoreHorizontal className="w-4 h-4 text-gray-500" />
-                              </button>
-                              {menuOpenVideoId === video.id && (
-                                <div className="absolute right-0 top-8 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px]">
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); setRenamingVideoId(video.id); setRenameValue(video.original_filename || ""); setMenuOpenVideoId(null); }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                  >
-                                    <Pencil className="w-3.5 h-3.5" /> 名前を変更
-                                  </button>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); setDeleteConfirmVideoId(video.id); setMenuOpenVideoId(null); }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" /> 削除
-                                  </button>
+                            ) : (
+                              <>
+                                <div className="flex flex-col flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-sm font-medium text-[#6b7280] block truncate">
+                                      {video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                    {video.stream_duration != null && video.stream_duration > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-500">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                        {(() => { const h = Math.floor(video.stream_duration / 3600); const m = Math.floor((video.stream_duration % 3600) / 60); return h > 0 ? `${h}h${m.toString().padStart(2,'0')}m` : `${m}m`; })()}
+                                      </span>
+                                    )}
+                                    {video.total_gmv != null && video.total_gmv > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 text-[10px] text-orange-600">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                                        {video.total_gmv >= 10000 ? `¥${(video.total_gmv / 10000).toFixed(1)}万` : `¥${Math.round(video.total_gmv).toLocaleString()}`}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ))}
+                                <div className="relative" ref={menuOpenVideoId === video.id ? menuRef : null}>
+                                  <button onClick={(e) => { e.stopPropagation(); setMenuOpenVideoId(menuOpenVideoId === video.id ? null : video.id); }}
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-100">
+                                    <MoreHorizontal className="w-4 h-4 text-gray-500" />
+                                  </button>
+                                  {menuOpenVideoId === video.id && (
+                                    <div className="absolute right-0 top-8 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px]">
+                                      <button onClick={(e) => { e.stopPropagation(); setRenamingVideoId(video.id); setRenameValue(video.original_filename || ""); setMenuOpenVideoId(null); }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                        <Pencil className="w-3.5 h-3.5" /> 名前を変更
+                                      </button>
+                                      <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmVideoId(video.id); setMenuOpenVideoId(null); }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50">
+                                        <Trash2 className="w-3.5 h-3.5" /> 削除
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </>
+                    )}
+
+                    {/* ── Separator between sections ── */}
+                    {liveVideos.length > 0 && regularVideos.length > 0 && (
+                      <div className="w-full border-t border-gray-200 my-1"></div>
+                    )}
+
+                    {/* ── Video Analysis Section ── */}
+                    {regularVideos.length > 0 && (
+                      <>
+                        <div className="flex items-center gap-2 w-full px-1 pt-1 pb-0.5 shrink-0">
+                          <Video className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="text-xs font-semibold text-gray-500">{window.__t('analysisHistory')}</span>
+                        </div>
+                        {regularVideos.map((video) => (
+                          <div className={`group relative w-full min-h-10 flex items-center gap-2 font-semibold cursor-pointer text-black p-2 rounded-lg text-left transition-all duration-200 ease-out ${selectedVideoId === video.id
+                            ? "bg-purple-100 text-purple-700"
+                            : "hover:text-gray-400 hover:bg-gray-100"
+                            }`} key={video.id}
+                            onClick={() => { if (renamingVideoId !== video.id && deleteConfirmVideoId !== video.id) handleVideoClick(video); }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="min-w-[16px]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
+
+                            {renamingVideoId === video.id ? (
+                              <input autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") handleRenameVideo(video.id); if (e.key === "Escape") { setRenamingVideoId(null); setRenameValue(""); } }}
+                                onBlur={() => handleRenameVideo(video.id)} onClick={(e) => e.stopPropagation()}
+                                className="text-sm font-medium text-gray-700 bg-white border border-purple-300 rounded px-1 py-0.5 outline-none focus:ring-2 focus:ring-purple-400 w-full" />
+                            ) : deleteConfirmVideoId === video.id ? (
+                              <div className="flex items-center gap-2 w-full" onClick={(e) => e.stopPropagation()}>
+                                <span className="text-xs text-red-500">削除しますか？</span>
+                                <button onClick={() => handleDeleteVideo(video.id)} className="text-xs bg-red-500 text-white px-2 py-0.5 rounded hover:bg-red-600">削除</button>
+                                <button onClick={() => setDeleteConfirmVideoId(null)} className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded hover:bg-gray-300">取消</button>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex flex-col flex-1 min-w-0">
+                                  <span className="text-sm font-medium text-[#6b7280] block truncate">
+                                    {video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`}
+                                  </span>
+                                  {video.top_products && video.top_products.length > 0 && (
+                                    <div className="flex items-center gap-1 mt-0.5">
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 text-emerald-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                                      <span className="text-[10px] text-emerald-600 truncate" title={video.top_products.join(' / ')}>
+                                        {video.top_products.map(p => p.length > 15 ? p.slice(0, 15) + '...' : p).join(' / ')}
+                                      </span>
+                                    </div>
+                                  )}
+                                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                    {video.total_gmv != null && video.total_gmv > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 text-[10px] text-orange-600">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                                        {video.total_gmv >= 10000 ? `¥${(video.total_gmv / 10000).toFixed(1)}万` : `¥${Math.round(video.total_gmv).toLocaleString()}`}
+                                      </span>
+                                    )}
+                                    {video.stream_duration != null && video.stream_duration > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-500">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                        {(() => { const h = Math.floor(video.stream_duration / 3600); const m = Math.floor((video.stream_duration % 3600) / 60); return h > 0 ? `${h}h${m.toString().padStart(2,'0')}m` : `${m}m`; })()}
+                                      </span>
+                                    )}
+                                    {video.completed_clip_count > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 text-[10px] text-purple-600">
+                                        <Scissors className="w-3 h-3" />
+                                        {video.completed_clip_count}
+                                      </span>
+                                    )}
+                                    {video.memo_count > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 text-[10px] text-green-600">
+                                        <MessageSquareText className="w-3 h-3" />
+                                        {video.memo_count}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="relative" ref={menuOpenVideoId === video.id ? menuRef : null}>
+                                  <button onClick={(e) => { e.stopPropagation(); setMenuOpenVideoId(menuOpenVideoId === video.id ? null : video.id); }}
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-200">
+                                    <MoreHorizontal className="w-4 h-4 text-gray-500" />
+                                  </button>
+                                  {menuOpenVideoId === video.id && (
+                                    <div className="absolute right-0 top-8 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px]">
+                                      <button onClick={(e) => { e.stopPropagation(); setRenamingVideoId(video.id); setRenameValue(video.original_filename || ""); setMenuOpenVideoId(null); }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                        <Pencil className="w-3.5 h-3.5" /> 名前を変更
+                                      </button>
+                                      <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmVideoId(video.id); setMenuOpenVideoId(null); }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50">
+                                        <Trash2 className="w-3.5 h-3.5" /> 削除
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div className="text-center text-gray-400 text-sm py-4">
