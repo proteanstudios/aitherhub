@@ -26,6 +26,14 @@
       "js": ["src/content.js"],
       "css": ["src/content.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://aitherhub.com/*",
+        "https://www.aitherhub.com/*"
+      ],
+      "js": ["src/aitherhub_bridge.js"],
+      "run_at": "document_idle"
     }
   ],
   "action": {

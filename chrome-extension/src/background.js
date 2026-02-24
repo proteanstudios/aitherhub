@@ -99,6 +99,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ status: 'saved' });
       break;
 
+    case 'BRIDGE_TOKEN_SYNC':
+      // Token synced from AitherHub website via aitherhub_bridge.js
+      if (message.accessToken) {
+        apiToken = message.accessToken;
+        refreshToken = message.refreshToken || refreshToken;
+        chrome.storage.local.set({
+          accessToken: apiToken,
+          apiToken: apiToken,
+          refreshToken: refreshToken
+        });
+        console.log('[AitherHub BG] Token synced from AitherHub website');
+        sendResponse({ status: 'saved' });
+      } else {
+        sendResponse({ status: 'no_token' });
+      }
+      break;
+
     default:
       sendResponse({ status: 'unknown_type' });
   }

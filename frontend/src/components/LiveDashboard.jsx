@@ -497,6 +497,9 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
       setExtensionConnected(true);
       setExtensionSource(data.extension_source);
       setExtensionAccount(data.account);
+      // Extension sessions don't have HLS stream URLs.
+      // Mark as metrics received so the dashboard shows immediately.
+      setMetricsReceived(true);
     }
   }, []);
 
@@ -546,12 +549,15 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
       },
       onAdvice: handleAdvice,
       onStreamUrl: (data) => {
-        setLoadStep(prev => Math.max(prev, 3)); // Step 3: Stream URL received
         console.log('LiveDashboard: Stream URL received:', data);
         if (data && data.stream_url) {
           setStreamUrl(data.stream_url);
+          setLoadStep(prev => Math.max(prev, 3)); // Step 3: Stream URL received
         }
-        // Handle extension stream info
+        // Handle extension stream info - skip to step 5 (complete)
+        if (data && data.source === 'extension') {
+          setLoadStep(5); // Skip directly to complete for extension sessions
+        }
         handleExtensionStreamUrl(data);
       },
       onStreamEnded: handleStreamEnded,
@@ -635,6 +641,34 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
               streamUrl ? (
                 <div className="h-full flex items-center justify-center" style={{ aspectRatio: '9 / 16', maxWidth: '100%' }}>
                   <HLSVideoPlayer streamUrl={streamUrl} username={username} />
+                </div>
+              ) : extensionConnected ? (
+                /* Extension session - no HLS stream, show extension-specific UI */
+                <div className="flex flex-col items-center justify-center">
+                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#FF0050]/20 to-[#00F2EA]/20 flex items-center justify-center mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5">
+                      <circle cx="12" cy="12" r="10"/>
+                      <circle cx="12" cy="12" r="3"/>
+                      <line x1="12" y1="2" x2="12" y2="6" opacity="0.5"/>
+                      <line x1="12" y1="18" x2="12" y2="22" opacity="0.5"/>
+                      <line x1="2" y1="12" x2="6" y2="12" opacity="0.5"/>
+                      <line x1="18" y1="12" x2="22" y2="12" opacity="0.5"/>
+                    </svg>
+                  </div>
+                  <p className="text-white text-sm font-medium mb-1">Chrome拡張からデータ受信中</p>
+                  <p className="text-gray-400 text-xs mb-1">@{extensionAccount || username}</p>
+                  <p className="text-gray-500 text-xs mb-4">リアルタイムデータはダッシュボードに表示されます</p>
+                  <a
+                    href={`https://www.tiktok.com/@${extensionAccount || username}/live`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 bg-[#FF0050] hover:bg-[#FF0050]/80 text-white text-xs px-4 py-2 rounded-full transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                    </svg>
+                    TikTokで視聴
+                  </a>
                 </div>
               ) : (
                 /* No stream URL yet - show waiting state with TikTok link */
