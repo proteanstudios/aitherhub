@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "20260221_product_exposures"
-down_revision = "20260221_add_step_progress_to_videos"
+down_revision = "20260221_step_progress"
 branch_labels = None
 depends_on = None
 
