@@ -11,7 +11,7 @@ import ForgotPasswordModal from "./modals/ForgotPasswordModal";
 import AuthService from "../base/services/userService";
 import VideoService from "../base/services/videoService";
 
-import { ChevronDown, LogOut, Settings, User, X, MoreHorizontal, Pencil, Trash2, Scissors, MessageSquareText, Radio, Video } from "lucide-react";
+import { ChevronDown, LogOut, Settings, User, X, MoreHorizontal, Pencil, Trash2, Scissors, MessageSquareText, Radio, Video, Eye } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -163,6 +163,35 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
   const regularVideos = useMemo(() => {
     return filteredVideos.filter(v => v.upload_type !== 'live_capture');
   }, [filteredVideos]);
+
+  // Fetch active extension sessions
+  const [extensionSessions, setExtensionSessions] = useState([]);
+  useEffect(() => {
+    if (!effectiveUser?.isLoggedIn) {
+      setExtensionSessions([]);
+      return;
+    }
+    const fetchExtSessions = async () => {
+      try {
+        const res = await VideoService.getActiveExtensionSessions();
+        const data = res?.data || res || {};
+        const sessions = data.sessions || [];
+        // Filter out sessions that already have a matching live_capture video in the list
+        const liveVideoIds = new Set(liveVideos.map(v => v.id));
+        const filtered = sessions.filter(s => !liveVideoIds.has(s.video_id));
+        setExtensionSessions(filtered);
+      } catch {
+        setExtensionSessions([]);
+      }
+    };
+    fetchExtSessions();
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchExtSessions, 30000);
+    return () => clearInterval(interval);
+  }, [effectiveUser?.isLoggedIn, refreshKey, liveVideos]);
+
+  // Combine live videos and extension sessions for display
+  const hasLiveContent = liveVideos.length > 0 || extensionSessions.length > 0;
 
   const navigate = useNavigate();
 
@@ -346,7 +375,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                     )}
 
                     {/* ── Live Analysis Section ── */}
-                    {liveVideos.length > 0 && (
+                    {hasLiveContent && (
                       <>
                         <div className="flex items-center gap-2 w-full px-1 pt-1 pb-0.5 shrink-0">
                           <Radio className="w-3.5 h-3.5 text-red-500" />
@@ -384,6 +413,18 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                    {video.status === 'capturing' && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleVideoClick(video);
+                                        }}
+                                        className="inline-flex items-center gap-1 text-[10px] font-semibold text-white bg-red-500 hover:bg-red-600 px-2 py-0.5 rounded-full transition-colors animate-pulse"
+                                      >
+                                        <Eye className="w-3 h-3" />
+                                        ライブを見る
+                                      </button>
+                                    )}
                                     {video.stream_duration != null && video.stream_duration > 0 && (
                                       <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-500">
                                         <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -420,11 +461,53 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                             )}
                           </div>
                         ))}
+                        {/* Extension sessions */}
+                        {extensionSessions.map((session) => (
+                          <div className={`group relative w-full min-h-10 flex items-center gap-2 font-semibold cursor-pointer text-black p-2 rounded-lg text-left transition-all duration-200 ease-out ${
+                            selectedVideoId === session.video_id
+                              ? "bg-red-50 text-red-700 border border-red-200"
+                              : "hover:text-gray-400 hover:bg-red-50/50"
+                          }`} key={session.video_id}
+                            onClick={() => {
+                              setSelectedVideoId(session.video_id);
+                              navigate(`/video/${session.video_id}`);
+                              if (onVideoSelect) onVideoSelect({ id: session.video_id, upload_type: 'live_capture', status: 'capturing' });
+                              if (onClose) onClose();
+                            }}>
+                            <Radio className="min-w-[16px] w-4 h-4 text-red-400" />
+                            <div className="flex flex-col flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm font-medium text-[#6b7280] block truncate">
+                                  {session.account ? `@${session.account}` : `Extension ${session.video_id}`}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedVideoId(session.video_id);
+                                    navigate(`/video/${session.video_id}`);
+                                    if (onVideoSelect) onVideoSelect({ id: session.video_id, upload_type: 'live_capture', status: 'capturing' });
+                                    if (onClose) onClose();
+                                  }}
+                                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-white bg-red-500 hover:bg-red-600 px-2 py-0.5 rounded-full transition-colors animate-pulse"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  ライブを見る
+                                </button>
+                                <span className="inline-flex items-center gap-0.5 text-[10px] text-green-600">
+                                  <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500"></span></span>
+                                  Chrome拡張
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </>
                     )}
 
                     {/* ── Separator between sections ── */}
-                    {liveVideos.length > 0 && regularVideos.length > 0 && (
+                    {hasLiveContent && regularVideos.length > 0 && (
                       <div className="w-full border-t border-gray-200 my-1"></div>
                     )}
 
