@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AitherHub LIVE Connector",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "TikTok Shop LIVEマネージャーからリアルタイムデータを取得し、AitherHubに送信します",
   "permissions": [
     "activeTab",
@@ -11,6 +11,7 @@
   "host_permissions": [
     "https://shop.tiktok.com/*",
     "https://*.aitherhub.com/*",
+    "https://aitherhubapi-cpcjcnezbgf5f7e2.japaneast-01.azurewebsites.net/*",
     "http://localhost:*/*"
   ],
   "background": {

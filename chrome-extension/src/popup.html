@@ -2,271 +2,273 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=400, initial-scale=1.0">
   <title>AitherHub LIVE Connector</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    
     body {
-      width: 340px;
+      width: 380px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0f0f0f;
+      background: #0f0f1a;
       color: #e0e0e0;
     }
 
     .header {
-      padding: 16px 20px;
       background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
       border-bottom: 1px solid rgba(255,255,255,0.08);
     }
-
-    .header h1 {
-      font-size: 16px;
-      font-weight: 600;
-      color: #fff;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .header h1 .logo {
-      width: 24px;
-      height: 24px;
-      background: linear-gradient(135deg, #00C853, #00E676);
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      font-weight: 700;
-      color: #000;
-    }
-
-    .header .subtitle {
-      font-size: 11px;
-      color: rgba(255,255,255,0.5);
-      margin-top: 4px;
-    }
+    .header img { width: 36px; height: 36px; border-radius: 8px; }
+    .header-text h1 { font-size: 15px; font-weight: 600; color: #fff; }
+    .header-text p { font-size: 11px; color: #888; margin-top: 2px; }
 
     .status-bar {
-      padding: 12px 20px;
+      padding: 10px 20px;
       display: flex;
       align-items: center;
       gap: 8px;
-      background: rgba(255,255,255,0.03);
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-    }
-
-    .status-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #666;
-    }
-
-    .status-dot.connected {
-      background: #00C853;
-      box-shadow: 0 0 8px rgba(0, 200, 83, 0.4);
-      animation: pulse 2s infinite;
-    }
-
-    .status-dot.error {
-      background: #FF1744;
-    }
-
-    .status-text {
-      font-size: 13px;
-      font-weight: 500;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
-    }
-
-    .section {
-      padding: 16px 20px;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-    }
-
-    .section-title {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: rgba(255,255,255,0.4);
-      margin-bottom: 10px;
-    }
-
-    .input-group {
-      margin-bottom: 12px;
-    }
-
-    .input-group label {
-      display: block;
       font-size: 12px;
-      color: rgba(255,255,255,0.6);
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-dot.connected { background: #00e676; box-shadow: 0 0 6px #00e676; }
+    .status-dot.disconnected { background: #ff5252; }
+    .status-dot.pending { background: #ffab40; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    .content { padding: 20px; }
+
+    .login-section { display: flex; flex-direction: column; gap: 14px; }
+    .login-section h2 {
+      font-size: 14px; font-weight: 600; color: #fff;
       margin-bottom: 4px;
     }
-
-    .input-group input {
-      width: 100%;
-      padding: 8px 12px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 6px;
-      color: #fff;
+    .login-section p {
+      font-size: 11px; color: #888; line-height: 1.5;
+    }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    .form-group label {
+      font-size: 11px; font-weight: 500; color: #aaa;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .form-group input {
+      background: #1a1a2e;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      padding: 10px 12px;
       font-size: 13px;
+      color: #fff;
       outline: none;
       transition: border-color 0.2s;
     }
+    .form-group input:focus { border-color: #00e676; }
+    .form-group input::placeholder { color: #555; }
 
-    .input-group input:focus {
-      border-color: #00C853;
-    }
-
-    .input-group input::placeholder {
-      color: rgba(255,255,255,0.25);
-    }
-
-    .btn {
-      width: 100%;
-      padding: 10px;
+    .btn-primary {
+      background: linear-gradient(135deg, #00e676 0%, #00c853 100%);
+      color: #000;
       border: none;
-      border-radius: 6px;
+      border-radius: 8px;
+      padding: 11px;
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
+      transition: opacity 0.2s;
+      margin-top: 4px;
+    }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-danger {
+      background: transparent;
+      color: #ff5252;
+      border: 1px solid rgba(255,82,82,0.3);
+      border-radius: 8px;
+      padding: 9px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
       transition: all 0.2s;
+      width: 100%;
+    }
+    .btn-danger:hover {
+      background: rgba(255,82,82,0.1);
+      border-color: #ff5252;
     }
 
-    .btn-primary {
-      background: linear-gradient(135deg, #00C853, #00E676);
-      color: #000;
+    .user-info {
+      background: #1a1a2e;
+      border-radius: 10px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
     }
-
-    .btn-primary:hover {
-      opacity: 0.9;
-      transform: translateY(-1px);
+    .user-avatar {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: linear-gradient(135deg, #00e676, #00c853);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; font-weight: 700; color: #000;
     }
+    .user-details h3 { font-size: 13px; font-weight: 600; color: #fff; }
+    .user-details p { font-size: 11px; color: #888; margin-top: 2px; }
 
-    .btn-secondary {
-      background: rgba(255,255,255,0.08);
-      color: #e0e0e0;
-      margin-top: 8px;
-    }
-
-    .btn-secondary:hover {
-      background: rgba(255,255,255,0.12);
-    }
-
-    .stats {
+    .stats-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 8px;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .stat-card {
+      background: #1a1a2e;
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+    .stat-card .value {
+      font-size: 20px; font-weight: 700; color: #00e676;
+    }
+    .stat-card .label {
+      font-size: 10px; color: #888; margin-top: 4px;
+      text-transform: uppercase; letter-spacing: 0.5px;
     }
 
-    .stat-card {
-      background: rgba(255,255,255,0.04);
+    .live-status {
+      background: #1a1a2e;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .live-badge {
+      background: #ff1744;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+    .live-status .info { font-size: 12px; color: #ccc; }
+
+    .error-msg {
+      background: rgba(255,82,82,0.1);
+      border: 1px solid rgba(255,82,82,0.3);
       border-radius: 8px;
       padding: 10px 12px;
-    }
-
-    .stat-card .value {
-      font-size: 18px;
-      font-weight: 700;
-      color: #fff;
-    }
-
-    .stat-card .label {
-      font-size: 10px;
-      color: rgba(255,255,255,0.4);
-      margin-top: 2px;
+      font-size: 12px;
+      color: #ff5252;
+      display: none;
     }
 
     .footer {
       padding: 12px 20px;
+      border-top: 1px solid rgba(255,255,255,0.05);
       text-align: center;
-      font-size: 10px;
-      color: rgba(255,255,255,0.25);
     }
+    .footer a {
+      font-size: 11px; color: #555; text-decoration: none;
+    }
+    .footer a:hover { color: #888; }
 
-    .message {
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-      margin-top: 8px;
-      display: none;
+    .hidden { display: none !important; }
+    .loading-spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(0,0,0,0.2);
+      border-top-color: #000;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
     }
-
-    .message.success {
-      display: block;
-      background: rgba(0, 200, 83, 0.15);
-      color: #00C853;
-      border: 1px solid rgba(0, 200, 83, 0.2);
-    }
-
-    .message.error {
-      display: block;
-      background: rgba(255, 23, 68, 0.15);
-      color: #FF1744;
-      border: 1px solid rgba(255, 23, 68, 0.2);
-    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>
-      <span class="logo">A</span>
-      AitherHub LIVE Connector
-    </h1>
-    <div class="subtitle">TikTok Shop LIVE データ連携</div>
+    <img src="../icons/icon48.png" alt="AitherHub">
+    <div class="header-text">
+      <h1>AitherHub LIVE Connector</h1>
+      <p>TikTok Shop LIVE データ連携</p>
+    </div>
   </div>
 
   <div class="status-bar">
-    <div class="status-dot" id="statusDot"></div>
-    <span class="status-text" id="statusText">接続確認中...</span>
+    <div class="status-dot disconnected" id="statusDot"></div>
+    <span id="statusText">未接続</span>
   </div>
 
-  <div class="section" id="statsSection" style="display:none;">
-    <div class="section-title">ライブセッション</div>
-    <div class="stats">
-      <div class="stat-card">
-        <div class="value" id="statComments">0</div>
-        <div class="label">コメント取得数</div>
-      </div>
-      <div class="stat-card">
-        <div class="value" id="statProducts">0</div>
-        <div class="label">商品数</div>
-      </div>
-      <div class="stat-card">
-        <div class="value" id="statSent">0</div>
-        <div class="label">送信回数</div>
-      </div>
-      <div class="stat-card">
-        <div class="value" id="statUptime">0s</div>
-        <div class="label">稼働時間</div>
-      </div>
-    </div>
-  </div>
+  <div class="content">
+    <!-- Login Section -->
+    <div id="loginSection" class="login-section">
+      <h2>AitherHubにログイン</h2>
+      <p>AitherHubアカウントでログインすると、TikTok Shop LIVEマネージャーのデータが自動的にAitherHubに送信されます。</p>
 
-  <div class="section">
-    <div class="section-title">接続設定</div>
-    <div class="input-group">
-      <label>API Base URL</label>
-      <input type="text" id="apiBase" placeholder="https://api.aitherhub.com">
+      <div class="error-msg" id="loginError"></div>
+
+      <div class="form-group">
+        <label>メールアドレス</label>
+        <input type="email" id="email" placeholder="example@email.com" autocomplete="email">
+      </div>
+
+      <div class="form-group">
+        <label>パスワード</label>
+        <input type="password" id="password" placeholder="パスワードを入力" autocomplete="current-password">
+      </div>
+
+      <button class="btn-primary" id="loginBtn">ログイン</button>
     </div>
-    <div class="input-group">
-      <label>API Token</label>
-      <input type="password" id="apiToken" placeholder="あなたのAPIトークン">
+
+    <!-- Dashboard Section -->
+    <div id="dashboardSection" class="hidden">
+      <div class="user-info">
+        <div class="user-avatar" id="userAvatar">A</div>
+        <div class="user-details">
+          <h3 id="userName">ユーザー</h3>
+          <p id="userEmail">email@example.com</p>
+        </div>
+      </div>
+
+      <div class="live-status" id="liveStatus">
+        <div class="status-dot disconnected" id="liveDot"></div>
+        <div class="info" id="liveInfo">TikTok Shop LIVEページを開いてください</div>
+      </div>
+
+      <div class="stats-grid" id="statsGrid">
+        <div class="stat-card">
+          <div class="value" id="statDataSent">0</div>
+          <div class="label">送信回数</div>
+        </div>
+        <div class="stat-card">
+          <div class="value" id="statComments">0</div>
+          <div class="label">コメント</div>
+        </div>
+        <div class="stat-card">
+          <div class="value" id="statProducts">0</div>
+          <div class="label">商品</div>
+        </div>
+        <div class="stat-card">
+          <div class="value" id="statUptime">0m</div>
+          <div class="label">接続時間</div>
+        </div>
+      </div>
+
+      <button class="btn-danger" id="logoutBtn">ログアウト</button>
     </div>
-    <button class="btn btn-primary" id="saveBtn">設定を保存</button>
-    <button class="btn btn-secondary" id="testBtn">接続テスト</button>
-    <div class="message" id="message"></div>
   </div>
 
   <div class="footer">
-    AitherHub LIVE Connector v1.0.0
+    <a href="https://www.aitherhub.com" target="_blank">AitherHub LIVE Connector v1.1.0</a>
   </div>
 
   <script src="popup.js"></script>

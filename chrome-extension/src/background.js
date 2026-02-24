@@ -1,30 +1,63 @@
 /**
- * AitherHub LIVE Connector - Background Service Worker
+ * AitherHub LIVE Connector - Background Service Worker v1.1.0
  * 
  * Handles:
  * - Receiving data from content scripts
  * - Sending data to AitherHub API
  * - Managing connection state
+ * - Token refresh
  * - Periodic health checks
  */
 
-const DEFAULT_API_BASE = 'https://api.aitherhub.com';
+const DEFAULT_API_BASE = 'https://aitherhubapi-cpcjcnezbgf5f7e2.japaneast-01.azurewebsites.net';
 const SEND_INTERVAL_MS = 5000; // 5 seconds
 
 // State
 let apiBase = DEFAULT_API_BASE;
 let apiToken = '';
+let refreshToken = '';
 let isConnected = false;
 let lastSendTime = 0;
 let pendingData = null;
+let sessionStartTime = null;
 
-// Load settings from storage
-chrome.storage.local.get(['apiBase', 'apiToken', 'liveSessionId'], (result) => {
+// Stats tracking
+let stats = {
+  dataSent: 0,
+  comments: 0,
+  products: 0,
+  uptime: 0
+};
+
+// Load settings from storage on startup
+chrome.storage.local.get(['apiBase', 'accessToken', 'apiToken', 'refreshToken'], (result) => {
   if (result.apiBase) apiBase = result.apiBase;
-  if (result.apiToken) apiToken = result.apiToken;
+  // Prefer accessToken (new login flow), fall back to apiToken (legacy)
+  apiToken = result.accessToken || result.apiToken || '';
+  refreshToken = result.refreshToken || '';
+  console.log('[AitherHub BG] Loaded config, hasToken:', !!apiToken);
 });
 
-// Listen for messages from content scripts
+// Listen for storage changes (e.g., when popup saves new tokens)
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local') {
+    if (changes.accessToken) {
+      apiToken = changes.accessToken.newValue || '';
+      console.log('[AitherHub BG] Token updated from storage');
+    }
+    if (changes.apiToken) {
+      apiToken = changes.apiToken.newValue || apiToken;
+    }
+    if (changes.apiBase) {
+      apiBase = changes.apiBase.newValue || DEFAULT_API_BASE;
+    }
+    if (changes.refreshToken) {
+      refreshToken = changes.refreshToken.newValue || '';
+    }
+  }
+});
+
+// Listen for messages from content scripts and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.type) {
     case 'LIVE_DATA':
@@ -47,16 +80,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         isConnected,
         apiBase,
         hasToken: !!apiToken,
-        lastSendTime
+        lastSendTime,
+        stats: {
+          ...stats,
+          uptime: sessionStartTime ? Math.floor((Date.now() - sessionStartTime) / 1000) : 0
+        }
       });
       break;
 
     case 'SET_CONFIG':
-      if (message.apiBase) apiBase = message.apiBase;
-      if (message.apiToken) apiToken = message.apiToken;
+      if (message.apiBase !== undefined) apiBase = message.apiBase || DEFAULT_API_BASE;
+      if (message.apiToken !== undefined) apiToken = message.apiToken || '';
       chrome.storage.local.set({
         apiBase: apiBase,
-        apiToken: apiToken
+        apiToken: apiToken,
+        accessToken: apiToken
       });
       sendResponse({ status: 'saved' });
       break;
@@ -71,11 +109,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
  * Handle live session start
  */
 async function handleLiveStarted(data, tab) {
-  console.log('[AitherHub] Live session started:', data);
+  console.log('[AitherHub BG] Live session started:', data);
+  sessionStartTime = Date.now();
+  stats = { dataSent: 0, comments: 0, products: 0, uptime: 0 };
   
   const payload = {
     event: 'live_started',
-    source: data.source, // 'streamer' or 'workbench'
+    source: data.source,
     room_id: data.roomId,
     account: data.account,
     region: data.region,
@@ -90,7 +130,7 @@ async function handleLiveStarted(data, tab) {
       updateBadge('ON', '#00C853');
     }
   } catch (err) {
-    console.error('[AitherHub] Failed to start session:', err);
+    console.error('[AitherHub BG] Failed to start session:', err);
     updateBadge('ERR', '#FF1744');
   }
 }
@@ -99,7 +139,7 @@ async function handleLiveStarted(data, tab) {
  * Handle live session end
  */
 async function handleLiveEnded(data) {
-  console.log('[AitherHub] Live session ended');
+  console.log('[AitherHub BG] Live session ended');
   
   const sessionId = (await chrome.storage.local.get('liveSessionId')).liveSessionId;
   if (sessionId) {
@@ -109,11 +149,12 @@ async function handleLiveEnded(data) {
         timestamp: new Date().toISOString()
       });
     } catch (err) {
-      console.error('[AitherHub] Failed to end session:', err);
+      console.error('[AitherHub BG] Failed to end session:', err);
     }
   }
 
   isConnected = false;
+  sessionStartTime = null;
   chrome.storage.local.remove('liveSessionId');
   updateBadge('', '');
 }
@@ -148,10 +189,22 @@ async function handleLiveData(data, tab) {
     await sendToAPI('/api/v1/live/extension/data', payload);
     lastSendTime = now;
     pendingData = null;
+    
+    // Update stats
+    stats.dataSent++;
+    stats.comments += (data.comments || []).length;
+    stats.products = Math.max(stats.products, (data.products || []).length);
+    
     updateBadge('ON', '#00C853');
   } catch (err) {
-    console.error('[AitherHub] Failed to send data:', err);
+    console.error('[AitherHub BG] Failed to send data:', err);
     pendingData = data; // Retry next time
+    
+    // If 401, try to refresh token
+    if (err.message && err.message.includes('401')) {
+      await tryRefreshToken();
+    }
+    
     updateBadge('ERR', '#FF1744');
   }
 }
@@ -195,6 +248,49 @@ async function sendToAPI(endpoint, payload) {
   }
 
   return response.json();
+}
+
+/**
+ * Try to refresh the access token using the refresh token
+ */
+async function tryRefreshToken() {
+  if (!refreshToken) {
+    console.log('[AitherHub BG] No refresh token available');
+    return false;
+  }
+
+  try {
+    const response = await fetch(`${apiBase}/api/v1/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken })
+    });
+
+    if (!response.ok) {
+      console.error('[AitherHub BG] Token refresh failed:', response.status);
+      // Clear tokens - user needs to re-login
+      apiToken = '';
+      refreshToken = '';
+      await chrome.storage.local.remove(['accessToken', 'apiToken', 'refreshToken']);
+      return false;
+    }
+
+    const data = await response.json();
+    apiToken = data.access_token;
+    refreshToken = data.refresh_token || refreshToken;
+
+    await chrome.storage.local.set({
+      accessToken: apiToken,
+      apiToken: apiToken,
+      refreshToken: refreshToken
+    });
+
+    console.log('[AitherHub BG] Token refreshed successfully');
+    return true;
+  } catch (err) {
+    console.error('[AitherHub BG] Token refresh error:', err);
+    return false;
+  }
 }
 
 /**
