@@ -52,37 +52,95 @@
   }
 
   function extractAccount() {
-    // Try multiple selectors for account name
-    const selectors = [
-      'div[class*="kyogoku"]', // specific
+    // Strategy 1: Look for avatar/account name in the top header bar
+    // TikTok Shop header typically has an avatar with username next to it
+    const headerSelectors = [
+      '[class*="avatar"] + span',
+      '[class*="avatar"] + div',
+      '[class*="Avatar"] + span',
+      '[class*="Avatar"] + div',
+      '[class*="user-name"]',
+      '[class*="userName"]',
       '[class*="accountName"]',
       '[class*="account-name"]',
-      '[class*="userName"]',
+      '[class*="AccountName"]',
+      '[class*="nick-name"]',
+      '[class*="nickName"]',
     ];
-    
-    // For streamer page
-    if (pageType === 'streamer') {
-      const el = document.querySelector('#root');
-      if (el) {
-        const text = el.textContent;
-        const match = text.match(/LIVE Manager.*?(\w+)\s*Go LIVE/);
-        if (match) return match[1];
+
+    for (const sel of headerSelectors) {
+      try {
+        const el = document.querySelector(sel);
+        if (el) {
+          const text = el.textContent.trim();
+          if (text && text.length > 0 && text.length < 50) return text;
+        }
+      } catch (e) { /* ignore invalid selectors */ }
+    }
+
+    // Strategy 2: Look for username pattern in the page header area
+    // The TikTok header bar contains the username near the top-right
+    const headerArea = document.querySelector('header, [class*="header"], [class*="Header"], [class*="topBar"], [class*="top-bar"], [class*="navbar"], [class*="NavBar"]');
+    if (headerArea) {
+      // Look for short text nodes that could be usernames
+      const spans = headerArea.querySelectorAll('span, div');
+      for (const span of spans) {
+        if (span.children.length > 0) continue;
+        const text = span.textContent.trim();
+        // Username pattern: alphanumeric, dots, underscores, 2-30 chars
+        if (text && /^[a-zA-Z0-9._]{2,30}$/.test(text) && 
+            !['LIVE', 'Shop', 'TikTok', 'Home'].includes(text)) {
+          return text;
+        }
       }
     }
-    
-    // For workbench page
-    if (pageType === 'workbench') {
-      const el = document.querySelector('[class*="accountInfo"], [class*="account"]');
-      if (el) return el.textContent.trim();
-      // Fallback: look for text after "LIVE Dashboard"
+
+    // Strategy 3: For streamer page - look near LIVE Manager / LIVEマネージャー text
+    if (pageType === 'streamer') {
       const root = document.querySelector('#root');
       if (root) {
         const text = root.textContent;
-        const match = text.match(/LIVE Dashboard\s*[>·]*\s*(\w+)/);
-        if (match) return match[1];
+        // English: "LIVE Manager ... username ... Go LIVE"
+        const matchEn = text.match(/LIVE Manager.*?(\w+)\s*Go LIVE/);
+        if (matchEn) return matchEn[1];
+        // Japanese: "LIVEマネージャー ... username ... 今すぐLIVE配信"
+        const matchJa = text.match(/LIVEマネージャー.*?([a-zA-Z0-9._]+)\s*(?:今すぐ|Go)/);
+        if (matchJa) return matchJa[1];
       }
     }
-    
+
+    // Strategy 4: For workbench page
+    if (pageType === 'workbench') {
+      const el = document.querySelector('[class*="accountInfo"], [class*="account"]');
+      if (el) return el.textContent.trim();
+      const root = document.querySelector('#root');
+      if (root) {
+        const text = root.textContent;
+        const matchEn = text.match(/LIVE Dashboard\s*[>·]*\s*(\w+)/);
+        if (matchEn) return matchEn[1];
+        const matchJa = text.match(/LIVEダッシュボード\s*[>·]*\s*([a-zA-Z0-9._]+)/);
+        if (matchJa) return matchJa[1];
+      }
+    }
+
+    // Strategy 5: Extract from page URL or document title
+    const titleMatch = document.title.match(/([a-zA-Z0-9._]+)\s*[-|]\s*(?:TikTok|LIVE)/);
+    if (titleMatch) return titleMatch[1];
+
+    // Strategy 6: Look for any element with the account name near the top of the page
+    // Scan all leaf text nodes in the first 200px of the page
+    const allSpans = document.querySelectorAll('span');
+    for (const span of allSpans) {
+      if (span.children.length > 0) continue;
+      const rect = span.getBoundingClientRect();
+      if (rect.top > 60) continue; // Only check top header area
+      const text = span.textContent.trim();
+      if (text && /^[a-zA-Z0-9._]{2,30}$/.test(text) &&
+          !['LIVE', 'Shop', 'TikTok', 'Home', 'ON', 'OFF'].includes(text)) {
+        return text;
+      }
+    }
+
     return '';
   }
 
@@ -96,13 +154,20 @@
     extractMetrics() {
       const metrics = {};
       const metricLabels = {
+        // English labels
         'GMV': 'gmv',
         'Current viewers': 'current_viewers',
+        'Current viewer': 'current_viewers',
         'Impressions': 'impressions',
         'TRR': 'trr',
         'Avg. duration': 'avg_duration',
         'Product clicks': 'product_clicks',
-        'Current viewer': 'current_viewers',
+        // Japanese labels (TikTok Shop JP)
+        '視聴者数': 'current_viewers',
+        'LIVEのインプレッション': 'impressions',
+        'タップスルー率': 'trr',
+        '平均視聴時間': 'avg_duration',
+        '商品クリック数': 'product_clicks',
       };
 
       // Walk through all text nodes to find label-value pairs

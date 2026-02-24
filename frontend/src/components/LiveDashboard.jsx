@@ -643,32 +643,82 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
                   <HLSVideoPlayer streamUrl={streamUrl} username={username} />
                 </div>
               ) : extensionConnected ? (
-                /* Extension session - no HLS stream, show extension-specific UI */
-                <div className="flex flex-col items-center justify-center">
-                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#FF0050]/20 to-[#00F2EA]/20 flex items-center justify-center mb-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5">
-                      <circle cx="12" cy="12" r="10"/>
-                      <circle cx="12" cy="12" r="3"/>
-                      <line x1="12" y1="2" x2="12" y2="6" opacity="0.5"/>
-                      <line x1="12" y1="18" x2="12" y2="22" opacity="0.5"/>
-                      <line x1="2" y1="12" x2="6" y2="12" opacity="0.5"/>
-                      <line x1="18" y1="12" x2="22" y2="12" opacity="0.5"/>
-                    </svg>
+                /* Extension session - no HLS stream, show rich metrics dashboard */
+                <div className="w-full h-full flex flex-col items-center justify-center p-6 max-w-md mx-auto">
+                  {/* Live indicator + account */}
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="relative">
+                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#FF0050] to-[#00F2EA] flex items-center justify-center shadow-lg shadow-pink-500/30">
+                        <span className="text-white text-xl font-bold">{(extensionAccount || username || '?')[0].toUpperCase()}</span>
+                      </div>
+                      <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-green-500 rounded-full border-2 border-black flex items-center justify-center">
+                        <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-white text-base font-semibold">@{extensionAccount || username || 'unknown'}</p>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                        <span className="text-red-400 text-xs font-medium">LIVE配信中</span>
+                        <span className="text-gray-500 text-xs">· {formatTime(elapsedTime)}</span>
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-white text-sm font-medium mb-1">Chrome拡張からデータ受信中</p>
-                  <p className="text-gray-400 text-xs mb-1">@{extensionAccount || username}</p>
-                  <p className="text-gray-500 text-xs mb-4">リアルタイムデータはダッシュボードに表示されます</p>
+
+                  {/* Key metrics grid */}
+                  <div className="w-full grid grid-cols-2 gap-3 mb-6">
+                    <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10 text-center">
+                      <p className="text-gray-400 text-[10px] uppercase tracking-wider mb-1">GMV (売上)</p>
+                      <p className="text-white text-2xl font-bold">{extensionMetrics.gmv || '¥0'}</p>
+                    </div>
+                    <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10 text-center">
+                      <p className="text-gray-400 text-[10px] uppercase tracking-wider mb-1">視聴者数</p>
+                      <p className="text-white text-2xl font-bold">{extensionMetrics.current_viewers || extensionMetrics['視聴者数'] || formatNum(metrics.viewer_count)}</p>
+                    </div>
+                    <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10 text-center">
+                      <p className="text-gray-400 text-[10px] uppercase tracking-wider mb-1">商品クリック</p>
+                      <p className="text-white text-2xl font-bold">{extensionMetrics.product_clicks || extensionMetrics['商品クリック数'] || '--'}</p>
+                    </div>
+                    <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10 text-center">
+                      <p className="text-gray-400 text-[10px] uppercase tracking-wider mb-1">タップスルー率</p>
+                      <p className="text-white text-2xl font-bold">{extensionMetrics.trr || extensionMetrics['タップスルー率'] || '--'}</p>
+                    </div>
+                  </div>
+
+                  {/* Additional metrics row */}
+                  <div className="w-full grid grid-cols-3 gap-2 mb-6">
+                    <div className="bg-white/5 rounded-lg p-2.5 border border-white/10 text-center">
+                      <p className="text-gray-500 text-[9px] mb-0.5">インプレッション</p>
+                      <p className="text-white text-sm font-semibold">{extensionMetrics.impressions || extensionMetrics['LIVEのインプレッション'] || '--'}</p>
+                    </div>
+                    <div className="bg-white/5 rounded-lg p-2.5 border border-white/10 text-center">
+                      <p className="text-gray-500 text-[9px] mb-0.5">平均視聴時間</p>
+                      <p className="text-white text-sm font-semibold">{extensionMetrics.avg_duration || extensionMetrics['平均視聴時間'] || '--'}</p>
+                    </div>
+                    <div className="bg-white/5 rounded-lg p-2.5 border border-white/10 text-center">
+                      <p className="text-gray-500 text-[9px] mb-0.5">販売数</p>
+                      <p className="text-white text-sm font-semibold">{extensionMetrics.items_sold || extensionMetrics['販売数'] || '0'}</p>
+                    </div>
+                  </div>
+
+                  {/* TikTok link */}
                   <a
                     href={`https://www.tiktok.com/@${extensionAccount || username}/live`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 bg-[#FF0050] hover:bg-[#FF0050]/80 text-white text-xs px-4 py-2 rounded-full transition-colors"
+                    className="inline-flex items-center gap-2 bg-[#FF0050] hover:bg-[#FF0050]/80 text-white text-xs px-5 py-2.5 rounded-full transition-colors shadow-lg shadow-pink-500/20"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
                     </svg>
                     TikTokで視聴
                   </a>
+
+                  {/* Connection status */}
+                  <div className="mt-4 flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span className="text-gray-500 text-[10px]">Chrome拡張からリアルタイムデータ受信中</span>
+                  </div>
                 </div>
               ) : (
                 /* No stream URL yet - show waiting state with TikTok link */
