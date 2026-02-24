@@ -701,7 +701,7 @@ class VideoService extends BaseApiService {
    * @param {Function} params.onError - Callback on error
    * @returns {Object} - Control object with close() method
    */
-  streamLiveEvents({ videoId, onMetrics = () => {}, onAdvice = () => {}, onStreamUrl = () => {}, onStreamEnded = () => {}, onError = () => {} }) {
+  streamLiveEvents({ videoId, onMetrics = () => {}, onAdvice = () => {}, onStreamUrl = () => {}, onStreamEnded = () => {}, onExtensionComments = () => {}, onExtensionProducts = () => {}, onExtensionActivities = () => {}, onExtensionTraffic = () => {}, onError = () => {} }) {
     const base = (this.client && this.client.defaults && this.client.defaults.baseURL) || import.meta.env.VITE_API_BASE_URL || "";
     const url = `${base.replace(/\/$/, "")}/api/v1/live/${encodeURIComponent(videoId)}/stream`;
 
@@ -773,6 +773,29 @@ class VideoService extends BaseApiService {
                   case 'stream_ended':
                     onStreamEnded(eventPayload);
                     return;
+                  case 'extension_comments':
+                    onExtensionComments(eventPayload);
+                    break;
+                  case 'extension_products':
+                    onExtensionProducts(eventPayload);
+                    break;
+                  case 'extension_activities':
+                    onExtensionActivities(eventPayload);
+                    break;
+                  case 'extension_traffic':
+                    onExtensionTraffic(eventPayload);
+                    break;
+                  case 'extension_metrics':
+                    onMetrics({ ...eventPayload, source: 'extension' });
+                    break;
+                  case 'extension_suggestions':
+                    // Treat TikTok suggestions as advice
+                    if (eventPayload.suggestions) {
+                      eventPayload.suggestions.forEach(s => {
+                        onAdvice({ message: s.text || s, urgency: 'low', source: 'tiktok_suggestion', timestamp: Date.now() / 1000 });
+                      });
+                    }
+                    break;
                   case 'heartbeat':
                     break; // Ignore heartbeats
                   default:

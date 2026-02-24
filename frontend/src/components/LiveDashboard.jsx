@@ -1,5 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import VideoService from '../base/services/videoService';
+import {
+  CommentsPanel,
+  ProductsPanel,
+  TrafficSourcesPanel,
+  ActivitiesPanel,
+  ExtendedMetricsPanel,
+  ExtensionStatusBadge,
+  PanelTabs,
+} from './LiveDashboardExtension';
 
 // ─── Metric Card ───────────────────────────────────────────
 const MetricCard = ({ label, value, trend, icon, color = 'purple' }) => {
@@ -348,6 +357,19 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
   const [loadProgress, setLoadProgress] = useState(0);
   const [loadStep, setLoadStep] = useState(0); // 0-5
   const [metricsReceived, setMetricsReceived] = useState(false);
+
+  // ── Extension data state ──
+  const [extensionConnected, setExtensionConnected] = useState(false);
+  const [extensionSource, setExtensionSource] = useState(null);
+  const [extensionAccount, setExtensionAccount] = useState(null);
+  const [extensionComments, setExtensionComments] = useState([]);
+  const [newCommentIds, setNewCommentIds] = useState(new Set());
+  const [extensionProducts, setExtensionProducts] = useState([]);
+  const [extensionActivities, setExtensionActivities] = useState([]);
+  const [extensionTraffic, setExtensionTraffic] = useState([]);
+  const [extensionMetrics, setExtensionMetrics] = useState({});
+  const [rightPanelTab, setRightPanelTab] = useState('advice');
+
   const loadSteps = [
     { label: 'モニター起動中...', pct: 10 },
     { label: 'TikTokライブに接続中...', pct: 30 },
@@ -382,20 +404,34 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
   // Handle metrics update
   const handleMetrics = useCallback((data) => {
     console.log('LiveDashboard: Received metrics:', JSON.stringify(data));
-    setMetrics(prev => ({
-      ...prev,
-      viewer_count: data.viewer_count ?? prev.viewer_count,
-      like_count: data.total_likes ?? prev.like_count,
-      comment_count: data.total_comments ?? prev.comment_count,
-      gift_count: data.total_gifts ?? prev.gift_count,
-      share_count: data.total_shares ?? prev.share_count,
-    }));
-    setMetricsHistory(prev => ({
-      viewers: [...prev.viewers.slice(-59), data.viewer_count || 0],
-      comments: [...prev.comments.slice(-59), data.comments_in_interval || 0],
-      likes: [...prev.likes.slice(-59), data.likes_in_interval || 0],
-      gifts: [...prev.gifts.slice(-59), data.gifts_in_interval || 0],
-    }));
+
+    // Check if this is extension data
+    if (data.source === 'extension') {
+      setExtensionConnected(true);
+      setExtensionMetrics(data);
+      // Also update main metrics if extension provides viewer count
+      if (data.current_viewers) {
+        setMetrics(prev => ({
+          ...prev,
+          viewer_count: parseInt(data.current_viewers) || prev.viewer_count,
+        }));
+      }
+    } else {
+      setMetrics(prev => ({
+        ...prev,
+        viewer_count: data.viewer_count ?? prev.viewer_count,
+        like_count: data.total_likes ?? prev.like_count,
+        comment_count: data.total_comments ?? prev.comment_count,
+        gift_count: data.total_gifts ?? prev.gift_count,
+        share_count: data.total_shares ?? prev.share_count,
+      }));
+      setMetricsHistory(prev => ({
+        viewers: [...prev.viewers.slice(-59), data.viewer_count || 0],
+        comments: [...prev.comments.slice(-59), data.comments_in_interval || 0],
+        likes: [...prev.likes.slice(-59), data.likes_in_interval || 0],
+        gifts: [...prev.gifts.slice(-59), data.gifts_in_interval || 0],
+      }));
+    }
     setMetricsReceived(true);
   }, []);
 
@@ -416,6 +452,52 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
   const handleStreamEnded = useCallback((data) => {
     setStreamEnded(true);
     clearInterval(timerRef.current);
+  }, []);
+
+  // ── Handle extension events ──
+  const handleExtensionComments = useCallback((data) => {
+    setExtensionConnected(true);
+    if (data.comments && data.comments.length > 0) {
+      const newIds = new Set(data.comments.map(c => c.id || `${c.username}_${c.text}`));
+      setNewCommentIds(newIds);
+      setExtensionComments(prev => {
+        const updated = [...data.comments, ...prev];
+        return updated.slice(0, 500); // Keep last 500
+      });
+      setTimeout(() => setNewCommentIds(new Set()), 3000);
+    }
+  }, []);
+
+  const handleExtensionProducts = useCallback((data) => {
+    setExtensionConnected(true);
+    if (data.products) {
+      setExtensionProducts(data.products);
+    }
+  }, []);
+
+  const handleExtensionActivities = useCallback((data) => {
+    setExtensionConnected(true);
+    if (data.activities && data.activities.length > 0) {
+      setExtensionActivities(prev => {
+        const updated = [...data.activities, ...prev];
+        return updated.slice(0, 200);
+      });
+    }
+  }, []);
+
+  const handleExtensionTraffic = useCallback((data) => {
+    setExtensionConnected(true);
+    if (data.traffic_sources) {
+      setExtensionTraffic(data.traffic_sources);
+    }
+  }, []);
+
+  const handleExtensionStreamUrl = useCallback((data) => {
+    if (data.source === 'extension') {
+      setExtensionConnected(true);
+      setExtensionSource(data.extension_source);
+      setExtensionAccount(data.account);
+    }
   }, []);
 
   // Smooth progress animation
@@ -449,7 +531,7 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
     // Step 2: SSE stream
     setTimeout(() => setLoadStep(2), 3000);
 
-    // Connect SSE
+    // Connect SSE with extension event handlers
     sseRef.current = VideoService.streamLiveEvents({
       videoId,
       onMetrics: (data) => {
@@ -463,8 +545,15 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
         if (data && data.stream_url) {
           setStreamUrl(data.stream_url);
         }
+        // Handle extension stream info
+        handleExtensionStreamUrl(data);
       },
       onStreamEnded: handleStreamEnded,
+      // Extension event handlers
+      onExtensionComments: handleExtensionComments,
+      onExtensionProducts: handleExtensionProducts,
+      onExtensionActivities: handleExtensionActivities,
+      onExtensionTraffic: handleExtensionTraffic,
       onError: (err) => {
         console.error('LiveSSE error:', err);
         setError('接続が切断されました。再接続中...');
@@ -494,6 +583,9 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
   // Check if dashboard should show (metrics received or loadStep >= 5)
   const showDashboard = loadStep >= 5 || metricsReceived;
 
+  // Check if extension data is available
+  const hasExtensionData = extensionConnected || extensionComments.length > 0 || extensionProducts.length > 0;
+
   return (
     <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
       {/* Header */}
@@ -511,6 +603,12 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
           <span className="text-gray-300 text-sm">@{username}</span>
           {title && <span className="text-gray-500 text-xs hidden md:inline">| {title}</span>}
           <span className="text-gray-400 text-xs font-mono">{formatTime(elapsedTime)}</span>
+          {/* Extension status badge */}
+          <ExtensionStatusBadge
+            isConnected={extensionConnected}
+            source={extensionSource}
+            account={extensionAccount}
+          />
         </div>
         <button
           onClick={onClose}
@@ -622,92 +720,122 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
 
         {/* Right: Dashboard Panel - fixed 320px */}
         <div className="w-80 flex flex-col bg-gray-50 border-l border-gray-200 overflow-hidden shrink-0">
-          {/* Metrics Grid */}
-          <div className="p-2.5 grid grid-cols-2 gap-2 border-b border-gray-200 shrink-0">
-            <MetricCard
-              label="視聴者数"
-              value={formatNum(metrics.viewer_count)}
-              trend={metricsHistory.viewers.length > 5 ?
-                ((metrics.viewer_count - metricsHistory.viewers[metricsHistory.viewers.length - 6]) / (metricsHistory.viewers[metricsHistory.viewers.length - 6] || 1)) * 100
-                : undefined}
-              icon="👁"
-              color="red"
-            />
-            <MetricCard
-              label="コメント数"
-              value={formatNum(metrics.comment_count)}
-              icon="💬"
-              color="blue"
-            />
-            <MetricCard
-              label="いいね"
-              value={formatNum(metrics.like_count)}
-              icon="❤️"
-              color="pink"
-            />
-            <MetricCard
-              label="ギフト"
-              value={formatNum(metrics.gift_count)}
-              icon="🎁"
-              color="orange"
-            />
-            <MetricCard
-              label="シェア"
-              value={formatNum(metrics.share_count)}
-              icon="📤"
-              color="green"
-            />
-            <MetricCard
-              label="新規フォロー"
-              value={formatNum(metrics.new_follower_count)}
-              icon="➕"
-              color="purple"
-            />
-          </div>
+          {/* Extension Extended Metrics (shown when extension is connected) */}
+          {hasExtensionData && Object.keys(extensionMetrics).length > 0 && (
+            <div className="border-b border-gray-200 shrink-0 max-h-48 overflow-y-auto">
+              <ExtendedMetricsPanel metrics={extensionMetrics} />
+            </div>
+          )}
 
-          {/* AI Advice Section */}
+          {/* Metrics Grid (original) */}
+          {!hasExtensionData && (
+            <div className="p-2.5 grid grid-cols-2 gap-2 border-b border-gray-200 shrink-0">
+              <MetricCard
+                label="視聴者数"
+                value={formatNum(metrics.viewer_count)}
+                trend={metricsHistory.viewers.length > 5 ?
+                  ((metrics.viewer_count - metricsHistory.viewers[metricsHistory.viewers.length - 6]) / (metricsHistory.viewers[metricsHistory.viewers.length - 6] || 1)) * 100
+                  : undefined}
+                icon="👁"
+                color="red"
+              />
+              <MetricCard
+                label="コメント数"
+                value={formatNum(metrics.comment_count)}
+                icon="💬"
+                color="blue"
+              />
+              <MetricCard
+                label="いいね"
+                value={formatNum(metrics.like_count)}
+                icon="❤️"
+                color="pink"
+              />
+              <MetricCard
+                label="ギフト"
+                value={formatNum(metrics.gift_count)}
+                icon="🎁"
+                color="orange"
+              />
+              <MetricCard
+                label="シェア"
+                value={formatNum(metrics.share_count)}
+                icon="📤"
+                color="green"
+              />
+              <MetricCard
+                label="新規フォロー"
+                value={formatNum(metrics.new_follower_count)}
+                icon="➕"
+                color="purple"
+              />
+            </div>
+          )}
+
+          {/* Tabbed Panel Section */}
+          <PanelTabs
+            activeTab={rightPanelTab}
+            onTabChange={setRightPanelTab}
+            hasExtensionData={hasExtensionData}
+          />
+
+          {/* Tab Content */}
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <div className="px-3 py-2 border-b border-gray-200 bg-white shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center">
-                  <span className="text-white text-[10px]">AI</span>
+            {/* AI Advice Tab */}
+            {rightPanelTab === 'advice' && (
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <div
+                  ref={adviceContainerRef}
+                  className="flex-1 overflow-y-auto p-2.5 space-y-2"
+                >
+                  {advices.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center">
+                      <div className="w-14 h-14 rounded-full bg-purple-50 flex items-center justify-center mb-3">
+                        <span className="text-xl">🤖</span>
+                      </div>
+                      <p className="text-sm text-gray-500">AIがライブを分析中...</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        視聴者の動きやコメントの変化を<br/>監視しています
+                      </p>
+                      <p className="text-[10px] text-gray-300 mt-3">
+                        約30秒後にデータが蓄積されると<br/>AIアドバイスが表示されます
+                      </p>
+                    </div>
+                  ) : (
+                    advices.map((advice) => (
+                      <AdviceCard
+                        key={advice.id}
+                        advice={advice}
+                        isNew={advice.id === newAdviceId}
+                      />
+                    ))
+                  )}
                 </div>
-                <span className="text-sm font-bold text-gray-800">リアルタイムアドバイス</span>
-                {advices.length > 0 && (
-                  <span className="bg-purple-100 text-purple-700 text-[10px] px-2 py-0.5 rounded-full">
-                    {advices.length}件
-                  </span>
-                )}
               </div>
-            </div>
+            )}
 
-            <div
-              ref={adviceContainerRef}
-              className="flex-1 overflow-y-auto p-2.5 space-y-2"
-            >
-              {advices.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center">
-                  <div className="w-14 h-14 rounded-full bg-purple-50 flex items-center justify-center mb-3">
-                    <span className="text-xl">🤖</span>
-                  </div>
-                  <p className="text-sm text-gray-500">AIがライブを分析中...</p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    視聴者の動きやコメントの変化を<br/>監視しています
-                  </p>
-                  <p className="text-[10px] text-gray-300 mt-3">
-                    約30秒後にデータが蓄積されると<br/>AIアドバイスが表示されます
-                  </p>
-                </div>
-              ) : (
-                advices.map((advice) => (
-                  <AdviceCard
-                    key={advice.id}
-                    advice={advice}
-                    isNew={advice.id === newAdviceId}
-                  />
-                ))
-              )}
-            </div>
+            {/* Comments Tab */}
+            {rightPanelTab === 'comments' && (
+              <CommentsPanel
+                comments={extensionComments}
+                newCommentIds={newCommentIds}
+              />
+            )}
+
+            {/* Products Tab */}
+            {rightPanelTab === 'products' && (
+              <ProductsPanel products={extensionProducts} />
+            )}
+
+            {/* Traffic Tab */}
+            {rightPanelTab === 'traffic' && (
+              <TrafficSourcesPanel trafficSources={extensionTraffic} />
+            )}
+
+            {/* Activity Tab */}
+            {rightPanelTab === 'activity' && (
+              <ActivitiesPanel activities={extensionActivities} />
+            )}
           </div>
 
           {/* Connection Status */}
