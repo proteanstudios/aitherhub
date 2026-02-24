@@ -412,6 +412,86 @@ def acquire_lock():
         sys.exit(1)
 
 
+# Disk cleanup interval: run every 30 minutes
+DISK_CLEANUP_INTERVAL = 30 * 60  # 1800 seconds
+_last_disk_cleanup = 0
+
+
+def periodic_disk_cleanup():
+    """Periodically check disk space and clean up old files.
+    Runs in the main poll loop to avoid accumulation."""
+    global _last_disk_cleanup
+    now = time.time()
+    if now - _last_disk_cleanup < DISK_CLEANUP_INTERVAL:
+        return
+    _last_disk_cleanup = now
+
+    try:
+        import shutil
+        disk = shutil.disk_usage(BATCH_DIR)
+        free_gb = disk.free / (1024 ** 3)
+        total_gb = disk.total / (1024 ** 3)
+        used_pct = (disk.used / disk.total) * 100
+
+        print(f"[worker][disk] Free: {free_gb:.1f} GB / {total_gb:.1f} GB ({used_pct:.0f}% used)")
+
+        # If disk usage > 80%, clean up old files
+        if used_pct > 80:
+            print(f"[worker][disk] High disk usage ({used_pct:.0f}%), cleaning up...")
+            upload_dir = os.path.join(BATCH_DIR, "uploadedvideo")
+            output_dir = os.path.join(BATCH_DIR, "output")
+
+            # Get currently active video IDs
+            active_ids = set()
+            with active_jobs_lock:
+                active_ids = set(active_jobs.keys())
+
+            # Clean old uploaded videos (older than 6 hours, not active)
+            if os.path.isdir(upload_dir):
+                for f in os.listdir(upload_dir):
+                    # Extract video_id from filename
+                    vid = f.replace(".mp4", "").replace("_preview", "")
+                    if vid in active_ids:
+                        continue
+                    fp = os.path.join(upload_dir, f)
+                    try:
+                        age_hours = (now - os.path.getmtime(fp)) / 3600
+                        if age_hours > 6:
+                            size_mb = os.path.getsize(fp) / (1024 ** 2)
+                            os.remove(fp)
+                            print(f"[worker][disk] Removed {f} ({size_mb:.0f} MB, {age_hours:.1f}h old)")
+                    except Exception as e:
+                        print(f"[worker][disk] Could not remove {f}: {e}")
+
+            # Clean old output subdirectories (frames, audio)
+            if os.path.isdir(output_dir):
+                for d in os.listdir(output_dir):
+                    if d in active_ids:
+                        continue
+                    dp = os.path.join(output_dir, d)
+                    if not os.path.isdir(dp):
+                        continue
+                    try:
+                        age_hours = (now - os.path.getmtime(dp)) / 3600
+                        if age_hours > 6:
+                            for subdir in ["frames", "audio", "audio_text", "cache"]:
+                                subpath = os.path.join(dp, subdir)
+                                if os.path.isdir(subpath):
+                                    import shutil as _shutil
+                                    _shutil.rmtree(subpath, ignore_errors=True)
+                                    print(f"[worker][disk] Removed {d}/{subdir}")
+                    except Exception as e:
+                        print(f"[worker][disk] Could not clean {d}: {e}")
+
+            # Re-check
+            disk = shutil.disk_usage(BATCH_DIR)
+            free_gb = disk.free / (1024 ** 3)
+            print(f"[worker][disk] After cleanup: {free_gb:.1f} GB free")
+
+    except Exception as e:
+        print(f"[worker][disk] Cleanup error: {e}")
+
+
 def main():
     # Acquire lock to prevent duplicate instances
     lock_fp = acquire_lock()
@@ -429,11 +509,15 @@ def main():
     renewal_thread = Thread(target=visibility_renewal_loop, daemon=True)
     renewal_thread.start()
 
+    # Initial disk cleanup on startup
+    periodic_disk_cleanup()
+
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
     try:
         while not shutdown_requested:
             try:
+                periodic_disk_cleanup()
                 poll_and_process(executor)
                 time.sleep(5)  # Poll every 5 seconds
             except Exception as e:

@@ -354,6 +354,86 @@ def fire_compress_async(video_path, blob_url, video_id):
 
 
 # =========================
+# CLEANUP HELPER
+# =========================
+
+def _cleanup_video_files(video_id: str, logger):
+    """Clean up all local files for a video to prevent disk accumulation.
+    Called both on success and on error."""
+    # 1. Remove uploaded video file
+    try:
+        upload_dir = "uploadedvideo"
+        my_video_file = os.path.join(upload_dir, f"{video_id}.mp4")
+        if os.path.exists(my_video_file):
+            os.remove(my_video_file)
+            logger.info("[CLEANUP] Removed video: %s", my_video_file)
+        # Also remove _preview.mp4 if compress_background left it
+        preview_file = os.path.join(upload_dir, f"{video_id}_preview.mp4")
+        if os.path.exists(preview_file):
+            os.remove(preview_file)
+            logger.info("[CLEANUP] Removed preview: %s", preview_file)
+    except Exception as e:
+        logger.warning("[CLEANUP][WARN] Could not remove video file: %s", e)
+
+    # 2. Remove output artifacts (frames, audio, cache)
+    try:
+        my_art_dir = video_root(video_id)
+        if os.path.isdir(my_art_dir):
+            # Keep only product_exposures.json and reports (small files)
+            for subdir in ["frames", "audio", "audio_text", "cache"]:
+                subpath = os.path.join(my_art_dir, subdir)
+                if os.path.isdir(subpath):
+                    shutil.rmtree(subpath, ignore_errors=True)
+                    logger.info("[CLEANUP] Removed: %s", subpath)
+    except Exception as e:
+        logger.warning("[CLEANUP][WARN] Could not remove output artifacts: %s", e)
+
+
+def _cleanup_old_files(logger, current_video_id: str = None):
+    """Remove old files from previous jobs to free disk space.
+    Called before starting a new job."""
+    import time as _time
+    now = _time.time()
+    MAX_AGE_HOURS = 12  # Files older than 12 hours are safe to delete
+
+    # 1. Clean old uploaded videos (except current)
+    upload_dir = "uploadedvideo"
+    if os.path.isdir(upload_dir):
+        for f in os.listdir(upload_dir):
+            if current_video_id and current_video_id in f:
+                continue
+            fp = os.path.join(upload_dir, f)
+            try:
+                age_hours = (now - os.path.getmtime(fp)) / 3600
+                if age_hours > MAX_AGE_HOURS:
+                    size_mb = os.path.getsize(fp) / (1024 ** 2)
+                    os.remove(fp)
+                    logger.info("[CLEANUP-OLD] Removed %s (%.0f MB, %.1f hours old)", f, size_mb, age_hours)
+            except Exception as e:
+                logger.warning("[CLEANUP-OLD] Could not remove %s: %s", f, e)
+
+    # 2. Clean old output directories (except current)
+    if os.path.isdir(ART_ROOT):
+        for d in os.listdir(ART_ROOT):
+            if current_video_id and d == current_video_id:
+                continue
+            dp = os.path.join(ART_ROOT, d)
+            if not os.path.isdir(dp):
+                continue
+            try:
+                age_hours = (now - os.path.getmtime(dp)) / 3600
+                if age_hours > MAX_AGE_HOURS:
+                    # Only remove large subdirectories (frames, audio)
+                    for subdir in ["frames", "audio", "audio_text", "cache"]:
+                        subpath = os.path.join(dp, subdir)
+                        if os.path.isdir(subpath):
+                            shutil.rmtree(subpath, ignore_errors=True)
+                            logger.info("[CLEANUP-OLD] Removed %s/%s", d, subdir)
+            except Exception as e:
+                logger.warning("[CLEANUP-OLD] Could not clean %s: %s", d, e)
+
+
+# =========================
 # MAIN
 # =========================
 
@@ -369,6 +449,38 @@ def main():
 
     try:
         video_path, video_id = _resolve_inputs(args)
+
+        # --- PRE-FLIGHT: Clean old files and check disk space ---
+        logger.info("=== PRE-FLIGHT DISK CLEANUP ===")
+        _cleanup_old_files(logger, current_video_id=video_id)
+
+        disk = shutil.disk_usage(".")
+        free_gb = disk.free / (1024 ** 3)
+        logger.info("[DISK] Free space after cleanup: %.1f GB", free_gb)
+        if free_gb < 5.0:
+            logger.warning("[DISK] Low disk space (%.1f GB). Aggressive cleanup...", free_gb)
+            # Aggressive: remove ALL old uploaded videos except current
+            upload_dir = "uploadedvideo"
+            if os.path.isdir(upload_dir):
+                for f in os.listdir(upload_dir):
+                    if video_id in f:
+                        continue
+                    fp = os.path.join(upload_dir, f)
+                    try:
+                        os.remove(fp)
+                        logger.info("[DISK-AGGRESSIVE] Removed %s", f)
+                    except Exception:
+                        pass
+            # Re-check
+            disk = shutil.disk_usage(".")
+            free_gb = disk.free / (1024 ** 3)
+            logger.info("[DISK] Free space after aggressive cleanup: %.1f GB", free_gb)
+            if free_gb < 3.0:
+                raise RuntimeError(
+                    f"Insufficient disk space: {free_gb:.1f} GB free. "
+                    f"Cannot process video. Manual cleanup required."
+                )
+
         current_status = get_video_status_sync(video_id)
         raw_start_step = status_to_step_index(current_status)
 
@@ -689,8 +801,26 @@ def main():
                 video_id=video_id,
             )
 
-            logger.info("[CLEANUP] Remove step1 cache + audio artifacts")
-            logger.info("[CLEANUP] Remove frames")
+            # --- CLEANUP: Remove frames and audio to free disk space ---
+            # Frames are no longer needed after STEP 5 (product detection uses them later,
+            # but we keep them until after STEP 12.5)
+            logger.info("[CLEANUP] Remove step1 cache + audio full WAV")
+            try:
+                cache_path = cache_dir(video_id)
+                if os.path.isdir(cache_path):
+                    shutil.rmtree(cache_path, ignore_errors=True)
+                    logger.info("[CLEANUP] Removed cache: %s", cache_path)
+                # Remove full audio WAV (large file, ~500MB for 1h video)
+                # Keep audio_text (small .txt files) for product detection
+                audio_path = audio_dir(video_id)
+                if os.path.isdir(audio_path):
+                    for f in os.listdir(audio_path):
+                        if f.endswith('.wav') or f.endswith('.mp3'):
+                            fp = os.path.join(audio_path, f)
+                            os.remove(fp)
+                            logger.info("[CLEANUP] Removed audio file: %s", fp)
+            except Exception as e:
+                logger.warning("[CLEANUP][WARN] Failed to clean cache/audio: %s", e)
 
         else:
             logger.info("[SKIP] STEP 5")
@@ -1108,6 +1238,25 @@ def main():
         else:
             logger.info("[SKIP] STEP 12.5")
 
+        # --- CLEANUP: Remove frames after product detection (last step that needs them) ---
+        try:
+            fd = frames_dir(video_id)
+            if os.path.isdir(fd):
+                shutil.rmtree(fd, ignore_errors=True)
+                logger.info("[CLEANUP] Removed frames directory: %s", fd)
+            # Also remove audio_text (no longer needed)
+            atd_cleanup = audio_text_dir(video_id)
+            if os.path.isdir(atd_cleanup):
+                shutil.rmtree(atd_cleanup, ignore_errors=True)
+                logger.info("[CLEANUP] Removed audio_text directory: %s", atd_cleanup)
+            # Remove audio directory entirely
+            ad_cleanup = audio_dir(video_id)
+            if os.path.isdir(ad_cleanup):
+                shutil.rmtree(ad_cleanup, ignore_errors=True)
+                logger.info("[CLEANUP] Removed audio directory: %s", ad_cleanup)
+        except Exception as e:
+            logger.warning("[CLEANUP][WARN] Failed to clean frames/audio: %s", e)
+
         # =========================
         # STEP 13 – BUILD REPORTS
         # =========================
@@ -1219,23 +1368,19 @@ def main():
                 
 
         # =========================
-        # CLEANUP – CLEAR only THIS video's file from uploadedvideo
+        # CLEANUP – CLEAR THIS video's files
         # =========================
-        try:
-            upload_dir = "uploadedvideo"
-            my_video_file = os.path.join(upload_dir, f"{video_id}.mp4")
-            if os.path.exists(my_video_file):
-                os.remove(my_video_file)
-                logger.info("[CLEANUP] Removed %s", my_video_file)
-            else:
-                logger.info("[CLEANUP] %s already removed (OK)", my_video_file)
-        except Exception as e:
-            logger.warning("[CLEANUP][WARN] Could not remove video file: %s", e)
+        _cleanup_video_files(video_id, logger)
 
 
     except Exception:
         update_video_status_sync(video_id, VideoStatus.ERROR)
         logger.exception("Video processing failed")
+        # Still cleanup on error to prevent disk accumulation
+        try:
+            _cleanup_video_files(video_id, logger)
+        except Exception as ce:
+            logger.warning("[CLEANUP][ERROR-PATH] Cleanup also failed: %s", ce)
         raise
     finally:
         logger.info("[DB] Closing database connection...")
