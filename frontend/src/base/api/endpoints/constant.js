@@ -28,4 +28,6 @@ export const URL_CONSTANTS = {
   LIVE_PUSH_EVENTS: "/api/v1/live",     // /{video_id}/events
   LIVE_ACTIVE: "/api/v1/live/active",
   LIVE_EXTENSION_SESSIONS: "/api/v1/live/extension/sessions",
+  LIVE_AI_CHAT: "/api/v1/live/ai/chat",
+  LIVE_AI_ANALYZE: "/api/v1/live/ai/analyze",
 };

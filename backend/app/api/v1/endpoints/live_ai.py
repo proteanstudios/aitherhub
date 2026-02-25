@@ -5,14 +5,18 @@ Receives real-time TikTok LIVE metrics from the Chrome extension
 and returns AI-powered suggestions using OpenAI GPT.
 
 POST /api/v1/live/ai/analyze  - Analyze current LIVE metrics and return suggestions
+POST /api/v1/live/ai/chat     - Streaming AI chat for LIVE dashboard
 """
 
 import logging
 import os
+import json
+import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.dependencies import get_current_user
@@ -42,6 +46,12 @@ class AiSuggestion(BaseModel):
 class AiAnalysisResponse(BaseModel):
     suggestions: List[AiSuggestion]
     analyzed_at: str
+
+
+class LiveChatRequest(BaseModel):
+    messages: List[Dict] = Field(default_factory=list)
+    max_tokens: Optional[int] = 1024
+    model: Optional[str] = None
 
 
 # ── OpenAI Integration ──────────────────────────────────────────────
@@ -131,10 +141,6 @@ actionは任意で、ボタンに表示するテキストです（例: "商品�
         response_text = response.output_text if hasattr(response, 'output_text') else str(response)
         
         # Extract JSON from response
-        import json
-        import re
-        
-        # Try to find JSON array in the response
         json_match = re.search(r'\[[\s\S]*?\]', response_text)
         if json_match:
             suggestions = json.loads(json_match.group())
@@ -272,3 +278,96 @@ async def analyze_live_metrics(
         suggestions=[AiSuggestion(**s) for s in suggestions],
         analyzed_at=datetime.now(timezone.utc).isoformat(),
     )
+
+
+@router.post("/chat")
+async def live_ai_chat(
+    payload: LiveChatRequest,
+    current_user=Depends(get_current_user),
+):
+    """
+    Streaming AI chat endpoint for the LIVE dashboard.
+    Accepts conversation messages (with LIVE context injected by frontend)
+    and streams back AI responses token-by-token via SSE.
+    
+    Unlike the video chat endpoint, this does NOT require a video_id or
+    a "DONE" video status - it works with live metrics context.
+    """
+    logger.info(
+        f"Live AI chat requested by user {current_user['id']}: "
+        f"{len(payload.messages)} messages"
+    )
+
+    try:
+        from openai import AzureOpenAI
+
+        api_key = os.getenv("AZURE_OPENAI_KEY")
+        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+        api_version = os.getenv("GPT5_API_VERSION") or "2024-12-01-preview"
+        model = payload.model or os.getenv("GPT5_MODEL") or os.getenv("GPT5_DEPLOYMENT")
+
+        if not api_key or not endpoint:
+            raise HTTPException(
+                status_code=500,
+                detail="OpenAI configuration missing on server",
+            )
+
+        client = AzureOpenAI(
+            api_key=api_key,
+            azure_endpoint=endpoint,
+            api_version=api_version,
+        )
+
+        # Prepare messages - ensure system message is present
+        messages = payload.messages
+        if not messages or messages[0].get("role") != "system":
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "あなたはTikTok Shop LIVEコマースの専門AIアドバイザーです。"
+                        "配信者のリアルタイムデータに基づいて、具体的で実行可能なアドバイスを提供してください。"
+                        "回答は簡潔に、日本語で、実行可能なアクションを含めてください。"
+                    ),
+                }
+            ] + messages
+
+        stream = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            max_tokens=payload.max_tokens or 1024,
+            temperature=0.7,
+            stream=True,
+        )
+
+        async def generate():
+            try:
+                for chunk in stream:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        token = chunk.choices[0].delta.content
+                        yield f"data: {token}\n\n"
+                yield "data: [DONE]\n\n"
+            except Exception as e:
+                logger.error(f"Live AI chat streaming error: {e}")
+                yield f"data: [ERROR] {str(e)}\n\n"
+
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    except HTTPException:
+        raise
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="OpenAI package not available on server",
+        )
+    except Exception as e:
+        logger.error(f"Live AI chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

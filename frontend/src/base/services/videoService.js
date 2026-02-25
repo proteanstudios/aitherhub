@@ -725,6 +725,114 @@ class VideoService extends BaseApiService {
    * @param {Function} params.onError - Callback on error
    * @returns {Object} - Control object with close() method
    */
+  /**
+   * Stream AI chat for LIVE dashboard.
+   * Uses the dedicated /api/v1/live/ai/chat endpoint that doesn't require video DONE status.
+   * @param {Object} params
+   * @param {Array} params.messages - Chat messages array
+   * @param {Function} params.onMessage - Callback for each token
+   * @param {Function} params.onDone - Callback when streaming is done
+   * @param {Function} params.onError - Callback on error
+   * @returns {Object} - { cancel: () => void }
+   */
+  streamLiveAiChat({ messages = [], onMessage = () => {}, onDone = () => {}, onError = () => {} }) {
+    const base = (this.client && this.client.defaults && this.client.defaults.baseURL) || import.meta.env.VITE_API_BASE_URL || "";
+    const url = `${base.replace(/\/$/, "")}${URL_CONSTANTS.LIVE_AI_CHAT}`;
+
+    const controller = new AbortController();
+    const signal = controller.signal;
+
+    (async () => {
+      try {
+        const headers = {
+          Accept: "text/event-stream",
+          "Content-Type": "application/json",
+        };
+
+        const token = TokenManager.getToken();
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+
+        const resp = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ messages }),
+          credentials: "same-origin",
+          signal,
+        });
+
+        if (!resp.ok) {
+          const txt = await resp.text();
+          throw new Error(`Live AI chat request failed: ${resp.status} ${txt}`);
+        }
+
+        if (!resp.body) {
+          throw new Error("Live AI chat response has no body");
+        }
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          let idx;
+          while ((idx = buffer.indexOf("\n\n")) !== -1) {
+            const raw = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            const lines = raw.split(/\r?\n/);
+            for (const line of lines) {
+              if (line === "") continue;
+              if (line.startsWith("data:")) {
+                let payload = line.slice(5);
+                if (payload.charAt(0) === " ") payload = payload.slice(1);
+                if ((payload.startsWith('"') && payload.endsWith('"')) || (payload.startsWith("'") && payload.endsWith("'"))) {
+                  payload = payload.slice(1, -1).trim();
+                }
+                const isDone = payload === "[DONE]" || payload === "DONE";
+                if (isDone) {
+                  try { onDone(); } catch (e) {}
+                } else if (payload.startsWith("[ERROR]")) {
+                  try { onError(new Error(payload)); } catch (e) {}
+                } else {
+                  try { onMessage(payload); } catch (e) {}
+                }
+              }
+            }
+          }
+        }
+
+        // Process remaining buffer
+        if (buffer) {
+          const lines = buffer.split(/\r?\n/);
+          for (const line of lines) {
+            if (line === "") continue;
+            if (line.startsWith("data:")) {
+              let payload = line.slice(5);
+              if (payload.charAt(0) === " ") payload = payload.slice(1);
+              if ((payload.startsWith('"') && payload.endsWith('"')) || (payload.startsWith("'") && payload.endsWith("'"))) {
+                payload = payload.slice(1, -1);
+              }
+              const isDone = payload === "[DONE]" || payload === "DONE";
+              if (isDone) onDone();
+              else if (payload.startsWith("[ERROR]")) onError(new Error(payload));
+              else onMessage(payload);
+            }
+          }
+        }
+
+        try { onDone(); } catch (e) {}
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        try { onError(err); } catch (e) {}
+      }
+    })();
+
+    return { cancel: () => controller.abort() };
+  }
+
   streamLiveEvents({ videoId, onMetrics = () => {}, onAdvice = () => {}, onStreamUrl = () => {}, onStreamEnded = () => {}, onExtensionComments = () => {}, onExtensionProducts = () => {}, onExtensionActivities = () => {}, onExtensionTraffic = () => {}, onExtensionConnected = () => {}, onExtensionDisconnected = () => {}, onError = () => {} }) {
     const base = (this.client && this.client.defaults && this.client.defaults.baseURL) || import.meta.env.VITE_API_BASE_URL || "";
     const url = `${base.replace(/\/$/, "")}/api/v1/live/${encodeURIComponent(videoId)}/stream`;
