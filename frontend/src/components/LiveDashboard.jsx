@@ -728,7 +728,18 @@ const LiveDashboard = ({ videoId, extensionVideoId, liveUrl, username, title, on
 
   const handleExtensionProducts = useCallback((data) => {
     setExtensionConnected(true);
-    if (data.products) setExtensionProducts(data.products);
+    if (data.products && data.products.length > 0) {
+      setExtensionProducts(prev => {
+        // Keep the larger dataset (Workbench has 150+ products, Streamer has ~7)
+        // But always update if new data has more items or same source
+        if (data.products.length >= prev.length || data.products.length > 20) {
+          return data.products;
+        }
+        // If new data is smaller, only update if current is empty or very old
+        if (prev.length === 0) return data.products;
+        return prev;
+      });
+    }
   }, []);
 
   const handleExtensionActivities = useCallback((data) => {
@@ -1155,9 +1166,9 @@ const LiveDashboard = ({ videoId, extensionVideoId, liveUrl, username, title, on
                     <tr className="text-[10px] text-gray-500 border-b border-gray-800/30">
                       <th className="text-left py-1.5 px-2 font-medium">#</th>
                       <th className="text-left py-1.5 px-2 font-medium">商品</th>
-                      <th className="text-right py-1.5 px-2 font-medium">インプレッション</th>
-                      <th className="text-right py-1.5 px-2 font-medium">CTR</th>
-                      <th className="text-right py-1.5 px-2 font-medium">注文数</th>
+                      <th className="text-right py-1.5 px-2 font-medium">クリック</th>
+                      <th className="text-right py-1.5 px-2 font-medium">カート</th>
+                      <th className="text-right py-1.5 px-2 font-medium">販売数</th>
                       <th className="text-center py-1.5 px-2 font-medium">状態</th>
                     </tr>
                   </thead>
@@ -1178,12 +1189,12 @@ const LiveDashboard = ({ videoId, extensionVideoId, liveUrl, username, title, on
                             )}
                             <div className="min-w-0">
                               <p className="text-[11px] text-gray-200 truncate max-w-[200px]">{product.name || '商品名不明'}</p>
-                              <p className="text-[10px] text-red-400 font-medium">{product.price || ''}</p>
+                              <p className="text-[10px] text-red-400 font-medium">{product.price ? `${Number(String(product.price).replace(/,/g, '')).toLocaleString()}円` : product.gmv || ''}</p>
                             </div>
                           </div>
                         </td>
-                        <td className="py-2 px-2 text-right text-[11px] text-gray-300">{product.impressions || '--'}</td>
-                        <td className="py-2 px-2 text-right text-[11px] text-gray-300">{product.ctr || '--'}</td>
+                        <td className="py-2 px-2 text-right text-[11px] text-gray-300">{product.clicks || product.impressions || '--'}</td>
+                        <td className="py-2 px-2 text-right text-[11px] text-gray-300">{product.carts || product.cart_count || '--'}</td>
                         <td className="py-2 px-2 text-right text-[11px] text-gray-300">{product.sold || product.orders || '0'}</td>
                         <td className="py-2 px-2 text-center">
                           {(product.isPinned || product.pinned) ? (
