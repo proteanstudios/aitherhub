@@ -20,6 +20,11 @@
   const ACTIVITY_POLL_MS = 2000;       // Poll activities frequently
   const MAX_COMMENTS_PER_BATCH = 50;
   const MAX_ACTIVITIES_PER_BATCH = 50;
+  const DEBUG = true;
+
+  function log(...args) {
+    if (DEBUG) console.log('[AitherHub]', ...args);
+  }
 
   // ============================================================
   // State
@@ -52,22 +57,43 @@
   }
 
   function extractAccount() {
-    // Strategy 1: Look for avatar/account name in the top header bar
-    // TikTok Shop header typically has an avatar with username next to it
+    // Strategy 1: For workbench page - look for username near "LIVE Dashboard" text
+    if (pageType === 'workbench') {
+      const root = document.querySelector('#root');
+      if (root) {
+        const text = root.textContent;
+        // Pattern: "LIVE Dashboard  ryukyogoku  Duration"
+        const match = text.match(/LIVE Dashboard\s+([a-zA-Z0-9._]+)\s+(?:Duration|配信時間)/);
+        if (match) return match[1];
+      }
+    }
+
+    // Strategy 2: For streamer page - look for username in header
+    if (pageType === 'streamer') {
+      // Look for spans in top 60px with username pattern
+      const allSpans = document.querySelectorAll('span');
+      for (const span of allSpans) {
+        if (span.children.length > 0) continue;
+        const rect = span.getBoundingClientRect();
+        if (rect.top > 60) continue;
+        const text = span.textContent.trim();
+        if (text && /^[a-zA-Z0-9._]{2,30}$/.test(text) &&
+            !['LIVE', 'Shop', 'TikTok', 'Home', 'ON', 'OFF', 'English', 'Duration'].includes(text)) {
+          return text;
+        }
+      }
+    }
+
+    // Strategy 3: Generic - look for avatar + username pattern
     const headerSelectors = [
       '[class*="avatar"] + span',
       '[class*="avatar"] + div',
-      '[class*="Avatar"] + span',
-      '[class*="Avatar"] + div',
       '[class*="user-name"]',
       '[class*="userName"]',
       '[class*="accountName"]',
-      '[class*="account-name"]',
-      '[class*="AccountName"]',
       '[class*="nick-name"]',
       '[class*="nickName"]',
     ];
-
     for (const sel of headerSelectors) {
       try {
         const el = document.querySelector(sel);
@@ -75,71 +101,12 @@
           const text = el.textContent.trim();
           if (text && text.length > 0 && text.length < 50) return text;
         }
-      } catch (e) { /* ignore invalid selectors */ }
+      } catch (e) { /* ignore */ }
     }
 
-    // Strategy 2: Look for username pattern in the page header area
-    // The TikTok header bar contains the username near the top-right
-    const headerArea = document.querySelector('header, [class*="header"], [class*="Header"], [class*="topBar"], [class*="top-bar"], [class*="navbar"], [class*="NavBar"]');
-    if (headerArea) {
-      // Look for short text nodes that could be usernames
-      const spans = headerArea.querySelectorAll('span, div');
-      for (const span of spans) {
-        if (span.children.length > 0) continue;
-        const text = span.textContent.trim();
-        // Username pattern: alphanumeric, dots, underscores, 2-30 chars
-        if (text && /^[a-zA-Z0-9._]{2,30}$/.test(text) && 
-            !['LIVE', 'Shop', 'TikTok', 'Home'].includes(text)) {
-          return text;
-        }
-      }
-    }
-
-    // Strategy 3: For streamer page - look near LIVE Manager / LIVEマネージャー text
-    if (pageType === 'streamer') {
-      const root = document.querySelector('#root');
-      if (root) {
-        const text = root.textContent;
-        // English: "LIVE Manager ... username ... Go LIVE"
-        const matchEn = text.match(/LIVE Manager.*?(\w+)\s*Go LIVE/);
-        if (matchEn) return matchEn[1];
-        // Japanese: "LIVEマネージャー ... username ... 今すぐLIVE配信"
-        const matchJa = text.match(/LIVEマネージャー.*?([a-zA-Z0-9._]+)\s*(?:今すぐ|Go)/);
-        if (matchJa) return matchJa[1];
-      }
-    }
-
-    // Strategy 4: For workbench page
-    if (pageType === 'workbench') {
-      const el = document.querySelector('[class*="accountInfo"], [class*="account"]');
-      if (el) return el.textContent.trim();
-      const root = document.querySelector('#root');
-      if (root) {
-        const text = root.textContent;
-        const matchEn = text.match(/LIVE Dashboard\s*[>·]*\s*(\w+)/);
-        if (matchEn) return matchEn[1];
-        const matchJa = text.match(/LIVEダッシュボード\s*[>·]*\s*([a-zA-Z0-9._]+)/);
-        if (matchJa) return matchJa[1];
-      }
-    }
-
-    // Strategy 5: Extract from page URL or document title
+    // Strategy 4: Extract from document title
     const titleMatch = document.title.match(/([a-zA-Z0-9._]+)\s*[-|]\s*(?:TikTok|LIVE)/);
     if (titleMatch) return titleMatch[1];
-
-    // Strategy 6: Look for any element with the account name near the top of the page
-    // Scan all leaf text nodes in the first 200px of the page
-    const allSpans = document.querySelectorAll('span');
-    for (const span of allSpans) {
-      if (span.children.length > 0) continue;
-      const rect = span.getBoundingClientRect();
-      if (rect.top > 60) continue; // Only check top header area
-      const text = span.textContent.trim();
-      if (text && /^[a-zA-Z0-9._]{2,30}$/.test(text) &&
-          !['LIVE', 'Shop', 'TikTok', 'Home', 'ON', 'OFF'].includes(text)) {
-        return text;
-      }
-    }
 
     return '';
   }
@@ -149,12 +116,16 @@
   // ============================================================
   const StreamerExtractor = {
     /**
-     * Extract analytics metrics from the right panel
+     * Extract analytics metrics from the streamer dashboard
+     * 
+     * DOM structure (confirmed):
+     * - Label: div.text-neutral-text3.text-body-s-medium (text: "GMV", "Current viewers", etc.)
+     * - Value: nextElementSibling (text: "155.7万円", "262", etc.)
+     * - Parent: div[class*="metricCard"]
      */
     extractMetrics() {
       const metrics = {};
       const metricLabels = {
-        // English labels
         'GMV': 'gmv',
         'Current viewers': 'current_viewers',
         'Current viewer': 'current_viewers',
@@ -162,7 +133,7 @@
         'TRR': 'trr',
         'Avg. duration': 'avg_duration',
         'Product clicks': 'product_clicks',
-        // Japanese labels (TikTok Shop JP)
+        // Japanese labels
         '視聴者数': 'current_viewers',
         'LIVEのインプレッション': 'impressions',
         'タップスルー率': 'trr',
@@ -170,84 +141,110 @@
         '商品クリック数': 'product_clicks',
       };
 
-      // Walk through all text nodes to find label-value pairs
-      const allElements = document.querySelectorAll('div, span');
-      for (const el of allElements) {
-        const text = el.textContent.trim();
-        for (const [label, key] of Object.entries(metricLabels)) {
-          if (text === label && el.children.length === 0) {
-            // Find the value - usually a sibling or parent's next child
-            const parent = el.parentElement;
-            if (parent) {
-              const siblings = Array.from(parent.children);
-              const idx = siblings.indexOf(el);
-              // Check next sibling
-              if (idx < siblings.length - 1) {
-                metrics[key] = siblings[idx + 1].textContent.trim();
-              } else {
-                // Check parent's text minus label
-                const parentText = parent.textContent.trim();
-                metrics[key] = parentText.replace(label, '').trim();
+      // Strategy 1: Find metric cards by class pattern
+      const metricCards = document.querySelectorAll('[class*="metricCard"]');
+      for (const card of metricCards) {
+        const nameEl = card.querySelector('[class*="name-"]');
+        if (nameEl) {
+          const label = nameEl.textContent.trim();
+          const key = metricLabels[label];
+          if (key) {
+            const valueEl = nameEl.nextElementSibling;
+            if (valueEl) {
+              metrics[key] = valueEl.textContent.trim();
+            }
+          }
+        }
+      }
+
+      // Strategy 2: Fallback - walk through all leaf text nodes
+      if (Object.keys(metrics).length === 0) {
+        const allElements = document.querySelectorAll('div, span');
+        for (const el of allElements) {
+          const text = el.textContent.trim();
+          for (const [label, key] of Object.entries(metricLabels)) {
+            if (text === label && el.children.length === 0) {
+              const parent = el.parentElement;
+              if (parent) {
+                const siblings = Array.from(parent.children);
+                const idx = siblings.indexOf(el);
+                if (idx < siblings.length - 1) {
+                  metrics[key] = siblings[idx + 1].textContent.trim();
+                } else {
+                  const parentText = parent.textContent.trim();
+                  metrics[key] = parentText.replace(label, '').trim();
+                }
               }
             }
           }
         }
       }
 
+      log('Streamer metrics extracted:', metrics);
       return metrics;
     },
 
     /**
-     * Extract product list from the left panel
+     * Extract product list from #product-list
+     * 
+     * DOM structure (confirmed):
+     * - Container: #product-list
+     * - Product items contain: name (span), pin button, metrics text
+     * - Metrics: "Products clicks 450|Add to carts count 138|Items sold 63"
      */
     extractProducts() {
       const products = [];
       const productList = document.querySelector('#product-list');
-      if (!productList) return products;
+      if (!productList) {
+        log('No #product-list found');
+        return products;
+      }
 
-      // Find all product items
-      const items = productList.querySelectorAll('[class*="product"], label');
+      // Find all product items - they are direct children or nested divs
+      const items = productList.querySelectorAll('[class*="product"], label, [class*="item"]');
       const processedNames = new Set();
 
       for (const item of items) {
-        const nameEl = item.querySelector('span');
+        const nameEl = item.querySelector('span, a');
         if (!nameEl) continue;
         
         const name = nameEl.textContent.trim();
         if (!name || name.length < 5 || processedNames.has(name)) continue;
         processedNames.add(name);
 
-        const pinBtn = item.querySelector('button');
-        const isPinned = pinBtn && pinBtn.textContent.includes('Unpin');
+        const isPinned = item.textContent.includes('Unpin') || item.textContent.includes('Pinned');
 
-        // Find metrics near this product
         const parentText = item.textContent;
-        const clicksMatch = parentText.match(/Products clicks\s*(\d+)/);
-        const cartsMatch = parentText.match(/Add to carts count\s*(\d+)/);
-        const soldMatch = parentText.match(/Items sold\s*(\d+)/);
+        const clicksMatch = parentText.match(/Products?\s*clicks?\s*(\d[\d,]*)/i);
+        const cartsMatch = parentText.match(/Add to carts?\s*count\s*(\d[\d,]*)/i);
+        const soldMatch = parentText.match(/Items?\s*sold\s*(\d[\d,]*)/i);
         const priceMatch = parentText.match(/([\d,]+)円/);
-        const stockMatch = parentText.match(/Stock:\s*([\d,]+)/);
+        const stockMatch = parentText.match(/Stock:\s*([\d,]+)/i);
 
         products.push({
           name: name.substring(0, 100),
           pinned: isPinned,
           price: priceMatch ? priceMatch[1] : '',
           stock: stockMatch ? stockMatch[1] : '',
-          clicks: clicksMatch ? parseInt(clicksMatch[1]) : 0,
-          carts: cartsMatch ? parseInt(cartsMatch[1]) : 0,
-          sold: soldMatch ? parseInt(soldMatch[1]) : 0
+          clicks: clicksMatch ? parseInt(clicksMatch[1].replace(/,/g, '')) : 0,
+          carts: cartsMatch ? parseInt(cartsMatch[1].replace(/,/g, '')) : 0,
+          sold: soldMatch ? parseInt(soldMatch[1].replace(/,/g, '')) : 0
         });
       }
 
+      log('Streamer products extracted:', products.length);
       return products;
     },
 
     /**
-     * Extract activity feed from the right panel
+     * Extract activity feed
+     * 
+     * DOM structure (confirmed):
+     * - Activity items: div[class*="sc-leSDtu"] or span.text-neutral-text1.text-body-s-regular
+     * - Text patterns: "1 customer purchased product no. 68|12,786円", "ゆかり just joined"
      */
     extractActivities() {
       const activities = [];
-      // Look for activity items like "xxx just joined", "viewing product"
       const allElements = document.querySelectorAll('div, span');
       
       for (const el of allElements) {
@@ -257,12 +254,12 @@
         let type = null;
         if (text.includes('just joined')) type = 'join';
         else if (text.includes('viewing product')) type = 'view_product';
+        else if (text.includes('purchased')) type = 'order';
         else if (text.includes('placed an order')) type = 'order';
         else if (text.includes('shared')) type = 'share';
         else if (text.includes('followed')) type = 'follow';
         
         if (type && el.children.length <= 2) {
-          const id = hashString(text + Math.floor(Date.now() / 10000));
           if (!seenActivityIds.has(text)) {
             seenActivityIds.add(text);
             activities.push({
@@ -274,35 +271,60 @@
         }
       }
 
-      // Keep set manageable
       if (seenActivityIds.size > 500) {
         const arr = Array.from(seenActivityIds);
         seenActivityIds = new Set(arr.slice(-200));
       }
 
+      if (activities.length > 0) log('Streamer activities extracted:', activities.length);
       return activities.slice(-MAX_ACTIVITIES_PER_BATCH);
     },
 
     /**
      * Extract TikTok AI suggestions
+     * 
+     * DOM structure (confirmed):
+     * - Header: div.arco-collapse-item-header (contains "Suggestion")
+     * - Content: next sibling with suggestion text
      */
     extractSuggestions() {
       const suggestions = [];
-      const allElements = document.querySelectorAll('div');
       
-      for (const el of allElements) {
-        const text = el.textContent.trim();
-        // TikTok suggestions are typically longer Japanese/English text with actionable advice
-        if (text.length > 30 && text.length < 500 && 
-            (text.includes('視聴者') || text.includes('viewers') || 
-             text.includes('紹介') || text.includes('チャンス') ||
-             text.includes('Suggestion') || text.includes('提案'))) {
-          // Check it's a leaf-ish element
-          if (el.children.length <= 3) {
-            suggestions.push({
-              text,
-              timestamp: new Date().toISOString()
-            });
+      // Strategy 1: Look for arco-collapse Suggestion sections
+      const collapseHeaders = document.querySelectorAll('.arco-collapse-item-header-title, [class*="collapse"] [class*="header"]');
+      for (const header of collapseHeaders) {
+        if (header.textContent.trim().includes('Suggestion')) {
+          const parent = header.closest('.arco-collapse-item') || header.parentElement;
+          if (parent) {
+            const content = parent.querySelector('.arco-collapse-item-content, [class*="content"]');
+            if (content) {
+              const text = content.textContent.trim();
+              if (text.length > 10) {
+                suggestions.push({
+                  text,
+                  timestamp: new Date().toISOString()
+                });
+              }
+            }
+          }
+        }
+      }
+
+      // Strategy 2: Fallback - look for suggestion-like text
+      if (suggestions.length === 0) {
+        const allElements = document.querySelectorAll('div');
+        for (const el of allElements) {
+          const text = el.textContent.trim();
+          if (text.length > 30 && text.length < 500 && 
+              (text.includes('コメント率') || text.includes('comment rate') ||
+               text.includes('視聴者') || text.includes('viewers') || 
+               text.includes('Suggestion') || text.includes('提案'))) {
+            if (el.children.length <= 3) {
+              suggestions.push({
+                text,
+                timestamp: new Date().toISOString()
+              });
+            }
           }
         }
       }
@@ -316,7 +338,15 @@
   // ============================================================
   const WorkbenchExtractor = {
     /**
-     * Extract all key metrics
+     * Extract all key metrics from workbench LIVE Dashboard
+     * 
+     * DOM structure (confirmed):
+     * - GMV label: <span> "GMV (円)" inside div.flex.items-center.relative
+     * - GMV value: large number like "1,568,283"
+     * - Items sold / Current viewers: div.text-xl.font-medium.text-neutral-text-1.ml-1
+     *   - nextElementSibling contains the value
+     * - Detail metrics: div.text-base.text-neutral-text-1.truncate (label)
+     *   - nextElementSibling contains the value
      */
     extractMetrics() {
       const metrics = {};
@@ -333,82 +363,144 @@
         'Comment rate': 'comment_rate',
         'Follow rate': 'follow_rate',
         'Tap-through rate': 'tap_through_rate',
+        'Tap-through rate (via LIVE preview)': 'tap_through_preview',
         'LIVE CTR': 'live_ctr',
         'Order rate (SKU orders)': 'order_rate',
         'Share rate': 'share_rate',
         'Like rate': 'like_rate',
-        '> 1 min. views': 'views_over_1min',
-        'Tap-through rate (via LIVE preview)': 'tap_through_preview'
+        '> 1 min. views': 'views_over_1min'
       };
 
-      const allElements = document.querySelectorAll('div');
-      for (const el of allElements) {
-        if (el.children.length > 3) continue;
+      // Strategy 1: Extract hero metrics (Items sold, Current viewers)
+      // These use class: text-xl font-medium text-neutral-text-1 ml-1
+      const heroLabels = document.querySelectorAll('.text-xl.font-medium.text-neutral-text-1');
+      for (const el of heroLabels) {
         const text = el.textContent.trim();
-        
-        for (const [label, key] of Object.entries(metricLabels)) {
-          if (text === label) {
-            // Value is typically in the next sibling or parent's adjacent child
-            const parent = el.parentElement;
-            if (parent) {
-              const fullText = parent.textContent.trim();
-              const value = fullText.replace(label, '').trim().split('\n')[0].trim();
-              if (value && value !== label) {
-                metrics[key] = value;
+        if (text === 'Items sold' || text === 'Current viewers') {
+          const valueEl = el.nextElementSibling;
+          if (valueEl) {
+            const key = metricLabels[text];
+            metrics[key] = valueEl.textContent.trim();
+          }
+        }
+      }
+
+      // Strategy 2: Extract detail metrics
+      // These use class: text-base text-neutral-text-1 truncate
+      const detailLabels = document.querySelectorAll('.text-base.text-neutral-text-1.truncate, .text-base.text-neutral-text-1');
+      for (const el of detailLabels) {
+        const text = el.textContent.trim();
+        const key = metricLabels[text];
+        if (key) {
+          const valueEl = el.nextElementSibling;
+          if (valueEl) {
+            metrics[key] = valueEl.textContent.trim();
+          }
+        }
+      }
+
+      // Strategy 3: Extract GMV (the big number)
+      // GMV label is "GMV (円)" or "GMV" inside a flex container
+      const allSpans = document.querySelectorAll('span');
+      for (const span of allSpans) {
+        const text = span.textContent.trim();
+        if (text.match(/^GMV\s*(\(.*\))?$/)) {
+          // The GMV value is in a sibling or parent's other child
+          const container = span.closest('[class*="flex"][class*="col"]') || span.parentElement?.parentElement;
+          if (container) {
+            // Look for a large number in the container
+            const allText = container.textContent;
+            const numMatch = allText.match(/([\d,]+(?:\.\d+)?)\s*$/m);
+            if (numMatch) {
+              metrics['gmv'] = numMatch[1];
+            }
+            // Also try to find the number in child elements
+            const numberEls = container.querySelectorAll('div, span');
+            for (const numEl of numberEls) {
+              const numText = numEl.textContent.trim();
+              if (/^[\d,]+$/.test(numText) && numText.length > 3) {
+                metrics['gmv'] = numText;
+                break;
               }
             }
           }
         }
       }
 
-      // Also try to get the big hero numbers (GMV, Items sold, Current viewers)
-      const heroSelectors = [
-        { selector: '.text-neutral-text-3.text-bodyL-regular', labels: ['GMV', 'Items sold'] },
-        { selector: '.text-xl.font-medium', labels: ['Current viewers'] }
-      ];
-
-      for (const { selector, labels } of heroSelectors) {
-        const elements = document.querySelectorAll(selector);
-        for (const el of elements) {
-          const parent = el.closest('[class*="metric"], [class*="card"]') || el.parentElement;
-          if (parent) {
-            const text = parent.textContent.trim();
-            for (const label of labels) {
-              if (text.includes(label)) {
-                const match = text.match(new RegExp(label + '\\s*([\\d,.]+[KkMm%円]*)'));
-                if (match) metrics[label.toLowerCase().replace(/\s+/g, '_')] = match[1];
+      // Strategy 4: Fallback - generic label-value extraction
+      if (Object.keys(metrics).length < 3) {
+        const allElements = document.querySelectorAll('div');
+        for (const el of allElements) {
+          if (el.children.length > 3) continue;
+          const text = el.textContent.trim();
+          
+          for (const [label, key] of Object.entries(metricLabels)) {
+            if (text === label && !metrics[key]) {
+              const parent = el.parentElement;
+              if (parent) {
+                const fullText = parent.textContent.trim();
+                const value = fullText.replace(label, '').trim().split('\n')[0].trim();
+                if (value && value !== label) {
+                  metrics[key] = value;
+                }
               }
             }
           }
         }
       }
 
+      log('Workbench metrics extracted:', Object.keys(metrics).length, 'keys:', Object.keys(metrics));
       return metrics;
     },
 
     /**
      * Extract comments from the comment container
+     * 
+     * DOM structure (confirmed):
+     * - Container: div.commentContainer--xxxxx (class contains "commentContainer--")
+     * - Each comment: div.comment--xxxxx (class contains "comment--")
+     *   - Child 1: span.username--xxxxx (text: "Rimi🌹:")
+     *   - Child 2: span.commentContent--xxxxx (text: "やえちゃん❣️ひとつあ・げ・るーーー")
      */
     extractComments() {
       const comments = [];
       
-      // Primary selector: CSS module class
+      // Primary: Find comment elements by CSS module class pattern
       const commentEls = document.querySelectorAll('[class*="comment--"]');
       
       for (const el of commentEls) {
-        const usernameEl = el.querySelector('[class*="username"]');
-        const contentEl = el.querySelector('[class*="commentContent"]');
-        const tagEls = el.querySelectorAll('[class*="userTag"]');
+        // Skip the container itself (commentContainer--)
+        if (el.className.includes('commentContainer')) continue;
         
-        if (!usernameEl || !contentEl) continue;
+        // Find username and content spans
+        const usernameEl = el.querySelector('[class*="username--"]');
+        const contentEl = el.querySelector('[class*="commentContent--"]');
         
-        const username = usernameEl.textContent.trim().replace(/:$/, '');
-        const content = contentEl.textContent.trim();
-        const tags = Array.from(tagEls).map(t => t.textContent.trim());
+        if (!contentEl) continue;
+        
+        let username = '';
+        let content = contentEl.textContent.trim();
+        
+        if (usernameEl) {
+          username = usernameEl.textContent.trim().replace(/:$/, '');
+        } else {
+          // Fallback: extract from full text using ":" separator
+          const fullText = el.textContent.trim();
+          const colonIdx = fullText.indexOf(':');
+          if (colonIdx > 0 && colonIdx < 50) {
+            username = fullText.substring(0, colonIdx).trim();
+          }
+        }
+        
+        if (!content) continue;
         
         const commentId = hashString(username + content);
         if (seenCommentIds.has(commentId)) continue;
         seenCommentIds.add(commentId);
+        
+        // Extract user tags if present
+        const tagEls = el.querySelectorAll('[class*="userTag"], [class*="tag"]');
+        const tags = Array.from(tagEls).map(t => t.textContent.trim()).filter(t => t);
         
         comments.push({
           username,
@@ -424,30 +516,47 @@
         seenCommentIds = new Set(arr.slice(-500));
       }
 
+      if (comments.length > 0) log('Workbench comments extracted:', comments.length);
       return comments.slice(-MAX_COMMENTS_PER_BATCH);
     },
 
     /**
      * Extract product table data
+     * 
+     * DOM structure (confirmed):
+     * - Product table: the table with most rows (147+)
+     * - Each row has 9 cells:
+     *   [0] No. (e.g. "78")
+     *   [1] Product name + ID (has <a> link, text: "セインムー...ID: 173...")
+     *   [2] Pin status ("Pinned" or empty)
+     *   [3] GMV ("161,577円")
+     *   [4] Items sold ("59")
+     *   [5] Add-to-cart count ("138")
+     *   [6] Product Clicks ("698")
+     *   [7] Product Impressions ("1,843")
+     *   [8] Click-Through Rate ("37.87%")
      */
     extractProducts() {
       const products = [];
       const tables = document.querySelectorAll('table');
       
-      // Product table is typically the one with most rows
+      // Find the product table - it's the one with the most rows
       let productTable = null;
       let maxRows = 0;
       for (const t of tables) {
-        const rowCount = t.querySelectorAll('tbody tr, tr').length;
+        const rowCount = t.querySelectorAll('tr').length;
         if (rowCount > maxRows) {
           maxRows = rowCount;
           productTable = t;
         }
       }
 
-      if (!productTable) return products;
+      if (!productTable) {
+        log('No product table found');
+        return products;
+      }
 
-      const rows = productTable.querySelectorAll('tbody tr, tr');
+      const rows = productTable.querySelectorAll('tr');
       for (const row of rows) {
         const cells = row.querySelectorAll('td');
         if (cells.length < 7) continue;
@@ -457,52 +566,80 @@
         const name = nameCell?.querySelector('a')?.textContent.trim() || 
                      nameCell?.textContent.trim() || '';
         
-        // Check for "Pinned" text
-        const isPinned = row.textContent.includes('Pinned');
-        
-        // Extract product ID if available
+        // Extract product ID
         const idMatch = nameCell?.textContent.match(/ID:\s*(\d+)/);
         const productId = idMatch ? idMatch[1] : '';
 
-        // Metrics columns (offset depends on whether Pin column exists)
-        const impressions = cells[cells.length - 6]?.textContent.trim() || '0';
-        const ctr = cells[cells.length - 5]?.textContent.trim() || '0%';
-        const gmv = cells[cells.length - 4]?.textContent.trim() || '0';
-        const cartCount = cells[cells.length - 3]?.textContent.trim() || '0';
-        const stock = cells[cells.length - 2]?.textContent.trim() || '0';
-        const sold = cells[cells.length - 1]?.textContent.trim() || '0';
+        // Determine column mapping based on cell count
+        let isPinned, gmv, sold, cartCount, clicks, impressions, ctr;
 
-        if (name && name.length > 3) {
+        if (cells.length >= 9) {
+          // 9 columns: No, Product, Pin, GMV, Items sold, Add-to-cart, Clicks, Impressions, CTR
+          isPinned = cells[2]?.textContent.trim() === 'Pinned';
+          gmv = cells[3]?.textContent.trim() || '0';
+          sold = cells[4]?.textContent.trim() || '0';
+          cartCount = cells[5]?.textContent.trim() || '0';
+          clicks = cells[6]?.textContent.trim() || '0';
+          impressions = cells[7]?.textContent.trim() || '0';
+          ctr = cells[8]?.textContent.trim() || '0%';
+        } else if (cells.length >= 8) {
+          // 8 columns: No, Product, GMV, Items sold, Add-to-cart, Clicks, Impressions, CTR
+          isPinned = row.textContent.includes('Pinned');
+          gmv = cells[2]?.textContent.trim() || '0';
+          sold = cells[3]?.textContent.trim() || '0';
+          cartCount = cells[4]?.textContent.trim() || '0';
+          clicks = cells[5]?.textContent.trim() || '0';
+          impressions = cells[6]?.textContent.trim() || '0';
+          ctr = cells[7]?.textContent.trim() || '0%';
+        } else {
+          // Fewer columns - try best effort
+          isPinned = row.textContent.includes('Pinned');
+          gmv = cells[2]?.textContent.trim() || '0';
+          sold = cells[3]?.textContent.trim() || '0';
+          cartCount = cells[4]?.textContent.trim() || '0';
+          clicks = cells[5]?.textContent.trim() || '0';
+          impressions = cells[6]?.textContent.trim() || '0';
+          ctr = '0%';
+        }
+
+        // Clean product name (remove ID suffix)
+        const cleanName = name.replace(/ID:\s*\d+/g, '').trim();
+
+        if (cleanName && cleanName.length > 3) {
           products.push({
             no: parseInt(no) || 0,
-            name: name.substring(0, 150),
+            name: cleanName.substring(0, 150),
             product_id: productId,
             pinned: isPinned,
-            impressions,
-            ctr,
             gmv,
+            sold,
             cart_count: cartCount,
-            stock,
-            sold
+            clicks,
+            impressions,
+            ctr
           });
         }
       }
 
+      log('Workbench products extracted:', products.length);
       return products;
     },
 
     /**
      * Extract traffic source data
+     * 
+     * DOM structure (confirmed):
+     * - Table with headers: ["Channel", "GMV", "Impressions", "Views"]
+     * - 24 rows of traffic data
      */
     extractTrafficSources() {
       const sources = [];
       const tables = document.querySelectorAll('table');
       
-      // Traffic source table has Channel, GMV, Impressions, Views headers
       for (const table of tables) {
         const headers = Array.from(table.querySelectorAll('th')).map(h => h.textContent.trim());
-        if (headers.includes('Channel') && headers.includes('Views')) {
-          const rows = table.querySelectorAll('tbody tr, tr');
+        if (headers.includes('Channel') && (headers.includes('Views') || headers.includes('Impressions'))) {
+          const rows = table.querySelectorAll('tr');
           for (const row of rows) {
             const cells = row.querySelectorAll('td');
             if (cells.length >= 4) {
@@ -518,6 +655,7 @@
         }
       }
 
+      log('Workbench traffic sources extracted:', sources.length);
       return sources;
     }
   };
@@ -530,7 +668,7 @@
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
       hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32bit integer
+      hash = hash & hash;
     }
     return hash.toString(36);
   }
@@ -542,16 +680,22 @@
     if (isRunning) return;
     isRunning = true;
 
-    console.log(`[AitherHub] Starting data extraction on ${pageType} page`);
+    log(`Starting data extraction on ${pageType} page`);
+
+    const account = extractAccount();
+    const roomId = extractRoomId();
+    const region = extractRegion();
+
+    log(`Account: ${account}, Room: ${roomId}, Region: ${region}`);
 
     // Notify background that live session started
     chrome.runtime.sendMessage({
       type: 'LIVE_STARTED',
       data: {
         source: pageType,
-        roomId: extractRoomId(),
-        account: extractAccount(),
-        region: extractRegion()
+        roomId,
+        account,
+        region
       }
     });
 
@@ -568,7 +712,7 @@
         const trafficSources = pageType === 'workbench' ? 
           WorkbenchExtractor.extractTrafficSources() : [];
 
-        // Only send if metrics changed
+        // Only send if metrics changed or products exist
         const metricsStr = JSON.stringify(metrics);
         if (metricsStr !== JSON.stringify(lastMetrics) || products.length > 0) {
           lastMetrics = metrics;
@@ -582,6 +726,7 @@
               trafficSources
             }
           });
+          log('Sent LIVE_DATA with', Object.keys(metrics).length, 'metrics,', products.length, 'products,', trafficSources.length, 'traffic sources');
         }
       } catch (err) {
         console.error('[AitherHub] Metrics extraction error:', err);
@@ -589,7 +734,7 @@
     }, POLL_INTERVAL_MS);
     pollTimers.push(metricsTimer);
 
-    // Comment polling (workbench only has comment container)
+    // Comment polling (workbench has comment container)
     if (pageType === 'workbench') {
       const commentTimer = setInterval(() => {
         try {
@@ -602,6 +747,7 @@
                 comments
               }
             });
+            log('Sent', comments.length, 'new comments');
           }
         } catch (err) {
           console.error('[AitherHub] Comment extraction error:', err);
@@ -648,20 +794,21 @@
     });
 
     removeIndicator();
-    console.log('[AitherHub] Stopped data extraction');
+    log('Stopped data extraction');
   }
 
   // ============================================================
   // MutationObserver for Real-time Updates
   // ============================================================
   function setupMutationObserver() {
-    // Watch for new comments
+    // Watch for new comments (workbench)
+    // Container class: commentContainer--xxxxx
     const commentContainer = document.querySelector('[class*="commentContainer"]');
     if (commentContainer) {
+      log('MutationObserver attached to comment container');
       const observer = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
           if (mutation.addedNodes.length > 0) {
-            // New comment added - extract immediately
             const comments = WorkbenchExtractor.extractComments();
             if (comments.length > 0) {
               chrome.runtime.sendMessage({
@@ -673,12 +820,37 @@
         }
       });
       observer.observe(commentContainer, { childList: true, subtree: true });
+    } else {
+      log('Comment container not found for MutationObserver, will retry...');
+      // Retry after a delay
+      setTimeout(() => {
+        const container = document.querySelector('[class*="commentContainer"]');
+        if (container) {
+          log('MutationObserver attached to comment container (retry)');
+          const observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+              if (mutation.addedNodes.length > 0) {
+                const comments = WorkbenchExtractor.extractComments();
+                if (comments.length > 0) {
+                  chrome.runtime.sendMessage({
+                    type: 'LIVE_DATA',
+                    data: { source: pageType, comments }
+                  });
+                }
+              }
+            }
+          });
+          observer.observe(container, { childList: true, subtree: true });
+        }
+      }, 5000);
     }
 
     // Watch for activity updates (streamer page)
     if (pageType === 'streamer') {
-      const activityContainer = document.querySelector('[class*="activity"], [class*="Activity"]');
+      // Activity items use class sc-leSDtu or similar styled-components classes
+      const activityContainer = document.querySelector('[class*="activity"], [class*="Activity"], [class*="sc-"]');
       if (activityContainer) {
+        log('MutationObserver attached to activity container');
         const observer = new MutationObserver(() => {
           const activities = StreamerExtractor.extractActivities();
           if (activities.length > 0) {
@@ -720,24 +892,31 @@
   // ============================================================
   function init() {
     if (pageType === 'unknown') {
-      console.log('[AitherHub] Unknown page type, not activating');
+      log('Unknown page type, not activating');
       return;
     }
 
-    console.log(`[AitherHub] Detected ${pageType} page, waiting for content to load...`);
+    log(`Detected ${pageType} page, waiting for content to load...`);
 
     // Wait for page content to be ready
     const checkReady = setInterval(() => {
-      const hasContent = document.querySelector('#root') && 
-                         document.querySelector('#root').textContent.length > 100;
+      const root = document.querySelector('#root');
+      const hasContent = root && root.textContent.length > 100;
       if (hasContent) {
         clearInterval(checkReady);
+        log('Page content ready, starting polling');
         startPolling();
       }
     }, 1000);
 
-    // Timeout after 30 seconds
-    setTimeout(() => clearInterval(checkReady), 30000);
+    // Timeout after 60 seconds (increased from 30)
+    setTimeout(() => {
+      clearInterval(checkReady);
+      if (!isRunning) {
+        log('Timeout waiting for content, starting anyway');
+        startPolling();
+      }
+    }, 60000);
 
     // Clean up on page unload
     window.addEventListener('beforeunload', () => {
