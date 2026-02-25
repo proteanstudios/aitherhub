@@ -127,10 +127,10 @@ const DonutChart = ({ data, size = 120 }) => {
 // ─── Conversion Funnel ────────────────────────────────────
 const ConversionFunnel = ({ metrics }) => {
   const items = [
-    { label: 'インプレッション', key: 'impressions', icon: '👁' },
-    { label: '視聴数', key: 'views', icon: '📺' },
-    { label: '商品クリック', key: 'product_clicks', icon: '🖱️' },
-    { label: '注文数', key: 'orders', icon: '🛒' },
+    { label: 'インプレッション', key: 'impressions', color: '#00F2EA' },
+    { label: '視聴数', key: 'views', color: '#7D01FF' },
+    { label: '商品クリック', key: 'product_clicks', color: '#FF0050' },
+    { label: '注文数', key: 'orders', color: '#FFD93D' },
   ];
 
   const values = items.map(item => {
@@ -151,7 +151,10 @@ const ConversionFunnel = ({ metrics }) => {
         return (
           <div key={item.key}>
             <div className="flex items-center justify-between mb-0.5">
-              <span className="text-[10px] text-gray-400">{item.icon} {item.label}</span>
+              <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
+                {item.label}
+              </span>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-white">{formatLargeNum(val)}</span>
                 {convRate && (
@@ -737,7 +740,20 @@ const LiveDashboard = ({ videoId, extensionVideoId, liveUrl, username, title, on
 
   const handleExtensionTraffic = useCallback((data) => {
     setExtensionConnected(true);
-    if (data.traffic_sources) setExtensionTraffic(data.traffic_sources);
+    if (data.traffic_sources && data.traffic_sources.length > 0) {
+      // Chrome extension sends {channel, gmv, impressions, views}
+      // DonutChart expects {name, percentage}
+      const sources = data.traffic_sources.map(s => {
+        const viewsNum = parseMetricNumber(s.views || s.impressions || '0');
+        return { name: s.channel || s.name || 'Unknown', views: viewsNum, rawViews: s.views, rawGmv: s.gmv };
+      });
+      const totalViews = sources.reduce((sum, s) => sum + s.views, 0) || 1;
+      const withPercentage = sources.map(s => ({
+        ...s,
+        percentage: (s.views / totalViews) * 100,
+      })).filter(s => s.percentage > 0).sort((a, b) => b.percentage - a.percentage);
+      setExtensionTraffic(withPercentage);
+    }
   }, []);
 
   const handleExtensionStreamUrl = useCallback((data) => {
@@ -865,9 +881,20 @@ const LiveDashboard = ({ videoId, extensionVideoId, liveUrl, username, title, on
   const workerShareRate = viewerCount > 0 ? fmtPct((wm.share_count / viewerCount) * 100) : null;
   const workerLikeRate = viewerCount > 0 ? fmtPct((wm.like_count / viewerCount) * 100) : null;
 
-  // Format GMV with yen symbol
+  // Format GMV with yen symbol and proper formatting
   const rawGMV = em.gmv || em.GMV || '';
-  const displayGMV = rawGMV ? (rawGMV.includes('¥') || rawGMV.includes('円') ? rawGMV : `¥${rawGMV}`) : '¥0';
+  const displayGMV = (() => {
+    if (!rawGMV) return '¥0';
+    // If already formatted with 万円, return as-is
+    if (String(rawGMV).includes('万')) return rawGMV;
+    // Parse numeric value
+    const numVal = parseMetricNumber(String(rawGMV));
+    if (numVal >= 10000) {
+      return `${(numVal / 10000).toFixed(1)}万円`;
+    }
+    // Format with comma separator
+    return `¥${numVal.toLocaleString()}`;
+  })();
   const displayViewers = em.current_viewers || em['Current viewers'] || em['\u8996\u8074\u8005\u6570'] || formatLargeNum(wm.viewer_count);
   const displayImpressions = getMetric('impressions', 'Impressions', 'LIVE impression', 'LIVE impressions', 'LIVE\u306e\u30a4\u30f3\u30d7\u30ec\u30c3\u30b7\u30e7\u30f3') || '--';
   const displayItemsSold = em.items_sold || em['Items sold'] || em['\u8ca9\u58f2\u6570'] || '0';
@@ -875,13 +902,23 @@ const LiveDashboard = ({ videoId, extensionVideoId, liveUrl, username, title, on
   const displayTTR = getMetric('tap_through_rate', 'Tap-through rate', 'TRR', 'trr', '\u30bf\u30c3\u30d7\u30b9\u30eb\u30fc\u7387') || '--';
   const displayAvgDuration = getMetric('avg_duration', 'Avg. viewing duration', 'Avg. viewing duration per view', 'Avg. duration', '\u5e73\u5747\u8996\u8074\u6642\u9593') || '--';
   const displayLiveCTR = getMetric('live_ctr', 'LIVE CTR') || '--';
-  const displayCommentRate = getMetric('comment_rate', 'Comment rate', '\u30b3\u30e1\u30f3\u30c8\u7387') || workerCommentRate || '--';
-  const displayFollowRate = getMetric('follow_rate', 'Follow rate', '\u30d5\u30a9\u30ed\u30fc\u7387') || '--';
-  const displayOrderRate = getMetric('order_rate', 'Order rate (SKU orders)', '\u6ce8\u6587\u7387') || '--';
-  const displayShareRate = getMetric('share_rate', 'Share rate', '\u30b7\u30a7\u30a2\u7387') || workerShareRate || '--';
-  const displayLikeRate = getMetric('like_rate', 'Like rate', '\u3044\u3044\u306d\u7387') || workerLikeRate || '--';
-  const displayGPM = getMetric('gpm', 'show_gpm', 'Show GPM', '\u8868\u793aGPM') || '--';
-  const displayWatchGPM = getMetric('watch_gpm', 'Watch GPM', '\u8996\u8074GPM') || '--';
+  const displayCommentRate = getMetric('comment_rate', 'Comment rate', 'コメント率') || workerCommentRate || '--';
+  // Follow rate may contain concatenated values like "0.03%86.83%"
+  const rawFollowRate = getMetric('follow_rate', 'Follow rate', 'フォロー率');
+  const displayFollowRate = (() => {
+    if (!rawFollowRate) return '--';
+    const str = String(rawFollowRate);
+    // Check for concatenated percentages like "0.03%86.83%"
+    const matches = str.match(/(\d+\.?\d*%)/g);
+    if (matches && matches.length >= 2) {
+      return matches[0]; // Use only the first value
+    }
+    return str;
+  })();
+  const displayOrderRate = getMetric('order_rate', 'Order rate (SKU orders)', '注文率') || '--';
+  const displayShareRate = getMetric('share_rate', 'Share rate', 'シェア率') || workerShareRate || '--';
+  const displayLikeRate = getMetric('like_rate', 'Like rate', 'いいね率') || workerLikeRate || '--';
+  const displayGPM = getMetric('gpm', 'show_gpm', 'Show GPM', '表示GPM') || '--';
 
   // ─── RENDER ─────────────────────────────────────────────
   if (!showDashboard) {
@@ -1093,7 +1130,6 @@ const LiveDashboard = ({ videoId, extensionVideoId, liveUrl, username, title, on
               <MetricTile label="コメント率" value={displayCommentRate} />
               <MetricTile label="フォロー率" value={displayFollowRate} />
               <MetricTile label="表示GPM" value={displayGPM} />
-              <MetricTile label="視聴GPM" value={displayWatchGPM} small />
               <MetricTile label="注文率" value={displayOrderRate} small />
               <MetricTile label="シェア率" value={displayShareRate} small />
               <MetricTile label="いいね率" value={displayLikeRate} small />
