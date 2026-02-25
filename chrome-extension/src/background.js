@@ -1,9 +1,10 @@
 /**
- * AitherHub LIVE Connector - Background Service Worker v1.1.0
+ * AitherHub LIVE Connector - Background Service Worker v1.4.0
  * 
  * Handles:
- * - Receiving data from content scripts
+ * - Receiving data from content scripts (content.js + ai_commander.js)
  * - Sending data to AitherHub API
+ * - AI analysis requests forwarding
  * - Managing connection state
  * - Token refresh
  * - Periodic health checks
@@ -26,7 +27,8 @@ let stats = {
   dataSent: 0,
   comments: 0,
   products: 0,
-  uptime: 0
+  uptime: 0,
+  aiAnalyses: 0
 };
 
 // Load settings from storage on startup
@@ -74,6 +76,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       handleLiveEnded(message.data);
       sendResponse({ status: 'ok' });
       break;
+
+    case 'AI_ANALYZE':
+      // Forward AI analysis request to backend
+      handleAiAnalyze(message.data)
+        .then(result => sendResponse(result))
+        .catch(err => sendResponse({ 
+          suggestions: [{
+            type: 'info',
+            text: 'AI分析に接続できませんでした: ' + err.message
+          }]
+        }));
+      return true; // Keep channel open for async response
 
     case 'GET_STATUS':
       sendResponse({
@@ -128,7 +142,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleLiveStarted(data, tab) {
   console.log('[AitherHub BG] Live session started:', data);
   sessionStartTime = Date.now();
-  stats = { dataSent: 0, comments: 0, products: 0, uptime: 0 };
+  stats = { dataSent: 0, comments: 0, products: 0, uptime: 0, aiAnalyses: 0 };
   
   const payload = {
     event: 'live_started',
@@ -223,6 +237,35 @@ async function handleLiveData(data, tab) {
     }
     
     updateBadge('ERR', '#FF1744');
+  }
+}
+
+/**
+ * Handle AI analysis request from AI Commander panel
+ */
+async function handleAiAnalyze(snapshot) {
+  console.log('[AitherHub BG] AI analysis requested');
+  stats.aiAnalyses++;
+
+  try {
+    const result = await sendToAPI('/api/v1/live/ai/analyze', snapshot);
+    return result;
+  } catch (err) {
+    console.error('[AitherHub BG] AI analysis API failed:', err);
+    
+    // If 401, try to refresh token and retry
+    if (err.message && err.message.includes('401')) {
+      const refreshed = await tryRefreshToken();
+      if (refreshed) {
+        try {
+          return await sendToAPI('/api/v1/live/ai/analyze', snapshot);
+        } catch (retryErr) {
+          throw retryErr;
+        }
+      }
+    }
+    
+    throw err;
   }
 }
 
