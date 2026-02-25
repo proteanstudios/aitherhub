@@ -8,7 +8,7 @@ import LoginModal from "./modals/LoginModal";
 import ProcessingSteps from "./ProcessingSteps";
 import VideoDetail from "./VideoDetail";
 import FeedbackPage from "./FeedbackPage";
-import LiveDashboard from "./LiveDashboard";
+// LiveDashboard is now at /live/:sessionId route (LivePage.jsx)
 
 export default function MainContent({
   children,
@@ -613,14 +613,8 @@ export default function MainContent({
       setMessage(`@${result.username} のライブ録画を開始しました`);
       setMessageType('success');
       setUploadedVideoId(result.video_id);
-      // Open LiveDashboard instead of navigating away
-      setLiveDashboardData({
-        videoId: result.video_id,
-        liveUrl: liveUrl.trim(),
-        username: result.username,
-        title: result.stream_title || liveInfo?.title || '',
-      });
-      setShowLiveDashboard(true);
+      // Navigate to LiveDashboard page
+      navigate(`/live/${result.video_id}`);
     } catch (err) {
       const detail = err?.response?.data?.detail || err.message || 'ライブキャプチャの開始に失敗しました';
       setMessage(detail);
@@ -791,131 +785,11 @@ export default function MainContent({
   }, [uploadedVideoId, selectedVideoId, isLoggedIn]);
 
   // ── Auto-detect active live session ──
-  // When videoData is loaded and it's a live_capture with 'capturing' status,
-  // auto-open LiveDashboard.
-  useEffect(() => {
-    if (!videoData || showLiveDashboard) return;
+  // NOTE: Auto-open LiveDashboard removed. LiveDashboard is now at /live/:sessionId route.
 
-    const videoId = videoData.id;
-    if (!videoId) return;
+  // NOTE: Auto-detect extension session removed. Use /live/:sessionId route instead.
 
-    // Case 1: Video is a live_capture currently being captured
-    if (videoData.upload_type === 'live_capture' && videoData.status === 'capturing') {
-      // Extract username from original_filename (format: tiktok_live_{username}.mp4)
-      const match = videoData.original_filename?.match(/tiktok_live_(.+)\.mp4/);
-      const filenameUsername = match ? match[1] : null;
-
-      // Check if there's an active live session for this video
-      VideoService.getLiveStatus(videoId)
-        .then((res) => {
-          const data = res?.data || res || {};
-          if (data.is_live) {
-            const username = data.stream_info?.username || filenameUsername || 'unknown';
-            setLiveDashboardData({
-              videoId,
-              liveUrl: `https://www.tiktok.com/@${username}/live`,
-              username,
-              title: data.stream_info?.title || '',
-            });
-            setShowLiveDashboard(true);
-          } else if (filenameUsername) {
-            // Backend in-memory store may have been cleared (server restart),
-            // but the video is still in 'capturing' status - show LiveDashboard anyway
-            setLiveDashboardData({
-              videoId,
-              liveUrl: `https://www.tiktok.com/@${filenameUsername}/live`,
-              username: filenameUsername,
-              title: '',
-            });
-            setShowLiveDashboard(true);
-          }
-        })
-        .catch(() => {
-          // API failed but video is capturing - still show LiveDashboard
-          if (filenameUsername) {
-            setLiveDashboardData({
-              videoId,
-              liveUrl: `https://www.tiktok.com/@${filenameUsername}/live`,
-              username: filenameUsername,
-              title: '',
-            });
-            setShowLiveDashboard(true);
-          }
-        });
-      return;
-    }
-  }, [videoData, showLiveDashboard]);
-
-  // ── Auto-detect extension-based live session ──
-  // When selectedVideoId starts with ext_, check live status directly
-  // (ext_ videos don't exist in DB, so videoData will be null after 404)
-  useEffect(() => {
-    if (showLiveDashboard) return;
-    const videoId = selectedVideoId;
-    if (!videoId || typeof videoId !== 'string' || !videoId.startsWith('ext_')) return;
-
-    VideoService.getLiveStatus(videoId)
-      .then((res) => {
-        const data = res?.data || res || {};
-        if (data.is_live) {
-          const username = data.stream_info?.account || data.stream_info?.username || 'unknown';
-          setLiveDashboardData({
-            videoId,
-            liveUrl: '',
-            username,
-            title: '',
-          });
-          setShowLiveDashboard(true);
-        }
-      })
-      .catch(() => {
-        // Also try extension sessions API as fallback
-        VideoService.getActiveExtensionSessions()
-          .then((res) => {
-            const data = res?.data || res || {};
-            const sessions = data.sessions || [];
-            const match = sessions.find(s => s.video_id === videoId);
-            if (match) {
-              const username = match.account || 'unknown';
-              setLiveDashboardData({
-                videoId,
-                liveUrl: '',
-                username,
-                title: '',
-              });
-              setShowLiveDashboard(true);
-            }
-          })
-          .catch(() => { /* ignore */ });
-      });
-  }, [selectedVideoId, showLiveDashboard]);
-
-  // ── Auto-detect active extension sessions on page load ──
-  // When user navigates to home (no video selected), check for active extension sessions
-  useEffect(() => {
-    if (showLiveDashboard || !isLoggedIn) return;
-    const videoId = selectedVideoId || uploadedVideoId;
-    if (videoId) return; // Already viewing a specific video
-
-    VideoService.getActiveExtensionSessions()
-      .then((res) => {
-        const data = res?.data || res || {};
-        const sessions = data.sessions || [];
-        if (sessions.length > 0) {
-          const session = sessions[0]; // Take the most recent active session
-          const extVideoId = session.video_id;
-          const username = session.account || 'unknown';
-          setLiveDashboardData({
-            videoId: extVideoId,
-            liveUrl: '',
-            username,
-            title: '',
-          });
-          setShowLiveDashboard(true);
-        }
-      })
-      .catch(() => { /* ignore */ });
-  }, [isLoggedIn, selectedVideoId, uploadedVideoId, showLiveDashboard]);
+  // NOTE: Auto-detect on page load removed. Use /live/:sessionId route instead.
 
   // Handle processing complete - reload video data
   const handleProcessingComplete = useCallback(async () => {
@@ -965,7 +839,6 @@ export default function MainContent({
   const shouldRenderProcessing =
     !showFeedback &&
     !shouldShowGlobalVideoLoading &&
-    !showLiveDashboard &&
     (uploading || Boolean(activeProcessingVideoId)) &&
     (!videoData || (videoData.status !== 'DONE' && videoData.status !== 'ERROR'));
   const processingInitialStatus = useMemo(() => {
@@ -993,16 +866,7 @@ export default function MainContent({
 
   return (
     <div className="flex flex-col h-screen">
-      {/* Real-time Live Dashboard Overlay */}
-      {showLiveDashboard && liveDashboardData && (
-        <LiveDashboard
-          videoId={liveDashboardData.videoId}
-          liveUrl={liveDashboardData.liveUrl}
-          username={liveDashboardData.username}
-          title={liveDashboardData.title}
-          onClose={handleCloseLiveDashboard}
-        />
-      )}
+      {/* LiveDashboard is now at /live/:sessionId route - no overlay here */}
       <Header onOpenSidebar={onOpenSidebar} user={user} setUser={setUser} />
 
       <LoginModal

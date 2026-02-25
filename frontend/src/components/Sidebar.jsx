@@ -417,7 +417,8 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          handleVideoClick(video);
+                                          navigate(`/live/${video.id}`);
+                                          if (onClose) onClose();
                                         }}
                                         className="inline-flex items-center gap-1 text-[10px] font-semibold text-white bg-red-500 hover:bg-red-600 px-2 py-0.5 rounded-full transition-colors animate-pulse"
                                       >
@@ -470,8 +471,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                           }`} key={session.video_id}
                             onClick={() => {
                               setSelectedVideoId(session.video_id);
-                              navigate(`/video/${session.video_id}`);
-                              if (onVideoSelect) onVideoSelect({ id: session.video_id, upload_type: 'live_capture', status: 'capturing' });
+                              navigate(`/live/${session.video_id}`);
                               if (onClose) onClose();
                             }}>
                             <Radio className="min-w-[16px] w-4 h-4 text-red-400" />
@@ -485,9 +485,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setSelectedVideoId(session.video_id);
-                                    navigate(`/video/${session.video_id}`);
-                                    if (onVideoSelect) onVideoSelect({ id: session.video_id, upload_type: 'live_capture', status: 'capturing' });
+                                    navigate(`/live/${session.video_id}`);
                                     if (onClose) onClose();
                                   }}
                                   className="inline-flex items-center gap-1 text-[10px] font-semibold text-white bg-red-500 hover:bg-red-600 px-2 py-0.5 rounded-full transition-colors animate-pulse"
