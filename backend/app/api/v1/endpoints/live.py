@@ -250,6 +250,21 @@ async def get_live_status(
         if stream_info:
             account = stream_info.get("account") or stream_info.get("username")
 
+    # Check for active extension sessions for this user
+    # This allows the frontend to set up dual-SSE connection
+    extension_video_id = None
+    try:
+        user_id = current_user["id"]
+        ext_sessions = await live_event_service.get_extension_sessions_from_db(
+            db, user_id, active_only=True
+        )
+        if ext_sessions:
+            extension_video_id = ext_sessions[0].get("video_id")
+            if not account:
+                account = ext_sessions[0].get("account")
+    except Exception as e:
+        logger.warning(f"Failed to check extension sessions: {e}")
+
     return {
         "video_id": video_id,
         "is_live": is_live,
@@ -257,6 +272,7 @@ async def get_live_status(
         "latest_metrics": latest_metrics,
         "session_type": session_type,
         "account": account,
+        "extension_video_id": extension_video_id,
     }
 
 

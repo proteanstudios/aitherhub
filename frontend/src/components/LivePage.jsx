@@ -52,9 +52,10 @@ export default function LivePage() {
       .then((res) => {
         const data = res?.data || res || {};
         if (data.is_live) {
-          const username = data.stream_info?.account || data.stream_info?.username || 'unknown';
+          const username = data.account || data.stream_info?.account || data.stream_info?.username || 'unknown';
           setDashboardData({
             videoId,
+            extensionVideoId: data.extension_video_id || undefined,
             liveUrl: '',
             username,
             title: data.stream_info?.title || '',

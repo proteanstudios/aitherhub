@@ -303,9 +303,18 @@ def _bridge_event(session_id: str, event_type: str, payload: dict) -> None:
     """
     If this extension session is bridged to a live_capture session,
     forward the event to that session's SSE pipeline as well.
+    Works even if is_live() is False (e.g. after backend restart),
+    as long as there are active SSE subscribers on the bridged video_id.
     """
     bridged_vid = _session_bridge.get(session_id)
-    if bridged_vid and live_event_service.is_live(bridged_vid):
+    if not bridged_vid:
+        return
+    # Forward if is_live OR if there are active SSE subscribers
+    has_subscribers = bool(live_event_service._live_subscribers.get(bridged_vid))
+    if live_event_service.is_live(bridged_vid) or has_subscribers:
+        # Ensure is_live is set so SSE stream doesn't close
+        if not live_event_service.is_live(bridged_vid):
+            live_event_service._live_status[bridged_vid] = True
         live_event_service.push_event(
             video_id=bridged_vid,
             event_type=event_type,

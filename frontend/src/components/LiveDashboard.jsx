@@ -842,35 +842,46 @@ const LiveDashboard = ({ videoId, extensionVideoId, liveUrl, username, title, on
   const showDashboard = loadStep >= 4 || metricsReceived;
   const hasExtensionData = extensionConnected || extensionComments.length > 0 || extensionProducts.length > 0 || Object.keys(extensionMetrics).length > 1;
 
-  // Get display values from extension metrics
+  // Get display values from extension metrics AND worker metrics
   // Chrome extension sends keys like: gmv, current_viewers, impressions, tap_through_rate, etc.
   // Workbench also sends: items_sold, views, show_gpm, comment_rate, follow_rate, etc.
+  // Worker sends: viewer_count, total_comments, total_likes, total_shares, total_gifts
   const em = extensionMetrics;
+  const wm = metrics; // worker metrics
   const getMetric = (...keys) => {
     for (const key of keys) {
       const val = em[key];
       if (val !== undefined && val !== null && val !== '' && val !== '0' && val !== 0) return val;
     }
-    return '--';
+    return null; // Return null instead of '--' so we can try worker fallback
   };
+
+  // Helper: format percentage
+  const fmtPct = (val) => val !== null && val !== undefined ? `${val.toFixed(2)}%` : null;
+
+  // Compute rates from worker metrics as fallback
+  const viewerCount = wm.viewer_count || 0;
+  const workerCommentRate = viewerCount > 0 ? fmtPct((wm.comment_count / viewerCount) * 100) : null;
+  const workerShareRate = viewerCount > 0 ? fmtPct((wm.share_count / viewerCount) * 100) : null;
+  const workerLikeRate = viewerCount > 0 ? fmtPct((wm.like_count / viewerCount) * 100) : null;
 
   // Format GMV with yen symbol
   const rawGMV = em.gmv || em.GMV || '';
   const displayGMV = rawGMV ? (rawGMV.includes('¥') || rawGMV.includes('円') ? rawGMV : `¥${rawGMV}`) : '¥0';
-  const displayViewers = em.current_viewers || em['Current viewers'] || em['視聴者数'] || formatLargeNum(metrics.viewer_count);
-  const displayImpressions = getMetric('impressions', 'Impressions', 'LIVE impression', 'LIVE impressions', 'LIVEのインプレッション');
-  const displayItemsSold = em.items_sold || em['Items sold'] || em['販売数'] || '0';
-  const displayProductClicks = getMetric('product_clicks', 'Product clicks', '商品クリック数');
-  const displayTTR = getMetric('tap_through_rate', 'Tap-through rate', 'TRR', 'trr', 'タップスルー率');
-  const displayAvgDuration = getMetric('avg_duration', 'Avg. viewing duration', 'Avg. viewing duration per view', 'Avg. duration', '平均視聴時間');
-  const displayLiveCTR = getMetric('live_ctr', 'LIVE CTR');
-  const displayCommentRate = getMetric('comment_rate', 'Comment rate', 'コメント率');
-  const displayFollowRate = getMetric('follow_rate', 'Follow rate', 'フォロー率');
-  const displayOrderRate = getMetric('order_rate', 'Order rate (SKU orders)', '注文率');
-  const displayShareRate = getMetric('share_rate', 'Share rate', 'シェア率');
-  const displayLikeRate = getMetric('like_rate', 'Like rate', 'いいね率');
-  const displayGPM = getMetric('gpm', 'show_gpm', 'Show GPM', '表示GPM');
-  const displayWatchGPM = getMetric('watch_gpm', 'Watch GPM', '視聴GPM');
+  const displayViewers = em.current_viewers || em['Current viewers'] || em['\u8996\u8074\u8005\u6570'] || formatLargeNum(wm.viewer_count);
+  const displayImpressions = getMetric('impressions', 'Impressions', 'LIVE impression', 'LIVE impressions', 'LIVE\u306e\u30a4\u30f3\u30d7\u30ec\u30c3\u30b7\u30e7\u30f3') || '--';
+  const displayItemsSold = em.items_sold || em['Items sold'] || em['\u8ca9\u58f2\u6570'] || '0';
+  const displayProductClicks = getMetric('product_clicks', 'Product clicks', '\u5546\u54c1\u30af\u30ea\u30c3\u30af\u6570') || '--';
+  const displayTTR = getMetric('tap_through_rate', 'Tap-through rate', 'TRR', 'trr', '\u30bf\u30c3\u30d7\u30b9\u30eb\u30fc\u7387') || '--';
+  const displayAvgDuration = getMetric('avg_duration', 'Avg. viewing duration', 'Avg. viewing duration per view', 'Avg. duration', '\u5e73\u5747\u8996\u8074\u6642\u9593') || '--';
+  const displayLiveCTR = getMetric('live_ctr', 'LIVE CTR') || '--';
+  const displayCommentRate = getMetric('comment_rate', 'Comment rate', '\u30b3\u30e1\u30f3\u30c8\u7387') || workerCommentRate || '--';
+  const displayFollowRate = getMetric('follow_rate', 'Follow rate', '\u30d5\u30a9\u30ed\u30fc\u7387') || '--';
+  const displayOrderRate = getMetric('order_rate', 'Order rate (SKU orders)', '\u6ce8\u6587\u7387') || '--';
+  const displayShareRate = getMetric('share_rate', 'Share rate', '\u30b7\u30a7\u30a2\u7387') || workerShareRate || '--';
+  const displayLikeRate = getMetric('like_rate', 'Like rate', '\u3044\u3044\u306d\u7387') || workerLikeRate || '--';
+  const displayGPM = getMetric('gpm', 'show_gpm', 'Show GPM', '\u8868\u793aGPM') || '--';
+  const displayWatchGPM = getMetric('watch_gpm', 'Watch GPM', '\u8996\u8074GPM') || '--';
 
   // ─── RENDER ─────────────────────────────────────────────
   if (!showDashboard) {
