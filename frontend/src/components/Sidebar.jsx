@@ -514,17 +514,17 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                     {/* ── Video Analysis Section ── */}
                     {regularVideos.length > 0 && (
                       <>
-                        <div className="flex items-center gap-2 w-full px-1 pt-1 pb-0.5 shrink-0">
+                        <div className="flex items-center gap-2 w-full px-1 pt-2 pb-1 shrink-0">
                           <Video className="w-3.5 h-3.5 text-gray-400" />
                           <span className="text-xs font-semibold text-gray-500">{window.__t('analysisHistory')}</span>
                         </div>
                         {regularVideos.map((video) => (
-                          <div className={`group relative w-full min-h-10 flex items-center gap-2 font-semibold cursor-pointer text-black p-2 rounded-lg text-left transition-all duration-200 ease-out ${selectedVideoId === video.id
-                            ? "bg-purple-100 text-purple-700"
-                            : "hover:text-gray-400 hover:bg-gray-100"
+                          <div className={`group relative w-full flex items-start gap-2.5 cursor-pointer px-2.5 py-3 rounded-lg text-left transition-all duration-200 ease-out border border-transparent ${selectedVideoId === video.id
+                            ? "bg-purple-50 border-purple-200"
+                            : "hover:bg-gray-50"
                             }`} key={video.id}
                             onClick={() => { if (renamingVideoId !== video.id && deleteConfirmVideoId !== video.id) handleVideoClick(video); }}>
-                            <svg xmlns="http://www.w3.org/2000/svg" className="min-w-[16px]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="min-w-[16px] mt-0.5 flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
 
                             {renamingVideoId === video.id ? (
                               <input autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)}
@@ -539,40 +539,40 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                               </div>
                             ) : (
                               <>
-                                <div className="flex flex-col flex-1 min-w-0">
-                                  <span className="text-sm font-medium text-[#6b7280] block truncate">
+                                <div className="flex flex-col flex-1 min-w-0 gap-1.5">
+                                  <span className="text-[13px] font-medium text-gray-700 leading-snug truncate" title={video.original_filename}>
                                     {video.original_filename || `${window.__t('videoTitleFallback')} ${video.id}`}
                                   </span>
                                   {video.top_products && video.top_products.length > 0 && (
-                                    <div className="flex items-center gap-1 mt-0.5">
+                                    <div className="flex items-center gap-1.5">
                                       <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 text-emerald-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-                                      <span className="text-[10px] text-emerald-600 truncate" title={video.top_products.join(' / ')}>
-                                        {video.top_products.map(p => p.length > 15 ? p.slice(0, 15) + '...' : p).join(' / ')}
+                                      <span className="text-[11px] text-emerald-600 truncate leading-normal" title={video.top_products.join(' / ')}>
+                                        {video.top_products[0] ? (video.top_products[0].length > 20 ? video.top_products[0].slice(0, 20) + '...' : video.top_products[0]) : ''}
                                       </span>
                                     </div>
                                   )}
-                                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                  <div className="flex items-center gap-3 flex-wrap">
                                     {video.total_gmv != null && video.total_gmv > 0 && (
-                                      <span className="inline-flex items-center gap-0.5 text-[10px] text-orange-600">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                                      <span className="inline-flex items-center gap-1 text-[11px] text-orange-600 font-medium leading-normal">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
                                         {video.total_gmv >= 10000 ? `¥${(video.total_gmv / 10000).toFixed(1)}万` : `¥${Math.round(video.total_gmv).toLocaleString()}`}
                                       </span>
                                     )}
                                     {video.stream_duration != null && video.stream_duration > 0 && (
-                                      <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-500">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                      <span className="inline-flex items-center gap-1 text-[11px] text-blue-500 leading-normal">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                                         {(() => { const h = Math.floor(video.stream_duration / 3600); const m = Math.floor((video.stream_duration % 3600) / 60); return h > 0 ? `${h}h${m.toString().padStart(2,'0')}m` : `${m}m`; })()}
                                       </span>
                                     )}
                                     {video.completed_clip_count > 0 && (
-                                      <span className="inline-flex items-center gap-0.5 text-[10px] text-purple-600">
-                                        <Scissors className="w-3 h-3" />
+                                      <span className="inline-flex items-center gap-1 text-[11px] text-purple-600 leading-normal">
+                                        <Scissors className="w-3 h-3 flex-shrink-0" />
                                         {video.completed_clip_count}
                                       </span>
                                     )}
                                     {video.memo_count > 0 && (
-                                      <span className="inline-flex items-center gap-0.5 text-[10px] text-green-600">
-                                        <MessageSquareText className="w-3 h-3" />
+                                      <span className="inline-flex items-center gap-1 text-[11px] text-green-600 leading-normal">
+                                        <MessageSquareText className="w-3 h-3 flex-shrink-0" />
                                         {video.memo_count}
                                       </span>
                                     )}

@@ -1079,9 +1079,9 @@ export default function MainContent({
                       onProcessingComplete={handleProcessingComplete}
                     />
                   </div>
-                  {/* Allow uploading another video while current one is processing */}
+                  {/* Allow uploading another video or starting live analysis while current one is processing */}
                   {!uploading && activeProcessingVideoId && (
-                    <div className="mt-6 pt-4 border-t border-gray-200 flex justify-center">
+                    <div className="mt-6 pt-4 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-center gap-3">
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1103,6 +1103,29 @@ export default function MainContent({
                         className="px-6 py-3 text-sm text-[#7D01FF] border-2 border-[#7D01FF] rounded-lg hover:bg-purple-50 transition-colors cursor-pointer bg-white shadow-sm"
                       >
                         + {window.__t('newUploadButton') || '新しい動画をアップロード'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          setUploadedVideoId(null);
+                          setVideoData(null);
+                          setSelectedFile(null);
+                          setCleanVideoFile(null);
+                          setCleanVideoFiles([]);
+                          setProductExcelFile(null);
+                          setTrendExcelFile(null);
+                          setProgress(0);
+                          setMessage("");
+                          setDuplicateVideo(null);
+                          setUploadMode('live_capture');
+                          navigate('/');
+                        }}
+                        className="px-6 py-3 text-sm text-white bg-gradient-to-r from-[#FF0050] to-[#00F2EA] rounded-lg hover:opacity-90 transition-opacity cursor-pointer shadow-sm flex items-center gap-2"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M2 12h2"/><path d="M20 12h2"/></svg>
+                        ライブURLで分析
                       </button>
                     </div>
                   )}
