@@ -715,7 +715,7 @@ class VideoService extends BaseApiService {
    * @param {Function} params.onError - Callback on error
    * @returns {Object} - Control object with close() method
    */
-  streamLiveEvents({ videoId, onMetrics = () => {}, onAdvice = () => {}, onStreamUrl = () => {}, onStreamEnded = () => {}, onExtensionComments = () => {}, onExtensionProducts = () => {}, onExtensionActivities = () => {}, onExtensionTraffic = () => {}, onError = () => {} }) {
+  streamLiveEvents({ videoId, onMetrics = () => {}, onAdvice = () => {}, onStreamUrl = () => {}, onStreamEnded = () => {}, onExtensionComments = () => {}, onExtensionProducts = () => {}, onExtensionActivities = () => {}, onExtensionTraffic = () => {}, onExtensionConnected = () => {}, onExtensionDisconnected = () => {}, onError = () => {} }) {
     const base = (this.client && this.client.defaults && this.client.defaults.baseURL) || import.meta.env.VITE_API_BASE_URL || "";
     const url = `${base.replace(/\/$/, "")}/api/v1/live/${encodeURIComponent(videoId)}/stream`;
 
@@ -798,6 +798,12 @@ class VideoService extends BaseApiService {
                     break;
                   case 'extension_traffic':
                     onExtensionTraffic(eventPayload);
+                    break;
+                  case 'extension_connected':
+                    onExtensionConnected(eventPayload);
+                    break;
+                  case 'extension_disconnected':
+                    onExtensionDisconnected(eventPayload);
                     break;
                   case 'extension_metrics':
                     onMetrics({ ...eventPayload, source: 'extension' });

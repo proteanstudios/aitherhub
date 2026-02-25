@@ -7,6 +7,10 @@ Chrome extension, which scrapes TikTok Shop LIVE Manager and LIVE Dashboard.
 Session lifecycle is persisted in PostgreSQL (live_sessions table).
 Real-time event data is kept in-memory for SSE performance.
 
+When a live_capture session is already active for the same user,
+extension data is bridged (forwarded) to that session so the
+LiveDashboard shows both HLS video and extension metrics/comments.
+
 POST /api/v1/live/extension/session/start  - Start a new extension session
 POST /api/v1/live/extension/session/end    - End an extension session
 POST /api/v1/live/extension/data           - Push real-time data
@@ -49,6 +53,7 @@ class ExtensionSessionStartResponse(BaseModel):
     session_id: str
     video_id: str
     message: str
+    bridged_to: Optional[str] = None  # video_id of bridged live_capture session
 
 
 class ExtensionDataRequest(BaseModel):
@@ -74,6 +79,32 @@ _extension_data: Dict[str, dict] = {}
 
 # session_id -> video_id mapping (in-memory cache, rebuilt from DB)
 _session_to_video: Dict[str, str] = {}
+
+# session_id -> bridged live_capture video_id (extension data forwarded here)
+_session_bridge: Dict[str, str] = {}
+
+
+# ── Helper: Find active live_capture session for user ────────────────
+
+async def _find_active_live_capture(db: AsyncSession, user_id: int) -> Optional[str]:
+    """
+    Find an active live_capture session for the given user.
+    Returns the video_id if found, None otherwise.
+    """
+    try:
+        sessions = await live_event_service.get_active_sessions_from_db(db, user_id)
+        for s in sessions:
+            if s.get("session_type") == "live_capture" and s.get("is_active"):
+                return s["video_id"]
+    except Exception as e:
+        logger.warning(f"Failed to search for active live_capture sessions: {e}")
+
+    # Also check in-memory status
+    for vid, is_active in live_event_service._live_status.items():
+        if is_active and not vid.startswith("ext_"):
+            return vid
+
+    return None
 
 
 # ── Endpoints ───────────────────────────────────────────────────────
@@ -107,6 +138,9 @@ async def start_extension_session(
     Called when the extension detects a TikTok Shop LIVE page.
     Creates a virtual video_id for this extension session.
     Persists session info to PostgreSQL.
+
+    If an active live_capture session exists for the same user,
+    the extension data will be bridged to that session.
     """
     session_id = str(uuid.uuid4())
 
@@ -122,6 +156,27 @@ async def start_extension_session(
         "room_id": request.room_id,
         "region": request.region,
     }
+
+    # Check for active live_capture session to bridge data
+    bridged_video_id = await _find_active_live_capture(db, user_id)
+    if bridged_video_id:
+        _session_bridge[session_id] = bridged_video_id
+        logger.info(
+            f"Extension session {session_id} will bridge data to "
+            f"live_capture session {bridged_video_id}"
+        )
+        # Push extension_connected event to the live_capture session
+        live_event_service.push_event(
+            video_id=bridged_video_id,
+            event_type="extension_connected",
+            payload={
+                "source": request.source,
+                "account": request.account,
+                "room_id": request.room_id,
+                "region": request.region,
+                "extension_session_id": session_id,
+            },
+        )
 
     # Persist to database
     await live_event_service._create_session_in_db(
@@ -161,14 +216,30 @@ async def start_extension_session(
     logger.info(
         f"Extension session started: {session_id} "
         f"(source={request.source}, account={request.account}, "
-        f"room_id={request.room_id}) [persisted to DB]"
+        f"room_id={request.room_id}, bridged_to={bridged_video_id}) "
+        f"[persisted to DB]"
     )
 
     return ExtensionSessionStartResponse(
         session_id=session_id,
         video_id=video_id,
         message=f"Session started for {request.account or 'unknown'} ({request.source})",
+        bridged_to=bridged_video_id,
     )
+
+
+def _bridge_event(session_id: str, event_type: str, payload: dict) -> None:
+    """
+    If this extension session is bridged to a live_capture session,
+    forward the event to that session's SSE pipeline as well.
+    """
+    bridged_vid = _session_bridge.get(session_id)
+    if bridged_vid and live_event_service.is_live(bridged_vid):
+        live_event_service.push_event(
+            video_id=bridged_vid,
+            event_type=event_type,
+            payload=payload,
+        )
 
 
 @router.post("/data")
@@ -182,6 +253,8 @@ async def push_extension_data(
     Data includes metrics, comments, products, activities, traffic sources.
     Pushes all data into the existing SSE pipeline so the frontend
     LiveDashboard receives it automatically.
+
+    If bridged to a live_capture session, data is also forwarded there.
     """
     session_id = request.session_id
 
@@ -203,6 +276,18 @@ async def push_extension_data(
             )
 
     video_id = _session_to_video[session_id]
+
+    # If not yet bridged, check if a live_capture session has started since
+    if session_id not in _session_bridge:
+        bridged_vid = await _find_active_live_capture(db, current_user["id"])
+        if bridged_vid:
+            _session_bridge[session_id] = bridged_vid
+            logger.info(f"Late bridge: extension {session_id} -> {bridged_vid}")
+            live_event_service.push_event(
+                video_id=bridged_vid,
+                event_type="extension_connected",
+                payload={"extension_session_id": session_id},
+            )
 
     # Ensure in-memory data store exists
     if session_id not in _extension_data:
@@ -232,12 +317,17 @@ async def push_extension_data(
         if len(ext_data["metrics_history"]) > 500:
             ext_data["metrics_history"] = ext_data["metrics_history"][-500:]
 
-        # Push to main SSE pipeline
+        metrics_payload = {"source": "extension", **request.metrics}
+
+        # Push to extension session's SSE pipeline
         live_event_service.push_event(
             video_id=video_id,
             event_type="metrics",
-            payload={"source": "extension", **request.metrics},
+            payload=metrics_payload,
         )
+
+        # Bridge to live_capture session
+        _bridge_event(session_id, "metrics", metrics_payload)
 
         # Periodically persist metrics to DB (every 10th update)
         if len(ext_data["metrics_history"]) % 10 == 0:
@@ -255,27 +345,37 @@ async def push_extension_data(
         if len(ext_data["comments"]) > 2000:
             ext_data["comments"] = ext_data["comments"][-2000:]
 
+        comments_payload = {
+            "comments": request.comments,
+            "total_count": len(ext_data["comments"]),
+        }
+
         live_event_service.push_event(
             video_id=video_id,
             event_type="extension_comments",
-            payload={
-                "comments": request.comments,
-                "total_count": len(ext_data["comments"]),
-            },
+            payload=comments_payload,
         )
+
+        # Bridge to live_capture session
+        _bridge_event(session_id, "extension_comments", comments_payload)
 
     # ── Process Products ──
     if request.products:
         ext_data["products"] = request.products  # Replace with latest snapshot
 
+        products_payload = {
+            "products": request.products,
+            "count": len(request.products),
+        }
+
         live_event_service.push_event(
             video_id=video_id,
             event_type="extension_products",
-            payload={
-                "products": request.products,
-                "count": len(request.products),
-            },
+            payload=products_payload,
         )
+
+        # Bridge to live_capture session
+        _bridge_event(session_id, "extension_products", products_payload)
 
     # ── Process Activities ──
     if request.activities:
@@ -284,37 +384,53 @@ async def push_extension_data(
         if len(ext_data["activities"]) > 1000:
             ext_data["activities"] = ext_data["activities"][-1000:]
 
+        activities_payload = {
+            "activities": request.activities,
+            "total_count": len(ext_data["activities"]),
+        }
+
         live_event_service.push_event(
             video_id=video_id,
             event_type="extension_activities",
-            payload={
-                "activities": request.activities,
-                "total_count": len(ext_data["activities"]),
-            },
+            payload=activities_payload,
         )
+
+        # Bridge to live_capture session
+        _bridge_event(session_id, "extension_activities", activities_payload)
 
     # ── Process Traffic Sources ──
     if request.traffic_sources:
         ext_data["traffic_sources"] = request.traffic_sources
 
+        traffic_payload = {"traffic_sources": request.traffic_sources}
+
         live_event_service.push_event(
             video_id=video_id,
             event_type="extension_traffic",
-            payload={"traffic_sources": request.traffic_sources},
+            payload=traffic_payload,
         )
+
+        # Bridge to live_capture session
+        _bridge_event(session_id, "extension_traffic", traffic_payload)
 
     # ── Process Suggestions ──
     if request.suggestions:
         ext_data["suggestions"] = request.suggestions
 
+        suggestions_payload = {"suggestions": request.suggestions}
+
         live_event_service.push_event(
             video_id=video_id,
             event_type="extension_suggestions",
-            payload={"suggestions": request.suggestions},
+            payload=suggestions_payload,
         )
+
+        # Bridge to live_capture session
+        _bridge_event(session_id, "extension_suggestions", suggestions_payload)
 
     return {
         "status": "ok",
+        "bridged_to": _session_bridge.get(session_id),
         "processed": {
             "metrics": bool(request.metrics),
             "comments": len(request.comments),
@@ -351,6 +467,18 @@ async def end_extension_session(
     except Exception as e:
         logger.error(f"Failed to end session in DB: {e}")
 
+    # Notify bridged session that extension disconnected
+    bridged_vid = _session_bridge.get(session_id)
+    if bridged_vid:
+        live_event_service.push_event(
+            video_id=bridged_vid,
+            event_type="extension_disconnected",
+            payload={
+                "message": "Chrome拡張が切断されました",
+                "extension_session_id": session_id,
+            },
+        )
+
     # Update in-memory state
     if video_id:
         live_event_service.push_event(
@@ -363,6 +491,9 @@ async def end_extension_session(
             },
         )
         live_event_service._live_status[video_id] = False
+
+    # Clean up bridge
+    _session_bridge.pop(session_id, None)
 
     logger.info(f"Extension session ended: {session_id} [persisted to DB]")
 
@@ -429,6 +560,8 @@ async def list_extension_sessions(
                 "metrics_snapshots": 0,
                 "latest_metrics": session.get("latest_metrics", {}),
             }
+        # Include bridge info
+        session["bridged_to"] = _session_bridge.get(sid)
 
     return {"sessions": sessions, "count": len(sessions)}
 
@@ -451,20 +584,9 @@ async def _recover_session_from_db(
         )
         session = result.scalar_one_or_none()
 
-        if not session or not session.is_active:
-            return None
-
-        # Rebuild in-memory caches
-        _session_to_video[session_id] = session.video_id
-        live_event_service._live_status[session.video_id] = True
-
-        if session.stream_info:
-            live_event_service._live_stream_info[session.video_id] = session.stream_info
-
-        if session.latest_metrics:
-            live_event_service._live_metrics[session.video_id] = session.latest_metrics
-
-        if session_id not in _extension_data:
+        if session and session.user_id == user_id:
+            # Rebuild in-memory cache
+            _session_to_video[session_id] = session.video_id
             _extension_data[session_id] = {
                 "comments": [],
                 "products": [],
@@ -474,15 +596,25 @@ async def _recover_session_from_db(
                 "metrics_history": [],
                 "latest_metrics": session.latest_metrics or {},
             }
+            live_event_service._live_status[session.video_id] = session.is_active
+            if session.stream_info:
+                live_event_service._live_stream_info[session.video_id] = session.stream_info
 
-        return {
-            "session_id": session_id,
-            "video_id": session.video_id,
-            "active": session.is_active,
-        }
+            # Also try to recover bridge
+            bridged_vid = await _find_active_live_capture(db, user_id)
+            if bridged_vid:
+                _session_bridge[session_id] = bridged_vid
+
+            return {
+                "session_id": session_id,
+                "video_id": session.video_id,
+                "account": session.account,
+                "source": session.source,
+            }
     except Exception as e:
-        logger.warning(f"Failed to recover session from DB (table may not exist): {e}")
-        return None
+        logger.warning(f"Failed to recover session from DB: {e}")
+
+    return None
 
 
 def _get_session_summary(session_id: str) -> dict:

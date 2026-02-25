@@ -566,6 +566,14 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
       onExtensionProducts: handleExtensionProducts,
       onExtensionActivities: handleExtensionActivities,
       onExtensionTraffic: handleExtensionTraffic,
+      onExtensionConnected: (data) => {
+        console.log('LiveDashboard: Extension connected (bridged):', data);
+        setExtensionConnected(true);
+      },
+      onExtensionDisconnected: (data) => {
+        console.log('LiveDashboard: Extension disconnected:', data);
+        setExtensionConnected(false);
+      },
       onError: (err) => {
         console.error('LiveSSE error:', err);
         setError('接続が切断されました。再接続中...');
