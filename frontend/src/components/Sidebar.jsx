@@ -182,19 +182,23 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
         const res = await VideoService.getActiveExtensionSessions();
         const data = res?.data || res || {};
         const sessions = data.sessions || [];
-        // Filter out sessions that already have a matching live_capture video in the list
+        // Filter out sessions that already have a matching live_capture video
         const liveVideoIds = new Set(liveVideos.map(v => v.id));
-        const filtered = sessions.filter(s => !liveVideoIds.has(s.video_id));
-        // Deduplicate by account: keep only the latest session per account
-        const byAccount = new Map();
-        for (const s of filtered) {
-          const key = s.account || s.video_id;
-          const existing = byAccount.get(key);
-          if (!existing || (s.started_at && (!existing.started_at || s.started_at > existing.started_at))) {
-            byAccount.set(key, s);
-          }
+        const liveVideoAccounts = new Set(liveVideos.map(v => (v.original_filename || '').replace(/^tiktok_live_/, '').replace(/\.mp4$/, '')).filter(Boolean));
+        const filtered = sessions.filter(s => {
+          // Skip if video_id matches a live_capture video
+          if (liveVideoIds.has(s.video_id)) return false;
+          // Skip if account matches a live_capture video's account
+          if (s.account && liveVideoAccounts.has(s.account)) return false;
+          return true;
+        });
+        // Keep only the single most recent session (1 user = 1 live at a time)
+        if (filtered.length <= 1) {
+          setExtensionSessions(filtered);
+        } else {
+          filtered.sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
+          setExtensionSessions([filtered[0]]);
         }
-        setExtensionSessions(Array.from(byAccount.values()));
       } catch {
         setExtensionSessions([]);
       }
