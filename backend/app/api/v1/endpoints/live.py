@@ -140,8 +140,11 @@ async def stream_live_events(
         last_event_ts = time.time() - 60  # Get events from last 60 seconds
         notify = live_event_service.subscribe(video_id)
         stream_ended_received = False
-        grace_start = time.time()
-        GRACE_PERIOD = 120  # 2 minutes grace period
+        last_data_ts = time.time()  # Track when we last received real data
+        IDLE_TIMEOUT = 600  # 10 minutes without any data before auto-closing
+
+        # Mark this video_id as live (in case backend restarted and lost state)
+        live_event_service._live_status[video_id] = True
 
         try:
             # Send initial state if available
@@ -167,15 +170,17 @@ async def stream_live_events(
                     last_event_ts = event["timestamp"]
                     if event["event_type"] == "stream_ended":
                         stream_ended_received = True
+                    elif event["event_type"] not in ("heartbeat",):
+                        last_data_ts = time.time()  # Reset idle timer on real data
 
                 if stream_ended_received:
                     break
 
-                elapsed = time.time() - grace_start
-                if elapsed > GRACE_PERIOD and not live_event_service.is_live(video_id):
-                    if live_event_service.get_latest_metrics(video_id) is not None:
-                        yield f"data: {json.dumps({'event_type': 'stream_ended', 'payload': {'message': 'ライブ配信が終了しました'}})}\n\n"
-                        break
+                # Only close if idle for IDLE_TIMEOUT (no data at all)
+                idle_time = time.time() - last_data_ts
+                if idle_time > IDLE_TIMEOUT and not live_event_service.is_live(video_id):
+                    yield f"data: {json.dumps({'event_type': 'stream_ended', 'payload': {'message': '\u30e9\u30a4\u30d6\u914d\u4fe1\u304c\u7d42\u4e86\u3057\u307e\u3057\u305f'}})}\n\n"
+                    break
 
                 heartbeat_count += 1
                 if heartbeat_count % 3 == 0:

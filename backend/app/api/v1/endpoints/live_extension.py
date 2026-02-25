@@ -90,6 +90,7 @@ async def _find_active_live_capture(db: AsyncSession, user_id: int) -> Optional[
     """
     Find an active live_capture session for the given user.
     Returns the video_id if found, None otherwise.
+    Also checks for any non-extension video_id that has active SSE subscribers.
     """
     try:
         sessions = await live_event_service.get_active_sessions_from_db(db, user_id)
@@ -99,9 +100,17 @@ async def _find_active_live_capture(db: AsyncSession, user_id: int) -> Optional[
     except Exception as e:
         logger.warning(f"Failed to search for active live_capture sessions: {e}")
 
-    # Also check in-memory status
+    # Check in-memory status for active non-extension sessions
     for vid, is_active in live_event_service._live_status.items():
         if is_active and not vid.startswith("ext_"):
+            return vid
+
+    # Check for video_ids with active SSE subscribers (frontend is connected)
+    for vid, subs in live_event_service._live_subscribers.items():
+        if subs and not vid.startswith("ext_"):
+            # Frontend is actively listening on this video_id
+            # Mark it as live and return it
+            live_event_service._live_status[vid] = True
             return vid
 
     return None
@@ -339,12 +348,14 @@ async def push_extension_data(
 
     video_id = _session_to_video[session_id]
 
-    # If not yet bridged, check if a live_capture session has started since
-    if session_id not in _session_bridge:
+    # Always try to find/refresh bridge on every data push
+    # This handles backend restarts where in-memory bridge is lost
+    bridged_vid = _session_bridge.get(session_id)
+    if not bridged_vid or not live_event_service.is_live(bridged_vid):
         bridged_vid = await _find_active_live_capture(db, current_user["id"])
         if bridged_vid:
             _session_bridge[session_id] = bridged_vid
-            logger.info(f"Late bridge: extension {session_id} -> {bridged_vid}")
+            logger.info(f"Bridge (re)established: extension {session_id} -> {bridged_vid}")
             live_event_service.push_event(
                 video_id=bridged_vid,
                 event_type="extension_connected",

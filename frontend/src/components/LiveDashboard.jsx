@@ -597,7 +597,7 @@ function formatTime(seconds) {
 }
 
 // ─── Main LiveDashboard Component ─────────────────────────
-const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
+const LiveDashboard = ({ videoId, extensionVideoId, liveUrl, username, title, onClose }) => {
   // State
   const [isConnected, setIsConnected] = useState(false);
   const [streamUrl, setStreamUrl] = useState(null);
@@ -641,6 +641,7 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
   ];
 
   const sseRef = useRef(null);
+  const extSseRef = useRef(null);
   const timerRef = useRef(null);
   const startTimeRef = useRef(Date.now());
   const seenAdviceMessagesRef = useRef(new Set());
@@ -657,10 +658,18 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
   const handleMetrics = useCallback((data) => {
     if (data.source === 'extension') {
       setExtensionConnected(true);
-      setExtensionMetrics(data);
-      if (data.current_viewers) {
-        const viewerNum = parseInt(String(data.current_viewers).replace(/[^0-9]/g, '')) || 0;
+      setExtensionMetrics(prev => ({ ...prev, ...data }));
+      
+      // Extract viewer count from various possible keys
+      const viewerStr = data.current_viewers || data['Current viewers'] || data['\u8996\u8074\u8005\u6570'];
+      if (viewerStr) {
+        const viewerNum = parseInt(String(viewerStr).replace(/[^0-9]/g, '')) || 0;
         setMetrics(prev => ({ ...prev, viewer_count: viewerNum }));
+        // Also update history for sparkline
+        setMetricsHistory(prev => ({
+          ...prev,
+          viewers: [...prev.viewers.slice(-59), viewerNum],
+        }));
       }
     } else {
       setMetrics(prev => ({
@@ -752,7 +761,40 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
     return () => clearInterval(timer);
   }, [loadStep]);
 
-  // Connect SSE
+  // SSE event handlers factory (shared between primary and extension SSE)
+  const createSseHandlers = (isPrimary = true) => ({
+    onMetrics: (data) => {
+      setLoadStep(prev => (prev < 5 ? 5 : prev));
+      handleMetrics(data);
+    },
+    onAdvice: handleAdvice,
+    onStreamUrl: (data) => {
+      if (data && data.stream_url) {
+        setStreamUrl(data.stream_url);
+        setLoadStep(prev => Math.max(prev, 3));
+      }
+      if (data && data.source === 'extension') {
+        setLoadStep(5);
+      }
+      handleExtensionStreamUrl(data);
+    },
+    onStreamEnded: isPrimary ? handleStreamEnded : () => {},
+    onExtensionComments: handleExtensionComments,
+    onExtensionProducts: handleExtensionProducts,
+    onExtensionActivities: handleExtensionActivities,
+    onExtensionTraffic: handleExtensionTraffic,
+    onExtensionConnected: (data) => {
+      setExtensionConnected(true);
+    },
+    onExtensionDisconnected: () => {
+      setExtensionConnected(false);
+    },
+    onError: (err) => {
+      if (isPrimary) setError('接続が切断されました。再接続中...');
+    },
+  });
+
+  // Connect SSE (primary + optional extension)
   useEffect(() => {
     if (!videoId) return;
 
@@ -767,38 +809,20 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
 
     setTimeout(() => setLoadStep(2), 3000);
 
+    // Primary SSE connection
     sseRef.current = VideoService.streamLiveEvents({
       videoId,
-      onMetrics: (data) => {
-        setLoadStep(prev => (prev < 5 ? 5 : prev));
-        handleMetrics(data);
-      },
-      onAdvice: handleAdvice,
-      onStreamUrl: (data) => {
-        if (data && data.stream_url) {
-          setStreamUrl(data.stream_url);
-          setLoadStep(prev => Math.max(prev, 3));
-        }
-        if (data && data.source === 'extension') {
-          setLoadStep(5);
-        }
-        handleExtensionStreamUrl(data);
-      },
-      onStreamEnded: handleStreamEnded,
-      onExtensionComments: handleExtensionComments,
-      onExtensionProducts: handleExtensionProducts,
-      onExtensionActivities: handleExtensionActivities,
-      onExtensionTraffic: handleExtensionTraffic,
-      onExtensionConnected: (data) => {
-        setExtensionConnected(true);
-      },
-      onExtensionDisconnected: () => {
-        setExtensionConnected(false);
-      },
-      onError: (err) => {
-        setError('接続が切断されました。再接続中...');
-      },
+      ...createSseHandlers(true),
     });
+
+    // If we have a separate extension video_id, connect to that too
+    // This handles the case where bridge is not working
+    if (extensionVideoId && extensionVideoId !== videoId) {
+      extSseRef.current = VideoService.streamLiveEvents({
+        videoId: extensionVideoId,
+        ...createSseHandlers(false),
+      });
+    }
 
     setIsConnected(true);
 
@@ -808,33 +832,45 @@ const LiveDashboard = ({ videoId, liveUrl, username, title, onClose }) => {
 
     return () => {
       if (sseRef.current) sseRef.current.close();
+      if (extSseRef.current) extSseRef.current.close();
       clearTimeout(metricsTimer);
     };
-  }, [videoId, liveUrl]);
+  }, [videoId, extensionVideoId, liveUrl]);
 
-  const showDashboard = loadStep >= 5 || metricsReceived;
-  const hasExtensionData = extensionConnected || extensionComments.length > 0 || extensionProducts.length > 0;
+  // Show dashboard after metrics arrive OR after loadStep reaches 4 (8 seconds timeout)
+  // This prevents being stuck on loading screen when extension data hasn't arrived yet
+  const showDashboard = loadStep >= 4 || metricsReceived;
+  const hasExtensionData = extensionConnected || extensionComments.length > 0 || extensionProducts.length > 0 || Object.keys(extensionMetrics).length > 1;
 
   // Get display values from extension metrics
-  const getMetric = (key, fallback = '--') => {
-    return extensionMetrics[key] || extensionMetrics[key.replace(/_/g, '')] || fallback;
+  // Chrome extension sends keys like: gmv, current_viewers, impressions, tap_through_rate, etc.
+  // Workbench also sends: items_sold, views, show_gpm, comment_rate, follow_rate, etc.
+  const em = extensionMetrics;
+  const getMetric = (...keys) => {
+    for (const key of keys) {
+      const val = em[key];
+      if (val !== undefined && val !== null && val !== '' && val !== '0' && val !== 0) return val;
+    }
+    return '--';
   };
 
-  const displayGMV = extensionMetrics.gmv || '¥0';
-  const displayViewers = extensionMetrics.current_viewers || extensionMetrics['視聴者数'] || formatLargeNum(metrics.viewer_count);
-  const displayImpressions = extensionMetrics.impressions || extensionMetrics['LIVEのインプレッション'] || '--';
-  const displayItemsSold = extensionMetrics.items_sold || extensionMetrics['販売数'] || '0';
-  const displayProductClicks = extensionMetrics.product_clicks || extensionMetrics['商品クリック数'] || '--';
-  const displayTTR = extensionMetrics.trr || extensionMetrics['タップスルー率'] || extensionMetrics.tap_through_rate || '--';
-  const displayAvgDuration = extensionMetrics.avg_duration || extensionMetrics['平均視聴時間'] || '--';
-  const displayLiveCTR = extensionMetrics.live_ctr || extensionMetrics['LIVE CTR'] || '--';
-  const displayCommentRate = extensionMetrics.comment_rate || extensionMetrics['コメント率'] || '--';
-  const displayFollowRate = extensionMetrics.follow_rate || extensionMetrics['フォロー率'] || '--';
-  const displayOrderRate = extensionMetrics.order_rate || extensionMetrics['注文率'] || '--';
-  const displayShareRate = extensionMetrics.share_rate || extensionMetrics['シェア率'] || '--';
-  const displayLikeRate = extensionMetrics.like_rate || extensionMetrics['いいね率'] || '--';
-  const displayGPM = extensionMetrics.gpm || extensionMetrics['表示GPM'] || '--';
-  const displayWatchGPM = extensionMetrics.watch_gpm || extensionMetrics['視聴GPM'] || '--';
+  // Format GMV with yen symbol
+  const rawGMV = em.gmv || em.GMV || '';
+  const displayGMV = rawGMV ? (rawGMV.includes('¥') || rawGMV.includes('円') ? rawGMV : `¥${rawGMV}`) : '¥0';
+  const displayViewers = em.current_viewers || em['Current viewers'] || em['視聴者数'] || formatLargeNum(metrics.viewer_count);
+  const displayImpressions = getMetric('impressions', 'Impressions', 'LIVE impression', 'LIVE impressions', 'LIVEのインプレッション');
+  const displayItemsSold = em.items_sold || em['Items sold'] || em['販売数'] || '0';
+  const displayProductClicks = getMetric('product_clicks', 'Product clicks', '商品クリック数');
+  const displayTTR = getMetric('tap_through_rate', 'Tap-through rate', 'TRR', 'trr', 'タップスルー率');
+  const displayAvgDuration = getMetric('avg_duration', 'Avg. viewing duration', 'Avg. viewing duration per view', 'Avg. duration', '平均視聴時間');
+  const displayLiveCTR = getMetric('live_ctr', 'LIVE CTR');
+  const displayCommentRate = getMetric('comment_rate', 'Comment rate', 'コメント率');
+  const displayFollowRate = getMetric('follow_rate', 'Follow rate', 'フォロー率');
+  const displayOrderRate = getMetric('order_rate', 'Order rate (SKU orders)', '注文率');
+  const displayShareRate = getMetric('share_rate', 'Share rate', 'シェア率');
+  const displayLikeRate = getMetric('like_rate', 'Like rate', 'いいね率');
+  const displayGPM = getMetric('gpm', 'show_gpm', 'Show GPM', '表示GPM');
+  const displayWatchGPM = getMetric('watch_gpm', 'Watch GPM', '視聴GPM');
 
   // ─── RENDER ─────────────────────────────────────────────
   if (!showDashboard) {

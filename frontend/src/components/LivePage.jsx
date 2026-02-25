@@ -5,7 +5,14 @@ import VideoService from '../base/services/videoService';
 
 /**
  * LivePage - Standalone page for LiveDashboard at /live/:sessionId
- * Replaces the old overlay approach that hijacked the top page.
+ * 
+ * Supports multiple connection modes:
+ * 1. Direct video_id (live_capture session) - SSE connects to this video_id
+ * 2. Extension video_id (ext_xxx) - SSE connects to extension's video_id
+ * 3. No sessionId - auto-discovers active extension session
+ * 
+ * The LiveDashboard receives data from both the live_capture SSE stream
+ * AND bridged extension data (metrics, comments, products, traffic).
  */
 export default function LivePage() {
   const { sessionId } = useParams();
@@ -58,7 +65,8 @@ export default function LivePage() {
         }
       })
       .catch(() => {
-        // getLiveStatus failed, try extension sessions
+        // getLiveStatus failed - still try to connect
+        // The SSE endpoint will work as long as extension data is being bridged
         return tryExtensionSessions(videoId);
       })
       .finally(() => {
@@ -71,6 +79,21 @@ export default function LivePage() {
       .then((res) => {
         const data = res?.data || res || {};
         const sessions = data.sessions || [];
+        
+        // First: check if any extension session is bridged to this videoId
+        const bridgedSession = sessions.find(s => s.bridged_to === videoId);
+        if (bridgedSession) {
+          const username = bridgedSession.account || 'unknown';
+          setDashboardData({
+            videoId,
+            liveUrl: '',
+            username,
+            title: '',
+          });
+          return;
+        }
+        
+        // Second: check if this videoId matches an extension session directly
         const match = sessions.find(s => s.video_id === videoId);
         if (match) {
           const username = match.account || 'unknown';
@@ -80,23 +103,48 @@ export default function LivePage() {
             username,
             title: '',
           });
+          return;
+        }
+        
+        // Third: if videoId is a live_capture UUID, still connect to it
+        // and also pass the extension session's video_id for dual-SSE
+        if (!videoId.startsWith('ext_') && sessions.length > 0) {
+          const extSession = sessions[0];
+          const username = extSession.account || 'unknown';
+          setDashboardData({
+            videoId,
+            extensionVideoId: extSession.video_id,
+            liveUrl: '',
+            username,
+            title: '',
+          });
+          return;
+        }
+        
+        // Fourth: just connect anyway - data may arrive later
+        if (!videoId.startsWith('ext_')) {
+          setDashboardData({
+            videoId,
+            liveUrl: '',
+            username: 'unknown',
+            title: '',
+          });
         } else {
-          // Try as a regular live_capture video
-          const filenameMatch = videoId.match && !videoId.startsWith('ext_');
-          if (filenameMatch) {
-            setDashboardData({
-              videoId,
-              liveUrl: '',
-              username: 'unknown',
-              title: '',
-            });
-          } else {
-            setError('ライブセッションが見つかりません');
-          }
+          setError('ライブセッションが見つかりません');
         }
       })
       .catch(() => {
-        setError('セッション情報の取得に失敗しました');
+        // Even if extension session lookup fails, try connecting
+        if (!videoId.startsWith('ext_')) {
+          setDashboardData({
+            videoId,
+            liveUrl: '',
+            username: 'unknown',
+            title: '',
+          });
+        } else {
+          setError('セッション情報の取得に失敗しました');
+        }
       });
   };
 
@@ -145,6 +193,7 @@ export default function LivePage() {
   return (
     <LiveDashboard
       videoId={dashboardData.videoId}
+      extensionVideoId={dashboardData.extensionVideoId}
       liveUrl={dashboardData.liveUrl}
       username={dashboardData.username}
       title={dashboardData.title}
