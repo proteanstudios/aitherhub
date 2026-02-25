@@ -314,12 +314,18 @@
       'GMV': 'gmv',
       'Items sold': 'items_sold',
       'Current viewers': 'current_viewers',
+      'Current viewer': 'current_viewers',
+      'Viewers': 'current_viewers',
       'Impressions': 'impressions',
+      'LIVE impression': 'impressions',
+      'LIVE impressions': 'impressions',
       'Views': 'views',
       'GMV per hour': 'gmv_per_hour',
       'Impressions per hour': 'impressions_per_hour',
       'Show GPM': 'show_gpm',
       'Avg. viewing duration per view': 'avg_duration',
+      'Avg. viewing duration': 'avg_duration',
+      'Avg. duration': 'avg_duration',
       'Comment rate': 'comment_rate',
       'Follow rate': 'follow_rate',
       'Tap-through rate': 'tap_through_rate',
@@ -382,12 +388,27 @@
     // Label: div inside [class*="metricCard"]
     const metricCards = document.querySelectorAll('[class*="metricCard"]');
     for (const card of metricCards) {
-      const nameEl = card.querySelector('[class*="name-"]');
+      const nameEl = card.querySelector('[class*="name--"]');
       if (nameEl) {
         const label = nameEl.textContent.trim();
         const key = metricLabels[label];
         if (key) {
           const valueEl = nameEl.nextElementSibling;
+          if (valueEl) {
+            metrics[key] = valueEl.textContent.trim();
+          }
+        }
+      }
+    }
+
+    // Strategy 3b: Streamer page - fallback using text-neutral-text3 class
+    if (Object.keys(metrics).length === 0) {
+      const labelEls = document.querySelectorAll('.text-neutral-text3.text-body-s-medium');
+      for (const el of labelEls) {
+        const label = el.textContent.trim();
+        const key = metricLabels[label];
+        if (key) {
+          const valueEl = el.nextElementSibling;
           if (valueEl) {
             metrics[key] = valueEl.textContent.trim();
           }

@@ -62,7 +62,6 @@
       const root = document.querySelector('#root');
       if (root) {
         const text = root.textContent;
-        // Pattern: "LIVE Dashboard  ryukyogoku  Duration"
         const match = text.match(/LIVE Dashboard\s+([a-zA-Z0-9._]+)\s+(?:Duration|配信時間)/);
         if (match) return match[1];
       }
@@ -70,7 +69,6 @@
 
     // Strategy 2: For streamer page - look for username in header
     if (pageType === 'streamer') {
-      // Look for spans in top 60px with username pattern
       const allSpans = document.querySelectorAll('span');
       for (const span of allSpans) {
         if (span.children.length > 0) continue;
@@ -78,7 +76,7 @@
         if (rect.top > 60) continue;
         const text = span.textContent.trim();
         if (text && /^[a-zA-Z0-9._]{2,30}$/.test(text) &&
-            !['LIVE', 'Shop', 'TikTok', 'Home', 'ON', 'OFF', 'English', 'Duration'].includes(text)) {
+            !['LIVE', 'Shop', 'TikTok', 'Home', 'ON', 'OFF', 'English', 'Duration', 'Manager', 'Go'].includes(text)) {
           return text;
         }
       }
@@ -118,33 +116,40 @@
     /**
      * Extract analytics metrics from the streamer dashboard
      * 
-     * DOM structure (confirmed):
-     * - Label: div.text-neutral-text3.text-body-s-medium (text: "GMV", "Current viewers", etc.)
-     * - Value: nextElementSibling (text: "155.7万円", "262", etc.)
-     * - Parent: div[class*="metricCard"]
+     * DOM structure (confirmed 2026-02-25):
+     * - Metric card parent: div[class*="metricCard"]
+     * - Label: div.text-neutral-text3.text-body-s-medium[class*="name--"] (text: "GMV", "Viewers", etc.)
+     * - Value: nextElementSibling of label (text: "162.7万円", "262", etc.)
      */
     extractMetrics() {
       const metrics = {};
       const metricLabels = {
+        // English labels (confirmed on actual page)
         'GMV': 'gmv',
+        'Viewers': 'current_viewers',
         'Current viewers': 'current_viewers',
         'Current viewer': 'current_viewers',
+        'LIVE impression': 'impressions',
+        'LIVE impressions': 'impressions',
         'Impressions': 'impressions',
-        'TRR': 'trr',
+        'Tap-through rate': 'tap_through_rate',
+        'TRR': 'tap_through_rate',
+        'Avg. viewing duration': 'avg_duration',
         'Avg. duration': 'avg_duration',
         'Product clicks': 'product_clicks',
         // Japanese labels
         '視聴者数': 'current_viewers',
         'LIVEのインプレッション': 'impressions',
-        'タップスルー率': 'trr',
+        'タップスルー率': 'tap_through_rate',
         '平均視聴時間': 'avg_duration',
         '商品クリック数': 'product_clicks',
       };
 
-      // Strategy 1: Find metric cards by class pattern
+      // Strategy 1: Find metric cards by class pattern (confirmed: index-module__metricCard----Twq)
       const metricCards = document.querySelectorAll('[class*="metricCard"]');
       for (const card of metricCards) {
-        const nameEl = card.querySelector('[class*="name-"]');
+        // Label element has class containing "name--" (confirmed: index-module__name--+ryzY)
+        const nameEl = card.querySelector('[class*="name--"]');
         if (nameEl) {
           const label = nameEl.textContent.trim();
           const key = metricLabels[label];
@@ -157,7 +162,22 @@
         }
       }
 
-      // Strategy 2: Fallback - walk through all leaf text nodes
+      // Strategy 2: Fallback - find by text-neutral-text3 class
+      if (Object.keys(metrics).length === 0) {
+        const labelEls = document.querySelectorAll('.text-neutral-text3.text-body-s-medium');
+        for (const el of labelEls) {
+          const label = el.textContent.trim();
+          const key = metricLabels[label];
+          if (key) {
+            const valueEl = el.nextElementSibling;
+            if (valueEl) {
+              metrics[key] = valueEl.textContent.trim();
+            }
+          }
+        }
+      }
+
+      // Strategy 3: Fallback - walk through all leaf text nodes
       if (Object.keys(metrics).length === 0) {
         const allElements = document.querySelectorAll('div, span');
         for (const el of allElements) {
@@ -170,9 +190,6 @@
                 const idx = siblings.indexOf(el);
                 if (idx < siblings.length - 1) {
                   metrics[key] = siblings[idx + 1].textContent.trim();
-                } else {
-                  const parentText = parent.textContent.trim();
-                  metrics[key] = parentText.replace(label, '').trim();
                 }
               }
             }
@@ -187,10 +204,15 @@
     /**
      * Extract product list from #product-list
      * 
-     * DOM structure (confirmed):
+     * DOM structure (confirmed 2026-02-25):
      * - Container: #product-list
-     * - Product items contain: name (span), pin button, metrics text
-     * - Metrics: "Products clicks 450|Add to carts count 138|Items sold 63"
+     * - Product cards: div.rounded-4.mb-8
+     * - Each card contains:
+     *   - Product name: span with text > 15 chars
+     *   - Price: "18,315円" pattern
+     *   - Stock: "Stock: 28" or "Low Stock: 12" or "Sold Out"
+     *   - Pin: "Unpin" button (pinned) or "Pin" button (unpinned)
+     *   - Stats: "Clicks 87 | Added to cart 8 | Items sold 0"
      */
     extractProducts() {
       const products = [];
@@ -200,36 +222,106 @@
         return products;
       }
 
-      // Find all product items - they are direct children or nested divs
-      const items = productList.querySelectorAll('[class*="product"], label, [class*="item"]');
-      const processedNames = new Set();
-
-      for (const item of items) {
-        const nameEl = item.querySelector('span, a');
-        if (!nameEl) continue;
+      // Find product cards - confirmed class: rounded-4 mb-8
+      const cards = productList.querySelectorAll('.rounded-4.mb-8');
+      
+      for (const card of cards) {
+        const fullText = card.textContent.trim();
         
-        const name = nameEl.textContent.trim();
-        if (!name || name.length < 5 || processedNames.has(name)) continue;
-        processedNames.add(name);
+        // Extract product name from span elements
+        const spans = card.querySelectorAll('span');
+        let name = '';
+        for (const span of spans) {
+          const text = span.textContent.trim();
+          if (text.length > 15 && 
+              !text.includes('Clicks') && 
+              !text.includes('Pin') && 
+              !text.includes('Stock') &&
+              !text.includes('Added to cart') &&
+              !text.includes('Items sold') &&
+              !text.includes('Sold Out') &&
+              !text.includes('All')) {
+            name = text;
+            break;
+          }
+        }
+        
+        if (!name) continue;
 
-        const isPinned = item.textContent.includes('Unpin') || item.textContent.includes('Pinned');
+        // Extract price
+        const priceMatch = fullText.match(/([\d,]+)円/);
+        const price = priceMatch ? priceMatch[1] : '';
 
-        const parentText = item.textContent;
-        const clicksMatch = parentText.match(/Products?\s*clicks?\s*(\d[\d,]*)/i);
-        const cartsMatch = parentText.match(/Add to carts?\s*count\s*(\d[\d,]*)/i);
-        const soldMatch = parentText.match(/Items?\s*sold\s*(\d[\d,]*)/i);
-        const priceMatch = parentText.match(/([\d,]+)円/);
-        const stockMatch = parentText.match(/Stock:\s*([\d,]+)/i);
+        // Extract stats using regex (confirmed format: "Clicks 87", "Added to cart 8", "Items sold 0")
+        const clicksMatch = fullText.match(/Clicks\s*([\d,.K]+)/i);
+        const cartsMatch = fullText.match(/Added to cart\s*([\d,.K]+)/i);
+        const soldMatch = fullText.match(/Items sold\s*([\d,.K]+)/i);
+
+        // Pin status (confirmed: "Unpin" button = pinned, "Pin" button = unpinned)
+        const isPinned = fullText.includes('Unpin') || fullText.includes('Pinned');
+
+        // Stock info
+        const stockMatch = fullText.match(/(Low Stock|Stock)[:\s]*([\d,]+)/i);
+        const isSoldOut = fullText.includes('Sold Out');
+
+        // Parse K values (e.g., "1.7K" -> 1700)
+        function parseValue(val) {
+          if (!val) return 0;
+          val = val.replace(/,/g, '');
+          if (val.includes('K')) return Math.round(parseFloat(val) * 1000);
+          if (val.includes('M')) return Math.round(parseFloat(val) * 1000000);
+          return parseInt(val) || 0;
+        }
 
         products.push({
-          name: name.substring(0, 100),
+          name: name.substring(0, 150),
           pinned: isPinned,
-          price: priceMatch ? priceMatch[1] : '',
-          stock: stockMatch ? stockMatch[1] : '',
-          clicks: clicksMatch ? parseInt(clicksMatch[1].replace(/,/g, '')) : 0,
-          carts: cartsMatch ? parseInt(cartsMatch[1].replace(/,/g, '')) : 0,
-          sold: soldMatch ? parseInt(soldMatch[1].replace(/,/g, '')) : 0
+          price,
+          stock: isSoldOut ? 'Sold Out' : (stockMatch ? stockMatch[2] : ''),
+          clicks: parseValue(clicksMatch ? clicksMatch[1] : '0'),
+          carts: parseValue(cartsMatch ? cartsMatch[1] : '0'),
+          sold: parseValue(soldMatch ? soldMatch[1] : '0')
         });
+      }
+
+      // Fallback: if no cards found with .rounded-4.mb-8, try broader search
+      if (products.length === 0) {
+        const allDivs = productList.querySelectorAll('div');
+        const processedNames = new Set();
+        
+        for (const div of allDivs) {
+          const text = div.textContent.trim();
+          if (text.includes('Clicks') && text.includes('Items sold') && text.length < 500) {
+            // This is likely a product card
+            const spans = div.querySelectorAll('span');
+            let name = '';
+            for (const span of spans) {
+              const t = span.textContent.trim();
+              if (t.length > 15 && !t.includes('Clicks') && !processedNames.has(t)) {
+                name = t;
+                break;
+              }
+            }
+            if (!name || processedNames.has(name)) continue;
+            processedNames.add(name);
+
+            const priceMatch = text.match(/([\d,]+)円/);
+            const clicksMatch = text.match(/Clicks\s*([\d,.K]+)/i);
+            const cartsMatch = text.match(/Added to cart\s*([\d,.K]+)/i);
+            const soldMatch = text.match(/Items sold\s*([\d,.K]+)/i);
+            const isPinned = text.includes('Unpin') || text.includes('Pinned');
+
+            products.push({
+              name: name.substring(0, 150),
+              pinned: isPinned,
+              price: priceMatch ? priceMatch[1] : '',
+              stock: '',
+              clicks: parseInt((clicksMatch ? clicksMatch[1] : '0').replace(/[,K]/g, '')) || 0,
+              carts: parseInt((cartsMatch ? cartsMatch[1] : '0').replace(/[,K]/g, '')) || 0,
+              sold: parseInt((soldMatch ? soldMatch[1] : '0').replace(/[,K]/g, '')) || 0
+            });
+          }
+        }
       }
 
       log('Streamer products extracted:', products.length);
@@ -239,9 +331,11 @@
     /**
      * Extract activity feed
      * 
-     * DOM structure (confirmed):
-     * - Activity items: div[class*="sc-leSDtu"] or span.text-neutral-text1.text-body-s-regular
-     * - Text patterns: "1 customer purchased product no. 68|12,786円", "ゆかり just joined"
+     * DOM structure (confirmed 2026-02-25):
+     * - Activity items are divs with text patterns:
+     *   "1 customer purchased product no. 68|12,786円"
+     *   "ゆかり just joined"
+     *   "1 person is viewing product no. 6"
      */
     extractActivities() {
       const activities = [];
@@ -283,9 +377,10 @@
     /**
      * Extract TikTok AI suggestions
      * 
-     * DOM structure (confirmed):
-     * - Header: div.arco-collapse-item-header (contains "Suggestion")
-     * - Content: next sibling with suggestion text
+     * DOM structure (confirmed 2026-02-25):
+     * - Header: div.arco-collapse-item-header-title (contains "Suggestion")
+     * - Content: .arco-collapse-item-content inside same .arco-collapse-item parent
+     * - Text example: "過去5分間に149人の視聴者がLIVEに参加しました！..."
      */
     extractSuggestions() {
       const suggestions = [];
@@ -372,7 +467,6 @@
       };
 
       // Strategy 1: Extract hero metrics (Items sold, Current viewers)
-      // These use class: text-xl font-medium text-neutral-text-1 ml-1
       const heroLabels = document.querySelectorAll('.text-xl.font-medium.text-neutral-text-1');
       for (const el of heroLabels) {
         const text = el.textContent.trim();
@@ -386,7 +480,6 @@
       }
 
       // Strategy 2: Extract detail metrics
-      // These use class: text-base text-neutral-text-1 truncate
       const detailLabels = document.querySelectorAll('.text-base.text-neutral-text-1.truncate, .text-base.text-neutral-text-1');
       for (const el of detailLabels) {
         const text = el.textContent.trim();
@@ -400,21 +493,12 @@
       }
 
       // Strategy 3: Extract GMV (the big number)
-      // GMV label is "GMV (円)" or "GMV" inside a flex container
       const allSpans = document.querySelectorAll('span');
       for (const span of allSpans) {
         const text = span.textContent.trim();
         if (text.match(/^GMV\s*(\(.*\))?$/)) {
-          // The GMV value is in a sibling or parent's other child
           const container = span.closest('[class*="flex"][class*="col"]') || span.parentElement?.parentElement;
           if (container) {
-            // Look for a large number in the container
-            const allText = container.textContent;
-            const numMatch = allText.match(/([\d,]+(?:\.\d+)?)\s*$/m);
-            if (numMatch) {
-              metrics['gmv'] = numMatch[1];
-            }
-            // Also try to find the number in child elements
             const numberEls = container.querySelectorAll('div, span');
             for (const numEl of numberEls) {
               const numText = numEl.textContent.trim();
@@ -457,10 +541,10 @@
      * Extract comments from the comment container
      * 
      * DOM structure (confirmed):
-     * - Container: div.commentContainer--xxxxx (class contains "commentContainer--")
-     * - Each comment: div.comment--xxxxx (class contains "comment--")
-     *   - Child 1: span.username--xxxxx (text: "Rimi🌹:")
-     *   - Child 2: span.commentContent--xxxxx (text: "やえちゃん❣️ひとつあ・げ・るーーー")
+     * - Container: div[class*="commentContainer--"]
+     * - Each comment: div[class*="comment--"] (not commentContainer)
+     *   - Child 1: span[class*="username--"] (text: "Rimi🌹:")
+     *   - Child 2: span[class*="commentContent--"] (text: "やえちゃん❣️")
      */
     extractComments() {
       const comments = [];
@@ -574,7 +658,6 @@
         let isPinned, gmv, sold, cartCount, clicks, impressions, ctr;
 
         if (cells.length >= 9) {
-          // 9 columns: No, Product, Pin, GMV, Items sold, Add-to-cart, Clicks, Impressions, CTR
           isPinned = cells[2]?.textContent.trim() === 'Pinned';
           gmv = cells[3]?.textContent.trim() || '0';
           sold = cells[4]?.textContent.trim() || '0';
@@ -583,7 +666,6 @@
           impressions = cells[7]?.textContent.trim() || '0';
           ctr = cells[8]?.textContent.trim() || '0%';
         } else if (cells.length >= 8) {
-          // 8 columns: No, Product, GMV, Items sold, Add-to-cart, Clicks, Impressions, CTR
           isPinned = row.textContent.includes('Pinned');
           gmv = cells[2]?.textContent.trim() || '0';
           sold = cells[3]?.textContent.trim() || '0';
@@ -592,7 +674,6 @@
           impressions = cells[6]?.textContent.trim() || '0';
           ctr = cells[7]?.textContent.trim() || '0%';
         } else {
-          // Fewer columns - try best effort
           isPinned = row.textContent.includes('Pinned');
           gmv = cells[2]?.textContent.trim() || '0';
           sold = cells[3]?.textContent.trim() || '0';
@@ -802,7 +883,6 @@
   // ============================================================
   function setupMutationObserver() {
     // Watch for new comments (workbench)
-    // Container class: commentContainer--xxxxx
     const commentContainer = document.querySelector('[class*="commentContainer"]');
     if (commentContainer) {
       log('MutationObserver attached to comment container');
@@ -822,7 +902,6 @@
       observer.observe(commentContainer, { childList: true, subtree: true });
     } else {
       log('Comment container not found for MutationObserver, will retry...');
-      // Retry after a delay
       setTimeout(() => {
         const container = document.querySelector('[class*="commentContainer"]');
         if (container) {
@@ -847,7 +926,6 @@
 
     // Watch for activity updates (streamer page)
     if (pageType === 'streamer') {
-      // Activity items use class sc-leSDtu or similar styled-components classes
       const activityContainer = document.querySelector('[class*="activity"], [class*="Activity"], [class*="sc-"]');
       if (activityContainer) {
         log('MutationObserver attached to activity container');
@@ -909,7 +987,7 @@
       }
     }, 1000);
 
-    // Timeout after 60 seconds (increased from 30)
+    // Timeout after 60 seconds
     setTimeout(() => {
       clearInterval(checkReady);
       if (!isRunning) {
