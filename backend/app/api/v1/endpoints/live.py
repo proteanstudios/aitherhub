@@ -36,6 +36,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/live", tags=["Live Monitoring"])
 
+# SSE line ending constant (avoids backslash in f-strings for Python 3.11)
+_SSE_END = "\n\n"
+
 
 # ── Request / Response schemas ───────────────────────────────────────
 
@@ -141,7 +144,7 @@ async def stream_live_events(
         notify = live_event_service.subscribe(video_id)
         stream_ended_received = False
         last_data_ts = time.time()  # Track when we last received real data
-        IDLE_TIMEOUT = 600  # 10 minutes without any data before auto-closing
+        idle_timeout = 600  # 10 minutes without any data before auto-closing
 
         # Mark this video_id as live (in case backend restarted and lost state)
         live_event_service._live_status[video_id] = True
@@ -150,11 +153,13 @@ async def stream_live_events(
             # Send initial state if available
             stream_info = live_event_service.get_stream_info(video_id)
             if stream_info:
-                yield f"data: {json.dumps({'event_type': 'stream_url', 'payload': stream_info})}\n\n"
+                msg = json.dumps({"event_type": "stream_url", "payload": stream_info})
+                yield f"data: {msg}{_SSE_END}"
 
             latest_metrics = live_event_service.get_latest_metrics(video_id)
             if latest_metrics:
-                yield f"data: {json.dumps({'event_type': 'metrics', 'payload': latest_metrics})}\n\n"
+                msg = json.dumps({"event_type": "metrics", "payload": latest_metrics})
+                yield f"data: {msg}{_SSE_END}"
 
             heartbeat_count = 0
             while True:
@@ -166,25 +171,29 @@ async def stream_live_events(
 
                 events = live_event_service.get_events_since(video_id, last_event_ts)
                 for event in events:
-                    yield f"data: {json.dumps({'event_type': event['event_type'], 'payload': event['payload']})}\n\n"
+                    msg = json.dumps({"event_type": event["event_type"], "payload": event["payload"]})
+                    yield f"data: {msg}{_SSE_END}"
                     last_event_ts = event["timestamp"]
                     if event["event_type"] == "stream_ended":
                         stream_ended_received = True
                     elif event["event_type"] not in ("heartbeat",):
-                        last_data_ts = time.time()  # Reset idle timer on real data
+                        last_data_ts = time.time()
 
                 if stream_ended_received:
                     break
 
-                # Only close if idle for IDLE_TIMEOUT (no data at all)
+                # Only close if idle for idle_timeout (no data at all)
                 idle_time = time.time() - last_data_ts
-                if idle_time > IDLE_TIMEOUT and not live_event_service.is_live(video_id):
-                    yield f"data: {json.dumps({'event_type': 'stream_ended', 'payload': {'message': '\u30e9\u30a4\u30d6\u914d\u4fe1\u304c\u7d42\u4e86\u3057\u307e\u3057\u305f'}})}\n\n"
+                if idle_time > idle_timeout and not live_event_service.is_live(video_id):
+                    ended_msg = json.dumps({"event_type": "stream_ended", "payload": {"message": "ライブ配信が終了しました"}})
+                    yield f"data: {ended_msg}{_SSE_END}"
                     break
 
                 heartbeat_count += 1
                 if heartbeat_count % 3 == 0:
-                    yield f"data: {json.dumps({'event_type': 'heartbeat', 'payload': {'timestamp': datetime.now(timezone.utc).isoformat()}})}\n\n"
+                    ts = datetime.now(timezone.utc).isoformat()
+                    hb_msg = json.dumps({"event_type": "heartbeat", "payload": {"timestamp": ts}})
+                    yield f"data: {hb_msg}{_SSE_END}"
 
         except asyncio.CancelledError:
             pass
