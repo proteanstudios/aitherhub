@@ -68,3 +68,10 @@ async def restore_live_sessions():
                 logger.info("No active live sessions to restore")
     except Exception as e:
         logger.warning(f"Failed to restore live sessions on startup: {e}")
+
+    # Start background cleanup task for stale extension sessions
+    try:
+        from app.api.v1.endpoints.live_extension import start_cleanup_task
+        start_cleanup_task()
+    except Exception as e:
+        logger.warning(f"Failed to start cleanup task: {e}")

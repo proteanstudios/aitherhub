@@ -764,12 +764,25 @@
     log(`Starting data extraction on ${pageType} page`);
 
     const account = extractAccount();
-    const roomId = extractRoomId();
+    let roomId = extractRoomId();
     const region = extractRegion();
+
+    // Generate a stable room_id when URL doesn't contain one
+    // This prevents creating a new session every time the page loads
+    if (!roomId && account) {
+      // Use account name as stable identifier
+      roomId = 'acct_' + account;
+    } else if (!roomId) {
+      // Last resort: use a daily-stable ID so at least within the same day
+      // the same session is reused
+      const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      roomId = 'day_' + today;
+    }
 
     log(`Account: ${account}, Room: ${roomId}, Region: ${region}`);
 
     // Notify background that live session started
+    // background.js will deduplicate and reuse existing sessions
     chrome.runtime.sendMessage({
       type: 'LIVE_STARTED',
       data: {

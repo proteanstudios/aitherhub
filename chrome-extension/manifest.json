@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AitherHub LIVE Connector",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "TikTok Shop LIVEダッシュボードにAI司令塔オーバーレイを表示。リアルタイムAI分析・提案・コメント・商品管理",
   "permissions": [
     "activeTab",

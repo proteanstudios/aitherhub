@@ -138,9 +138,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 /**
  * Handle live session start
+ * Deduplicates: if we already have an active session for the same account+source,
+ * reuse it instead of creating a new one.
  */
 async function handleLiveStarted(data, tab) {
   console.log('[AitherHub BG] Live session started:', data);
+
+  // Check if we already have an active session
+  const existing = await chrome.storage.local.get(['liveSessionId', 'liveSessionAccount', 'liveSessionSource']);
+  if (existing.liveSessionId && 
+      existing.liveSessionAccount === data.account && 
+      existing.liveSessionSource === data.source &&
+      isConnected) {
+    console.log('[AitherHub BG] Reusing existing session:', existing.liveSessionId);
+    // Already connected with same account/source, skip creating new session
+    return;
+  }
+
   sessionStartTime = Date.now();
   stats = { dataSent: 0, comments: 0, products: 0, uptime: 0, aiAnalyses: 0 };
   
@@ -156,7 +170,11 @@ async function handleLiveStarted(data, tab) {
   try {
     const response = await sendToAPI('/api/v1/live/extension/session/start', payload);
     if (response && response.session_id) {
-      chrome.storage.local.set({ liveSessionId: response.session_id });
+      chrome.storage.local.set({ 
+        liveSessionId: response.session_id,
+        liveSessionAccount: data.account || '',
+        liveSessionSource: data.source || ''
+      });
       isConnected = true;
       updateBadge('ON', '#00C853');
     }
@@ -186,7 +204,7 @@ async function handleLiveEnded(data) {
 
   isConnected = false;
   sessionStartTime = null;
-  chrome.storage.local.remove('liveSessionId');
+  chrome.storage.local.remove(['liveSessionId', 'liveSessionAccount', 'liveSessionSource']);
   updateBadge('', '');
 }
 

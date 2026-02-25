@@ -142,37 +142,74 @@ async def start_extension_session(
     If an active live_capture session exists for the same user,
     the extension data will be bridged to that session.
     """
-    session_id = str(uuid.uuid4())
-
     user_id = current_user["id"]
-    room_id = request.room_id or str(int(time.time()))
+
+    # ── Stable room_id generation ──
+    # If room_id is empty or starts with 'acct_'/'day_', use account-based stable ID
+    raw_room = request.room_id or ""
+    if raw_room and not raw_room.startswith("acct_") and not raw_room.startswith("day_"):
+        # Real room_id from URL
+        room_id = raw_room
+    elif request.account:
+        # Use account name for stable ID
+        room_id = f"acct_{request.account}"
+    else:
+        # Fallback: user-level stable ID (one session per user)
+        room_id = f"user_{user_id}"
+
     video_id = f"ext_{user_id}_{room_id}"
 
-    # ── Auto-close stale extension sessions for this user ──
-    # This prevents duplicate entries in the sidebar
+    # ── Check for existing active session with same video_id ──
+    # If found, reuse it instead of creating a new one
     try:
         existing_sessions = await live_event_service.get_extension_sessions_from_db(
             db, user_id, active_only=True
         )
+        for existing in existing_sessions:
+            old_vid = existing.get("video_id", "")
+            old_sid = existing.get("session_id", "")
+            if old_vid == video_id and old_sid:
+                # Same video_id already active - reuse this session
+                logger.info(f"Reusing existing extension session: {old_sid} (video_id={video_id})")
+                # Ensure in-memory state is consistent
+                _session_to_video[old_sid] = video_id
+                live_event_service._live_status[video_id] = True
+                if old_sid not in _extension_data:
+                    _extension_data[old_sid] = {
+                        "comments": [], "products": [], "activities": [],
+                        "traffic_sources": [], "suggestions": [],
+                        "metrics_history": [], "latest_metrics": {},
+                    }
+                # Check bridge
+                bridged_video_id = await _find_active_live_capture(db, user_id)
+                if bridged_video_id:
+                    _session_bridge[old_sid] = bridged_video_id
+                return ExtensionSessionStartResponse(
+                    session_id=old_sid,
+                    video_id=video_id,
+                    message=f"Reused existing session for {request.account or 'unknown'}",
+                    bridged_to=bridged_video_id if bridged_video_id else None,
+                )
+
+        # Close any OTHER active extension sessions for this user
         for old_session in existing_sessions:
             old_vid = old_session.get("video_id", "")
             old_sid = old_session.get("session_id", "")
-            # Skip if it's the same video_id (will be reactivated below)
             if old_vid == video_id:
                 continue
-            # End the old session
             logger.info(f"Auto-closing stale extension session: {old_vid} (sid={old_sid})")
             try:
                 await live_event_service._end_session_in_db(db, old_vid)
                 live_event_service._live_status[old_vid] = False
-                # Clean up in-memory caches
                 _session_bridge.pop(old_sid, None)
                 _session_to_video.pop(old_sid, None)
                 _extension_data.pop(old_sid, None)
             except Exception as e:
                 logger.warning(f"Failed to auto-close stale session {old_vid}: {e}")
     except Exception as e:
-        logger.warning(f"Failed to check for stale sessions: {e}")
+        logger.warning(f"Failed to check for existing sessions: {e}")
+
+    session_id = str(uuid.uuid4())
 
     stream_info = {
         "source": "extension",
@@ -327,6 +364,9 @@ async def push_extension_data(
         }
 
     ext_data = _extension_data[session_id]
+
+    # Track last update time for auto-cleanup
+    ext_data["_last_update"] = time.time()
 
     # ── Process Metrics ──
     if request.metrics:
@@ -700,3 +740,64 @@ async def cleanup_stale_sessions(
             "account": newest.get("account"),
         },
     }
+
+
+# ── Background Cleanup Task ──────────────────────────────────────────
+# Auto-close extension sessions that haven't received data in over 1 hour
+
+import asyncio
+from contextlib import suppress
+
+_cleanup_task = None
+
+
+async def _auto_cleanup_stale_sessions():
+    """
+    Background task that runs every 10 minutes to clean up
+    extension sessions that haven't been updated in over 1 hour.
+    """
+    while True:
+        try:
+            await asyncio.sleep(600)  # Run every 10 minutes
+
+            now = time.time()
+            stale_sessions = []
+
+            for sid, data in list(_extension_data.items()):
+                last_update = data.get("_last_update", 0)
+                if last_update > 0 and (now - last_update) > 3600:  # 1 hour
+                    stale_sessions.append(sid)
+
+            for sid in stale_sessions:
+                vid = _session_to_video.get(sid)
+                if vid:
+                    logger.info(f"Auto-cleanup: closing stale session {vid} (no data for >1h)")
+                    live_event_service._live_status[vid] = False
+                _session_bridge.pop(sid, None)
+                _session_to_video.pop(sid, None)
+                _extension_data.pop(sid, None)
+
+            if stale_sessions:
+                logger.info(f"Auto-cleanup: removed {len(stale_sessions)} stale sessions")
+
+        except Exception as e:
+            logger.warning(f"Auto-cleanup task error: {e}")
+
+
+def start_cleanup_task():
+    """Start the background cleanup task. Call this from app startup."""
+    global _cleanup_task
+    if _cleanup_task is None:
+        _cleanup_task = asyncio.create_task(_auto_cleanup_stale_sessions())
+        logger.info("Started background session cleanup task")
+
+
+def stop_cleanup_task():
+    """Stop the background cleanup task. Call this from app shutdown."""
+    global _cleanup_task
+    if _cleanup_task:
+        _cleanup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            pass
+        _cleanup_task = None
+        logger.info("Stopped background session cleanup task")
