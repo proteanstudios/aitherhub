@@ -704,6 +704,16 @@ class VideoService extends BaseApiService {
     }
   }
 
+  async cleanupStaleSessions() {
+    try {
+      const response = await this.post(`${URL_CONSTANTS.LIVE_EXTENSION_SESSIONS}/cleanup`);
+      return response;
+    } catch (error) {
+      console.error('Failed to cleanup stale sessions:', error);
+      return { cleaned: 0 };
+    }
+  }
+
   /**
    * Stream real-time live events via SSE.
    * @param {Object} params

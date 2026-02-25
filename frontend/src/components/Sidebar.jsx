@@ -166,6 +166,7 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
 
   // Fetch active extension sessions
   const [extensionSessions, setExtensionSessions] = useState([]);
+  const cleanupDoneRef = useRef(false);
   useEffect(() => {
     if (!effectiveUser?.isLoggedIn) {
       setExtensionSessions([]);
@@ -173,13 +174,27 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
     }
     const fetchExtSessions = async () => {
       try {
+        // Auto-cleanup stale sessions on first fetch only
+        if (!cleanupDoneRef.current) {
+          await VideoService.cleanupStaleSessions();
+          cleanupDoneRef.current = true;
+        }
         const res = await VideoService.getActiveExtensionSessions();
         const data = res?.data || res || {};
         const sessions = data.sessions || [];
         // Filter out sessions that already have a matching live_capture video in the list
         const liveVideoIds = new Set(liveVideos.map(v => v.id));
         const filtered = sessions.filter(s => !liveVideoIds.has(s.video_id));
-        setExtensionSessions(filtered);
+        // Deduplicate by account: keep only the latest session per account
+        const byAccount = new Map();
+        for (const s of filtered) {
+          const key = s.account || s.video_id;
+          const existing = byAccount.get(key);
+          if (!existing || (s.started_at && (!existing.started_at || s.started_at > existing.started_at))) {
+            byAccount.set(key, s);
+          }
+        }
+        setExtensionSessions(Array.from(byAccount.values()));
       } catch {
         setExtensionSessions([]);
       }

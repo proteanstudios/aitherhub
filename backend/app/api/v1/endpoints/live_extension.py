@@ -144,10 +144,35 @@ async def start_extension_session(
     """
     session_id = str(uuid.uuid4())
 
-    # Create a virtual video_id for this extension session
     user_id = current_user["id"]
     room_id = request.room_id or str(int(time.time()))
     video_id = f"ext_{user_id}_{room_id}"
+
+    # ── Auto-close stale extension sessions for this user ──
+    # This prevents duplicate entries in the sidebar
+    try:
+        existing_sessions = await live_event_service.get_extension_sessions_from_db(
+            db, user_id, active_only=True
+        )
+        for old_session in existing_sessions:
+            old_vid = old_session.get("video_id", "")
+            old_sid = old_session.get("session_id", "")
+            # Skip if it's the same video_id (will be reactivated below)
+            if old_vid == video_id:
+                continue
+            # End the old session
+            logger.info(f"Auto-closing stale extension session: {old_vid} (sid={old_sid})")
+            try:
+                await live_event_service._end_session_in_db(db, old_vid)
+                live_event_service._live_status[old_vid] = False
+                # Clean up in-memory caches
+                _session_bridge.pop(old_sid, None)
+                _session_to_video.pop(old_sid, None)
+                _extension_data.pop(old_sid, None)
+            except Exception as e:
+                logger.warning(f"Failed to auto-close stale session {old_vid}: {e}")
+    except Exception as e:
+        logger.warning(f"Failed to check for stale sessions: {e}")
 
     stream_info = {
         "source": "extension",
@@ -626,4 +651,52 @@ def _get_session_summary(session_id: str) -> dict:
         "total_activities": len(ext_data.get("activities", [])),
         "metrics_snapshots": len(ext_data.get("metrics_history", [])),
         "latest_metrics": ext_data.get("latest_metrics", {}),
+    }
+
+
+@router.post("/sessions/cleanup")
+async def cleanup_stale_sessions(
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Clean up all stale extension sessions for the current user.
+    Keeps only the most recent active session (if any) and ends all others.
+    """
+    user_id = current_user["id"]
+
+    sessions = await live_event_service.get_extension_sessions_from_db(
+        db, user_id, active_only=True
+    )
+
+    if len(sessions) <= 1:
+        return {"cleaned": 0, "remaining": len(sessions)}
+
+    # Sort by started_at descending, keep the newest
+    sessions.sort(key=lambda s: s.get("started_at", "") or "", reverse=True)
+    newest = sessions[0]
+    stale = sessions[1:]
+
+    cleaned = 0
+    for old_session in stale:
+        old_vid = old_session.get("video_id", "")
+        old_sid = old_session.get("session_id", "")
+        try:
+            await live_event_service._end_session_in_db(db, old_vid)
+            live_event_service._live_status[old_vid] = False
+            _session_bridge.pop(old_sid, None)
+            _session_to_video.pop(old_sid, None)
+            _extension_data.pop(old_sid, None)
+            cleaned += 1
+            logger.info(f"Cleaned up stale session: {old_vid}")
+        except Exception as e:
+            logger.warning(f"Failed to clean up session {old_vid}: {e}")
+
+    return {
+        "cleaned": cleaned,
+        "remaining": 1,
+        "active_session": {
+            "video_id": newest.get("video_id"),
+            "account": newest.get("account"),
+        },
     }
