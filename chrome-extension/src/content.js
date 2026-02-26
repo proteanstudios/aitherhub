@@ -487,7 +487,31 @@
         if (key) {
           const valueEl = el.nextElementSibling;
           if (valueEl) {
-            metrics[key] = valueEl.textContent.trim();
+            // Get only the direct text content of the value element,
+            // not nested children (which may contain other metric values)
+            // This prevents concatenation like "0.07%39.67%"
+            let value = '';
+            // First try: get text from first child text node only
+            for (const node of valueEl.childNodes) {
+              if (node.nodeType === Node.TEXT_NODE) {
+                const t = node.textContent.trim();
+                if (t) { value = t; break; }
+              }
+            }
+            // If no direct text node, try first child element
+            if (!value && valueEl.firstElementChild) {
+              value = valueEl.firstElementChild.textContent.trim();
+            }
+            // Fallback: use full textContent but sanitize concatenated values
+            if (!value) {
+              value = valueEl.textContent.trim();
+              // Detect concatenated percentages like "0.07%39.67%"
+              const pctMatches = value.match(/(\d+\.?\d*%)/g);
+              if (pctMatches && pctMatches.length >= 2) {
+                value = pctMatches[0]; // Take only the first value
+              }
+            }
+            metrics[key] = value;
           }
         }
       }

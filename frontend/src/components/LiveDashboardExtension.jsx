@@ -146,13 +146,12 @@ const ProductItem = ({ product, rank }) => {
         {rank}
       </div>
 
-      {product.image ? (
-        <img src={product.image} alt="" className="w-9 h-9 rounded object-cover flex-shrink-0" />
-      ) : (
-        <div className="w-9 h-9 rounded bg-gray-800 flex items-center justify-center flex-shrink-0">
-          <span className="text-gray-600 text-[10px]">📦</span>
-        </div>
-      )}
+      {product.image && String(product.image).startsWith('http') ? (
+        <img src={product.image} alt="" className="w-9 h-9 rounded object-cover flex-shrink-0" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling && (e.target.nextSibling.style.display = 'flex'); }} />
+      ) : null}
+      <div className={`w-9 h-9 rounded bg-gray-800 flex items-center justify-center flex-shrink-0 ${product.image && String(product.image).startsWith('http') ? 'hidden' : ''}`}>
+        <span className="text-gray-600 text-[10px]">📦</span>
+      </div>
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1">

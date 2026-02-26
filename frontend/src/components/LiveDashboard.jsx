@@ -576,10 +576,54 @@ const HLSVideoPlayer = ({ streamUrl, username }) => {
 // ─── Helper Functions ─────────────────────────────────────
 function formatLargeNum(n) {
   if (!n && n !== 0) return '--';
-  if (typeof n === 'string') return n;
+  // If string, try to parse it as a number first
+  if (typeof n === 'string') {
+    // If already formatted with 万/K/M, return as-is
+    if (/[万KkMm]/.test(n)) return n;
+    // If it contains time-like format (分秒), return as-is
+    if (/[分秒時]/.test(n)) return n;
+    // If it's a percentage, return as-is
+    if (n.includes('%')) return n;
+    // Try to parse as number (remove commas)
+    const parsed = parseFloat(n.replace(/,/g, ''));
+    if (!isNaN(parsed)) {
+      if (parsed >= 10000) return (parsed / 10000).toFixed(1) + '万';
+      if (parsed >= 1000) return parsed.toLocaleString();
+      return String(parsed);
+    }
+    return n;
+  }
   if (n >= 10000) return (n / 10000).toFixed(1) + '万';
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  if (n >= 1000) return n.toLocaleString();
   return String(n);
+}
+
+/**
+ * Sanitize metric values that may contain concatenated data.
+ * e.g., "0.07%39.67%" -> "0.07%"
+ * e.g., "335.02%15.19%" -> "335.02%" (likely bad data, but take first)
+ * Also handles values like "1,234Some text" by extracting just the number.
+ */
+function sanitizeMetricValue(val) {
+  if (val === null || val === undefined) return null;
+  const str = String(val).trim();
+  if (!str || str === '--') return str;
+
+  // Check for concatenated percentages like "0.07%39.67%"
+  const pctMatches = str.match(/(\d+\.?\d*%)/g);
+  if (pctMatches && pctMatches.length >= 2) {
+    return pctMatches[0]; // Use only the first percentage value
+  }
+
+  // Check for concatenated numbers like "7.9万64.9万"
+  const manMatches = str.match(/(\d+\.?\d*万)/g);
+  if (manMatches && manMatches.length >= 2) {
+    return manMatches[0]; // Use only the first value
+  }
+
+  // Check for concatenated plain numbers like "9238some_text"
+  // But allow normal formatted numbers like "9,238" or "2分11秒"
+  return str;
 }
 
 function parseMetricNumber(value) {
@@ -657,10 +701,47 @@ const LiveDashboard = ({ videoId, extensionVideoId, liveUrl, username, title, on
     return () => clearInterval(timerRef.current);
   }, []);
 
+  // Track which extension source provided the data (workbench preferred over streamer)
+  const extensionDataSourceRef = useRef(null); // 'workbench' | 'streamer'
+
   // Handle metrics update
   const handleMetrics = useCallback((data) => {
     if (data.source === 'extension') {
       setExtensionConnected(true);
+
+      // Determine the source type from the data
+      // The backend passes through the source from the Chrome extension
+      // Workbench data has keys like 'comment_rate', 'follow_rate', 'show_gpm'
+      // Streamer data has keys like 'product_clicks' but NOT 'comment_rate'
+      const isWorkbench = data.comment_rate !== undefined || 
+                          data.follow_rate !== undefined || 
+                          data.show_gpm !== undefined ||
+                          data.order_rate !== undefined ||
+                          data.share_rate !== undefined ||
+                          data.like_rate !== undefined;
+      const isStreamer = !isWorkbench && (data.product_clicks !== undefined || data.tap_through_rate !== undefined);
+      const dataSource = isWorkbench ? 'workbench' : (isStreamer ? 'streamer' : null);
+
+      // If we already have workbench data, don't let streamer data overwrite key metrics
+      if (extensionDataSourceRef.current === 'workbench' && dataSource === 'streamer') {
+        // Only take viewer count from streamer, skip other metrics
+        const viewerStr = data.current_viewers || data['Current viewers'] || data['\u8996\u8074\u8005\u6570'];
+        if (viewerStr) {
+          const viewerNum = parseInt(String(viewerStr).replace(/[^0-9]/g, '')) || 0;
+          setMetrics(prev => ({ ...prev, viewer_count: viewerNum }));
+          setMetricsHistory(prev => ({
+            ...prev,
+            viewers: [...prev.viewers.slice(-59), viewerNum],
+          }));
+        }
+        return; // Don't update extensionMetrics with streamer data
+      }
+
+      // Track which source we're using
+      if (dataSource) {
+        extensionDataSourceRef.current = dataSource;
+      }
+
       setExtensionMetrics(prev => ({ ...prev, ...data }));
       
       // Extract viewer count from various possible keys
@@ -907,28 +988,19 @@ const LiveDashboard = ({ videoId, extensionVideoId, liveUrl, username, title, on
     return `¥${numVal.toLocaleString()}`;
   })();
   const displayViewers = em.current_viewers || em['Current viewers'] || em['\u8996\u8074\u8005\u6570'] || formatLargeNum(wm.viewer_count);
-  const displayImpressions = getMetric('impressions', 'Impressions', 'LIVE impression', 'LIVE impressions', 'LIVE\u306e\u30a4\u30f3\u30d7\u30ec\u30c3\u30b7\u30e7\u30f3') || '--';
+  const rawImpressions = getMetric('impressions', 'Impressions', 'LIVE impression', 'LIVE impressions', 'LIVE\u306e\u30a4\u30f3\u30d7\u30ec\u30c3\u30b7\u30e7\u30f3') || '--';
+  const displayImpressions = sanitizeMetricValue(rawImpressions) !== '--' ? formatLargeNum(sanitizeMetricValue(rawImpressions)) : '--';
   const displayItemsSold = em.items_sold || em['Items sold'] || em['\u8ca9\u58f2\u6570'] || '0';
-  const displayProductClicks = getMetric('product_clicks', 'Product clicks', '\u5546\u54c1\u30af\u30ea\u30c3\u30af\u6570') || '--';
-  const displayTTR = getMetric('tap_through_rate', 'Tap-through rate', 'TRR', 'trr', '\u30bf\u30c3\u30d7\u30b9\u30eb\u30fc\u7387') || '--';
+  const rawProductClicks = getMetric('product_clicks', 'Product clicks', '\u5546\u54c1\u30af\u30ea\u30c3\u30af\u6570') || '--';
+  const displayProductClicks = rawProductClicks !== '--' ? formatLargeNum(rawProductClicks) : '--';
+  const displayTTR = sanitizeMetricValue(getMetric('tap_through_rate', 'Tap-through rate', 'TRR', 'trr', '\u30bf\u30c3\u30d7\u30b9\u30eb\u30fc\u7387')) || '--';
   const displayAvgDuration = getMetric('avg_duration', 'Avg. viewing duration', 'Avg. viewing duration per view', 'Avg. duration', '\u5e73\u5747\u8996\u8074\u6642\u9593') || '--';
-  const displayLiveCTR = getMetric('live_ctr', 'LIVE CTR') || '--';
-  const displayCommentRate = getMetric('comment_rate', 'Comment rate', 'コメント率') || workerCommentRate || '--';
-  // Follow rate may contain concatenated values like "0.03%86.83%"
-  const rawFollowRate = getMetric('follow_rate', 'Follow rate', 'フォロー率');
-  const displayFollowRate = (() => {
-    if (!rawFollowRate) return '--';
-    const str = String(rawFollowRate);
-    // Check for concatenated percentages like "0.03%86.83%"
-    const matches = str.match(/(\d+\.?\d*%)/g);
-    if (matches && matches.length >= 2) {
-      return matches[0]; // Use only the first value
-    }
-    return str;
-  })();
-  const displayOrderRate = getMetric('order_rate', 'Order rate (SKU orders)', '注文率') || '--';
-  const displayShareRate = getMetric('share_rate', 'Share rate', 'シェア率') || workerShareRate || '--';
-  const displayLikeRate = getMetric('like_rate', 'Like rate', 'いいね率') || workerLikeRate || '--';
+  const displayLiveCTR = sanitizeMetricValue(getMetric('live_ctr', 'LIVE CTR')) || '--';
+  const displayCommentRate = sanitizeMetricValue(getMetric('comment_rate', 'Comment rate', 'コメント率')) || workerCommentRate || '--';
+  const displayFollowRate = sanitizeMetricValue(getMetric('follow_rate', 'Follow rate', 'フォロー率')) || '--';
+  const displayOrderRate = sanitizeMetricValue(getMetric('order_rate', 'Order rate (SKU orders)', '注文率')) || '--';
+  const displayShareRate = sanitizeMetricValue(getMetric('share_rate', 'Share rate', 'シェア率')) || workerShareRate || '--';
+  const displayLikeRate = sanitizeMetricValue(getMetric('like_rate', 'Like rate', 'いいね率')) || workerLikeRate || '--';
   const displayGPM = getMetric('gpm', 'show_gpm', 'Show GPM', '表示GPM') || '--';
 
   // ─── RENDER ─────────────────────────────────────────────
@@ -1180,13 +1252,12 @@ const LiveDashboard = ({ videoId, extensionVideoId, liveUrl, username, title, on
                         </td>
                         <td className="py-2 px-2">
                           <div className="flex items-center gap-2">
-                            {product.image ? (
-                              <img src={product.image} alt="" className="w-8 h-8 rounded object-cover" />
-                            ) : (
-                              <div className="w-8 h-8 rounded bg-gray-700 flex items-center justify-center">
-                                <span className="text-[10px] text-gray-500">📦</span>
-                              </div>
-                            )}
+                            {product.image && product.image.startsWith('http') ? (
+                              <img src={product.image} alt="" className="w-8 h-8 rounded object-cover" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling && (e.target.nextSibling.style.display = 'flex'); }} />
+                            ) : null}
+                            <div className={`w-8 h-8 rounded bg-gray-700 flex items-center justify-center ${product.image && product.image.startsWith('http') ? 'hidden' : ''}`}>
+                              <span className="text-[10px] text-gray-500">📦</span>
+                            </div>
                             <div className="min-w-0">
                               <p className="text-[11px] text-gray-200 truncate max-w-[200px]">{product.name || '商品名不明'}</p>
                               <p className="text-[10px] text-red-400 font-medium">{product.price ? `${Number(String(product.price).replace(/,/g, '')).toLocaleString()}円` : product.gmv || ''}</p>
