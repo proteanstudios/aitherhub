@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AitherHub LIVE Connector",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "TikTok Shop LIVEデータをAitherHubダッシュボードにリアルタイム送信。コメント・商品・メトリクス・トラフィックを自動収集",
   "permissions": [
     "activeTab",
