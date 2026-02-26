@@ -138,20 +138,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 /**
  * Handle live session start
- * Deduplicates: if we already have an active session for the same account+source,
- * reuse it instead of creating a new one.
+ * Deduplicates: if we already have an active session for the same account,
+ * reuse it regardless of source (streamer vs workbench).
+ * Both pages share the same session so their metrics are merged.
  */
 async function handleLiveStarted(data, tab) {
   console.log('[AitherHub BG] Live session started:', data);
 
-  // Check if we already have an active session
+  // Check if we already have an active session for the same account
+  // Note: We ignore source (streamer/workbench) for deduplication because
+  // both pages should share the same session to merge their metrics
   const existing = await chrome.storage.local.get(['liveSessionId', 'liveSessionAccount', 'liveSessionSource']);
   if (existing.liveSessionId && 
       existing.liveSessionAccount === data.account && 
-      existing.liveSessionSource === data.source &&
       isConnected) {
-    console.log('[AitherHub BG] Reusing existing session:', existing.liveSessionId);
-    // Already connected with same account/source, skip creating new session
+    console.log('[AitherHub BG] Reusing existing session for', data.source, ':', existing.liveSessionId);
+    // Already connected with same account, skip creating new session
     return;
   }
 
@@ -289,11 +291,14 @@ async function handleAiAnalyze(snapshot) {
 
 /**
  * Merge two data objects (for throttling)
+ * IMPORTANT: metrics must be MERGED (not replaced) because Streamer and Workbench
+ * pages send different metric keys. Replacing would lose one source's data.
  */
 function mergeData(existing, incoming) {
   return {
     ...incoming,
-    metrics: incoming.metrics || existing.metrics,
+    // Deep merge metrics so both Streamer and Workbench metrics are preserved
+    metrics: { ...(existing.metrics || {}), ...(incoming.metrics || {}) },
     comments: [...(existing.comments || []), ...(incoming.comments || [])],
     activities: [...(existing.activities || []), ...(incoming.activities || [])],
     products: incoming.products || existing.products,
