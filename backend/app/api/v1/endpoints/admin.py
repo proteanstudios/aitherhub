@@ -201,3 +201,46 @@ async def get_all_feedbacks(
     except Exception as e:
         logger.exception(f"Failed to fetch feedbacks: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch feedbacks: {e}")
+
+
+@router.get("/stuck-videos")
+async def get_stuck_videos(
+    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key"),
+    db: AsyncSession = Depends(get_db),
+):
+    """List videos that are stuck in processing (not DONE/ERROR, older than 30 min)."""
+    expected_key = f"{ADMIN_ID}:{ADMIN_PASS}"
+    if x_admin_key != expected_key:
+        raise HTTPException(status_code=403, detail="Invalid admin credentials")
+
+    try:
+        sql = text("""
+            SELECT v.id, v.original_filename, v.status, v.step_progress,
+                   v.upload_type, v.created_at, v.updated_at,
+                   u.email as user_email
+            FROM videos v
+            LEFT JOIN users u ON v.user_id = u.id
+            WHERE v.status NOT IN ('DONE', 'ERROR')
+            ORDER BY v.created_at DESC
+            LIMIT 50
+        """)
+        result = await db.execute(sql)
+        rows = result.fetchall()
+
+        videos = []
+        for r in rows:
+            videos.append({
+                "id": str(r.id),
+                "filename": r.original_filename,
+                "status": r.status,
+                "step_progress": r.step_progress,
+                "upload_type": r.upload_type,
+                "created_at": str(r.created_at) if r.created_at else None,
+                "updated_at": str(r.updated_at) if r.updated_at else None,
+                "user_email": r.user_email,
+            })
+
+        return {"count": len(videos), "videos": videos}
+    except Exception as e:
+        logger.exception(f"Failed to fetch stuck videos: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
