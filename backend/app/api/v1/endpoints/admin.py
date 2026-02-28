@@ -244,3 +244,64 @@ async def get_stuck_videos(
     except Exception as e:
         logger.exception(f"Failed to fetch stuck videos: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/retry-video/{video_id}")
+async def retry_video(
+    video_id: str,
+    db: AsyncSession = Depends(get_db),
+    x_admin_key: Optional[str] = Header(None),
+):
+    """Re-enqueue a stuck video for processing.
+    Generates a fresh SAS URL and pushes a new job to the queue."""
+    if x_admin_key != f"{ADMIN_ID}:{ADMIN_PASS}":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    try:
+        # Get video info
+        sql = text("""
+            SELECT v.id, v.original_filename, v.status, v.user_id,
+                   u.email as user_email
+            FROM videos v
+            LEFT JOIN users u ON v.user_id = u.id
+            WHERE v.id = :vid
+        """)
+        result = await db.execute(sql, {"vid": video_id})
+        row = result.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Video not found")
+
+        # Generate fresh SAS URL
+        from app.services.storage_service import generate_download_sas
+        download_url, expiry = await generate_download_sas(
+            email=row.user_email,
+            video_id=str(row.id),
+            filename=row.original_filename,
+            expires_in_minutes=1440,  # 24 hours
+        )
+
+        # Reset status to uploaded
+        await db.execute(
+            text("UPDATE videos SET status = 'uploaded', step_progress = 0 WHERE id = :vid"),
+            {"vid": video_id},
+        )
+        await db.commit()
+
+        # Enqueue job
+        from app.services.queue_service import enqueue_job
+        await enqueue_job({
+            "video_id": str(row.id),
+            "blob_url": download_url,
+            "original_filename": row.original_filename,
+        })
+
+        return {
+            "status": "ok",
+            "video_id": video_id,
+            "message": f"Re-enqueued with fresh SAS URL (expires {expiry})",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to retry video: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -184,6 +184,55 @@ def _ensure_dir(path: str):
     os.makedirs(path, exist_ok=True)
 
 
+def _regenerate_sas_url(blob_url: str) -> str:
+    """Regenerate a fresh SAS URL from an expired blob URL.
+    Uses AZURE_STORAGE_CONNECTION_STRING to generate a new read SAS token.
+    Returns the new URL, or raises if regeneration is not possible."""
+    conn_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    if not conn_str:
+        raise RuntimeError("AZURE_STORAGE_CONNECTION_STRING not set, cannot regenerate SAS")
+
+    from urllib.parse import urlparse, unquote
+    from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+    from datetime import datetime, timedelta
+
+    # Parse blob URL to extract container and blob path
+    base_url = blob_url.split("?")[0] if "?" in blob_url else blob_url
+    parsed = urlparse(base_url)
+    path_parts = parsed.path.lstrip("/").split("/", 1)
+    container = path_parts[0] if path_parts else "videos"
+    blob_path = unquote(path_parts[1]) if len(path_parts) > 1 else ""
+
+    if not blob_path:
+        raise RuntimeError(f"Cannot parse blob_path from URL: {blob_url}")
+
+    # Parse account info from connection string
+    account_name = None
+    account_key = None
+    for part in conn_str.split(";"):
+        if part.startswith("AccountName="):
+            account_name = part.split("=", 1)[1]
+        if part.startswith("AccountKey="):
+            account_key = part.split("=", 1)[1]
+
+    if not account_name or not account_key:
+        raise RuntimeError("Cannot parse AccountName/AccountKey from connection string")
+
+    expiry = datetime.utcnow() + timedelta(hours=24)
+    sas_token = generate_blob_sas(
+        account_name=account_name,
+        container_name=container,
+        blob_name=blob_path,
+        account_key=account_key,
+        permission=BlobSasPermissions(read=True),
+        expiry=expiry,
+    )
+
+    new_url = f"https://{account_name}.blob.core.windows.net/{container}/{blob_path}?{sas_token}"
+    logger.info("[SAS] Regenerated fresh SAS URL (expires in 24h)")
+    return new_url
+
+
 def _download_blob(blob_url: str, dest_path: str):
     os.makedirs(os.path.dirname(dest_path), exist_ok=True)
 
@@ -191,46 +240,64 @@ def _download_blob(blob_url: str, dest_path: str):
     logger.info(f"URL = {blob_url}")
     logger.info(f"DEST = {dest_path}")
 
-    try:
-        logger.info("Try AzCopy...")
+    # Try download with original URL first, then regenerate SAS if 403
+    urls_to_try = [blob_url]
 
-        result = subprocess.run(
-            ["/usr/local/bin/azcopy", "copy", blob_url, dest_path, "--overwrite=true"],
-            check=True,
-            capture_output=True,
-            text=True
-        )
+    for attempt, url in enumerate(urls_to_try):
+        try:
+            logger.info("Try AzCopy... (attempt %d)", attempt + 1)
 
-        logger.info("AzCopy SUCCESS")
-        logger.info("AzCopy STDOUT:")
-        logger.info(result.stdout or "<empty>")
-        logger.info("AzCopy STDERR:")
-        logger.info(result.stderr or "<empty>")
+            result = subprocess.run(
+                ["/usr/local/bin/azcopy", "copy", url, dest_path, "--overwrite=true"],
+                check=True,
+                capture_output=True,
+                text=True
+            )
 
-        return
+            logger.info("AzCopy SUCCESS")
+            logger.info("AzCopy STDOUT:")
+            logger.info(result.stdout or "<empty>")
+            logger.info("AzCopy STDERR:")
+            logger.info(result.stderr or "<empty>")
 
-    except FileNotFoundError as e:
-        logger.info("AzCopy NOT FOUND")
-        logger.info(f"Exception: {repr(e)}")
+            return
 
-    except subprocess.CalledProcessError as e:
-        # logger.info("AzCopy FAILED")
-        logger.warning("AzCopy FAILED")
-        logger.info("AzCopy STDOUT:")
-        logger.info(e.stdout or "<empty>")
-        logger.info("AzCopy STDERR:")
-        logger.info(e.stderr or "<empty>")
-        logger.info(f"Return code: {e.returncode}")
+        except FileNotFoundError as e:
+            logger.info("AzCopy NOT FOUND")
+            logger.info(f"Exception: {repr(e)}")
+            break  # No point retrying if azcopy is not installed
 
-    except Exception as e:
-        logger.info("AzCopy UNKNOWN ERROR")
-        logger.info(f"Exception: {repr(e)}")
+        except subprocess.CalledProcessError as e:
+            logger.warning("AzCopy FAILED (attempt %d)", attempt + 1)
+            logger.info("AzCopy STDOUT:")
+            logger.info(e.stdout or "<empty>")
+            logger.info("AzCopy STDERR:")
+            logger.info(e.stderr or "<empty>")
+            logger.info(f"Return code: {e.returncode}")
 
-    # ---- fallback ----
+            # Check if it's a 403/auth error → try regenerating SAS
+            combined_output = (e.stdout or "") + (e.stderr or "")
+            if "403" in combined_output or "AuthenticationFailed" in combined_output or "expired" in combined_output.lower():
+                if attempt == 0:
+                    try:
+                        logger.info("[SAS] Detected expired/invalid SAS, regenerating...")
+                        new_url = _regenerate_sas_url(blob_url)
+                        urls_to_try.append(new_url)
+                        continue
+                    except Exception as regen_err:
+                        logger.error("[SAS] Failed to regenerate SAS URL: %s", regen_err)
+
+        except Exception as e:
+            logger.info("AzCopy UNKNOWN ERROR")
+            logger.info(f"Exception: {repr(e)}")
+
+    # ---- fallback: requests.get ----
+    # Try with the last URL in the list (which may be a regenerated SAS URL)
+    final_url = urls_to_try[-1]
     logger.info("Fallback to requests.get")
 
     try:
-        with requests.get(blob_url, stream=True, timeout=60) as r:
+        with requests.get(final_url, stream=True, timeout=60) as r:
             r.raise_for_status()
 
             total = int(r.headers.get("content-length", 0))
@@ -243,6 +310,30 @@ def _download_blob(blob_url: str, dest_path: str):
                         downloaded += len(chunk)
 
             logger.info(f"Requests SUCCESS: downloaded {downloaded} bytes (total={total})")
+
+    except requests.exceptions.HTTPError as e:
+        if e.response is not None and e.response.status_code == 403 and final_url == blob_url:
+            # Original URL failed with 403, try regenerated SAS
+            try:
+                logger.info("[SAS] requests.get got 403, regenerating SAS...")
+                new_url = _regenerate_sas_url(blob_url)
+                with requests.get(new_url, stream=True, timeout=60) as r2:
+                    r2.raise_for_status()
+                    total = int(r2.headers.get("content-length", 0))
+                    downloaded = 0
+                    with open(dest_path, "wb") as f:
+                        for chunk in r2.iter_content(chunk_size=8 * 1024 * 1024):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                    logger.info(f"Requests SUCCESS (regenerated SAS): downloaded {downloaded} bytes (total={total})")
+                    logger.info("END download")
+                    return
+            except Exception as regen_err:
+                logger.error("[SAS] Regenerated SAS also failed: %s", regen_err)
+        logger.info("Requests FAILED")
+        logger.info(f"Exception: {repr(e)}")
+        raise
 
     except Exception as e:
         logger.info("Requests FAILED")
@@ -369,6 +460,9 @@ def main():
     parser.add_argument("--video-path", dest="video_path", type=str)
     parser.add_argument("--blob-url", dest="blob_url", type=str)
     args = parser.parse_args()
+
+    # Pre-initialize video_id from args so except/finally can always reference it
+    video_id = args.video_id
 
     logger.info("[DB] Initializing database connection...")
     init_db_sync()

@@ -26,6 +26,9 @@ sys.path.insert(0, BATCH_DIR)
 # Maximum concurrent jobs
 MAX_WORKERS = int(os.getenv("WORKER_MAX_CONCURRENT", "1"))
 
+# Maximum retry attempts before treating message as poison and deleting it
+MAX_DEQUEUE_COUNT = int(os.getenv("WORKER_MAX_RETRIES", "5"))
+
 # Visibility timeout: 4 hours (video analysis can take 1-3 hours)
 VISIBILITY_TIMEOUT = 4 * 60 * 60  # 14400 seconds
 
@@ -293,6 +296,10 @@ def process_clip_job(payload: dict):
         return False
 
 
+# Timeout for video analysis subprocess (4 hours)
+VIDEO_PROCESS_TIMEOUT = int(os.getenv("WORKER_VIDEO_TIMEOUT", str(4 * 60 * 60)))
+
+
 def process_video_job(payload: dict):
     """Handle video analysis job."""
     video_id = payload.get("video_id")
@@ -310,17 +317,33 @@ def process_video_job(payload: dict):
         "--blob-url", blob_url,
     ]
 
-    result = subprocess.run(
-        cmd,
-        cwd=BATCH_DIR,
-        env={**os.environ, "PYTHONPATH": BATCH_DIR},
-    )
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=BATCH_DIR,
+            env={**os.environ, "PYTHONPATH": BATCH_DIR},
+            timeout=VIDEO_PROCESS_TIMEOUT,
+        )
 
-    if result.returncode == 0:
-        print(f"[worker] Batch completed successfully for {video_id}")
-        return True
-    else:
-        print(f"[worker] Batch failed for {video_id} with exit code {result.returncode}")
+        if result.returncode == 0:
+            print(f"[worker] Batch completed successfully for {video_id}")
+            return True
+        else:
+            print(f"[worker] Batch failed for {video_id} with exit code {result.returncode}")
+            return False
+    except subprocess.TimeoutExpired:
+        print(f"[worker] Batch TIMED OUT for {video_id} after {VIDEO_PROCESS_TIMEOUT}s")
+        # Mark as ERROR so it doesn't stay stuck
+        try:
+            sys.path.insert(0, BATCH_DIR)
+            from db_ops import init_db_sync, update_video_status_sync, close_db_sync
+            from video_status import VideoStatus
+            init_db_sync()
+            update_video_status_sync(video_id, VideoStatus.ERROR)
+            close_db_sync()
+            print(f"[worker] Marked timed-out video {video_id} as ERROR")
+        except Exception as db_err:
+            print(f"[worker] Failed to mark timed-out video as ERROR: {db_err}")
         return False
 
 
@@ -353,6 +376,27 @@ def poll_and_process(executor: ThreadPoolExecutor):
             payload = json.loads(msg.content)
             job_type = payload.get("job_type", "video_analysis")
             job_id = payload.get("video_id", payload.get("clip_id", "unknown"))
+
+            # --- Poison message detection: delete after too many retries ---
+            if hasattr(msg, 'dequeue_count') and msg.dequeue_count is not None:
+                if msg.dequeue_count >= MAX_DEQUEUE_COUNT:
+                    print(f"[worker] POISON MESSAGE detected: job={job_id}, type={job_type}, "
+                          f"dequeue_count={msg.dequeue_count} >= {MAX_DEQUEUE_COUNT}. "
+                          f"Deleting message and marking video as ERROR.")
+                    delete_message_safe(msg.id, msg.pop_receipt)
+                    # Mark video as ERROR in DB so it doesn't stay in 'uploaded' forever
+                    if job_type in ("video_analysis", None) and job_id != "unknown":
+                        try:
+                            sys.path.insert(0, BATCH_DIR)
+                            from db_ops import init_db_sync, update_video_status_sync, close_db_sync
+                            from video_status import VideoStatus
+                            init_db_sync()
+                            update_video_status_sync(job_id, VideoStatus.ERROR)
+                            close_db_sync()
+                            print(f"[worker] Marked video {job_id} as ERROR")
+                        except Exception as db_err:
+                            print(f"[worker] Failed to mark video as ERROR: {db_err}")
+                    continue
 
             # --- live_monitor: runs on separate lightweight executor ---
             if job_type == "live_monitor":
