@@ -110,11 +110,14 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
     const boundedTarget = Math.min(targetProgress, ceiling);
     setMonotonicProgress(boundedTarget);
 
-    // Use slower increments for compression step (large range, long duration)
-    const minIncrement = 1;
-    const maxIncrement = 3;
-    const minInterval = 2000;
-    const maxInterval = 5000;
+    // Adjust speed based on the step: compression is fast (non-blocking background),
+    // so use faster increments. Other steps use moderate speed.
+    const isQuickStep = status === 'STEP_COMPRESS_1080P' || status === 'STEP_0_EXTRACT_FRAMES';
+    const isLongStep = status === 'STEP_3_TRANSCRIBE_AUDIO' || status === 'STEP_2_EXTRACT_METRICS';
+    const minIncrement = isQuickStep ? 0.3 : isLongStep ? 0.1 : 0.5;
+    const maxIncrement = isQuickStep ? 0.8 : isLongStep ? 0.3 : 1.0;
+    const minInterval = isQuickStep ? 500 : isLongStep ? 3000 : 1500;
+    const maxInterval = isQuickStep ? 1200 : isLongStep ? 6000 : 3000;
 
     // Start interval to gradually increase progress
     progressIntervalRef.current = setInterval(() => {
@@ -591,7 +594,7 @@ function ProcessingSteps({ videoId, initialStatus, videoTitle, onProcessingCompl
         <>
           <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
             <div
-              className="h-2 rounded-full transition-all duration-500 ease-out bg-linear-to-r from-indigo-500 to-violet-400"
+              className="h-2 rounded-full transition-all duration-700 ease-in-out bg-linear-to-r from-indigo-500 to-violet-400"
               style={{ width: `${smoothProgress}%` }}
             />
           </div>

@@ -11,7 +11,7 @@ import ForgotPasswordModal from "./modals/ForgotPasswordModal";
 import AuthService from "../base/services/userService";
 import VideoService from "../base/services/videoService";
 
-import { ChevronDown, LogOut, Settings, User, X, MoreHorizontal, Pencil, Trash2, Scissors, MessageSquareText, Radio, Video, Eye } from "lucide-react";
+import { ChevronDown, LogOut, Settings, User, X, MoreHorizontal, Pencil, Trash2, Scissors, MessageSquareText, Radio, Video, Eye, Calendar } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -569,6 +569,21 @@ export default function Sidebar({ isOpen, onClose, user, onVideoSelect, onNewAna
                                     </div>
                                   )}
                                   <div className="flex items-center gap-3 flex-wrap">
+                                    {video.created_at && (
+                                      <span className="inline-flex items-center gap-1 text-[11px] text-gray-400 leading-normal">
+                                        <Calendar className="w-3 h-3 flex-shrink-0" />
+                                        {(() => {
+                                          const d = new Date(video.created_at);
+                                          const now = new Date();
+                                          const diffMs = now - d;
+                                          const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                                          if (diffDays === 0) return '今日';
+                                          if (diffDays === 1) return '昨日';
+                                          if (diffDays < 7) return `${diffDays}日前`;
+                                          return `${(d.getMonth() + 1)}/${d.getDate()}`;
+                                        })()}
+                                      </span>
+                                    )}
                                     {video.total_gmv != null && video.total_gmv > 0 && (
                                       <span className="inline-flex items-center gap-1 text-[11px] text-orange-600 font-medium leading-normal">
                                         <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
